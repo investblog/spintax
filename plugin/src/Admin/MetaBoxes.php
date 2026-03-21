@@ -9,6 +9,7 @@ namespace Spintax\Admin;
 
 use Spintax\Core\Cache\CacheManager;
 use Spintax\Core\Cache\DependencyInvalidator;
+use Spintax\Core\Cron\CronManager;
 use Spintax\Core\Engine\Parser;
 use Spintax\Core\Engine\Validator;
 use Spintax\Core\PostType\TemplatePostType;
@@ -204,6 +205,10 @@ class MetaBoxes {
 				60
 			);
 		}
+
+		// Sync cron schedule.
+		$cron = new CronManager();
+		$cron->sync_schedule( $post_id );
 	}
 
 	/**

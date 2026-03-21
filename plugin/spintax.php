@@ -72,7 +72,7 @@ register_activation_hook(
 register_deactivation_hook(
 	__FILE__,
 	function () {
-		wp_clear_scheduled_hook( 'spintax_cron_regenerate' );
+		Core\Cron\CronManager::clear_all();
 	}
 );
 
@@ -89,6 +89,10 @@ add_action(
 		// Register [spintax] shortcode.
 		$shortcode = new Core\Shortcode\ShortcodeController();
 		$shortcode->init();
+
+		// Register cron handler.
+		$cron = new Core\Cron\CronManager();
+		$cron->init();
 
 		// Load global helper function.
 		require_once SPINTAX_PLUGIN_DIR . 'src/Core/Render/functions.php';

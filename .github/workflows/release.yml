@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Verify plugin version matches tag
+        run: |
+          PLUGIN_VERSION=$(grep "Version:" plugin/spintax.php | sed "s/.*Version:[[:space:]]*//")
+          TAG_VERSION=${{ steps.version.outputs.VERSION }}
+          if [ "$PLUGIN_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Plugin version ($PLUGIN_VERSION) does not match tag version ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: composer
+
+      - name: Install dependencies
+        run: composer install --no-progress --prefer-dist
+
+      - name: Run PHPCS
+        run: composer run phpcs
+
+      - name: Build plugin ZIP
+        run: |
+          mkdir -p build/spintax
+          cp -r plugin/* build/spintax/
+          cd build
+          rm -f spintax/composer.json spintax/composer.lock spintax/phpcs.xml.dist
+          rm -rf spintax/vendor spintax/.phpunit.result.cache
+          zip -r ../spintax.zip spintax -x '*.DS_Store' -x '*.git*'
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: spintax.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') || contains(github.ref, '-rc') }}

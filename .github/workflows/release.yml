@@ -18,14 +18,37 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
-      - name: Verify plugin version matches tag
+      - name: Verify all version references match tag
         run: |
-          PLUGIN_VERSION=$(grep "Version:" plugin/spintax.php | sed "s/.*Version:[[:space:]]*//")
           TAG_VERSION=${{ steps.version.outputs.VERSION }}
-          if [ "$PLUGIN_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::Plugin version ($PLUGIN_VERSION) does not match tag version ($TAG_VERSION)"
+          ERRORS=0
+
+          # 1. Plugin header Version:
+          HEADER_VERSION=$(grep "Version:" plugin/spintax.php | sed "s/.*Version:[[:space:]]*//")
+          if [ "$HEADER_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Plugin header Version ($HEADER_VERSION) does not match tag ($TAG_VERSION)"
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          # 2. SPINTAX_VERSION constant
+          CONST_VERSION=$(grep "SPINTAX_VERSION" plugin/spintax.php | sed "s/.*'\(.*\)'.*/\1/")
+          if [ "$CONST_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::SPINTAX_VERSION constant ($CONST_VERSION) does not match tag ($TAG_VERSION)"
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          # 3. readme.txt Stable tag
+          README_VERSION=$(grep "Stable tag:" plugin/readme.txt | sed "s/.*Stable tag:[[:space:]]*//")
+          if [ "$README_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::readme.txt Stable tag ($README_VERSION) does not match tag ($TAG_VERSION)"
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          if [ $ERRORS -gt 0 ]; then
+            echo "::error::Version mismatch detected. Run: npm run version:set -- X.Y.Z"
             exit 1
           fi
+          echo "✓ All version references match: $TAG_VERSION"
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2

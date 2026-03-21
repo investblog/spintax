@@ -118,7 +118,26 @@ Key: shielding MUST happen before any punctuation rules. Restoration MUST happen
 - Windows 11, bash shell (Git Bash)
 - PHP and Composer NOT installed system-wide — need to install for `composer install`
 - Node.js available, npm dependencies installed (`@wordpress/env`)
-- No git remote configured yet
+- Remote: https://github.com/investblog/spintax
+
+## Versioning
+
+Version lives in 3 places (must be in sync):
+1. `plugin/spintax.php` — Plugin header `Version:` field
+2. `plugin/spintax.php` — `SPINTAX_VERSION` constant
+3. `plugin/readme.txt` — `Stable tag:`
+
+Update all at once: `npm run version:set -- X.Y.Z`
+Verify sync: `npm run version:check`
+
+Release process:
+1. `npm run version:set -- 1.2.3`
+2. `git add plugin/spintax.php plugin/readme.txt`
+3. `git commit -m "Release 1.2.3"`
+4. `git tag v1.2.3`
+5. `git push && git push --tags`
+
+CI validates all 3 sources match the tag before creating a GitHub Release.
 
 ## Commands
 
@@ -129,4 +148,6 @@ npm run wp:plugin:activate # Activate plugin
 npm run lint:php           # PHPCS
 npm run lint:php:fix       # Auto-fix PHPCS
 npm run test:php           # PHPUnit via wp-env
+npm run version:set -- X.Y.Z  # Set version everywhere
+npm run version:check      # Verify version sync
 ```

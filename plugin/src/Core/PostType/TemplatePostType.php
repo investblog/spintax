@@ -31,20 +31,30 @@ class TemplatePostType {
 	}
 
 	/**
-	 * Output CSS for the branded menu icon via background-image.
+	 * Output CSS for the branded menu icon.
 	 *
-	 * Uses admin_head to bypass WordPress SVG icon color filtering.
+	 * Replaces the dashicon glyph with a base64 SVG background-image
+	 * on the ::before pseudo-element. This fully bypasses WordPress
+	 * SVG color filtering while using a standard dashicons icon as fallback.
 	 */
 	public function menu_icon_css(): void {
-		$svg_url = SPINTAX_PLUGIN_URL . 'assets/img/menu-icon.svg';
+		$svg_file = SPINTAX_PLUGIN_DIR . 'assets/img/menu-icon.svg';
+		if ( ! file_exists( $svg_file ) ) {
+			return;
+		}
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		$b64 = base64_encode( file_get_contents( $svg_file ) );
 		?>
 		<style>
 			#adminmenu .toplevel_page_edit-post_type-spintax_template .wp-menu-image::before {
-				content: '';
-			}
-			#adminmenu .toplevel_page_edit-post_type-spintax_template .wp-menu-image {
-				background: url('<?php echo esc_url( $svg_url ); ?>') no-repeat center center;
-				background-size: 20px 20px;
+				background: url('data:image/svg+xml;base64,<?php echo esc_attr( $b64 ); ?>') no-repeat center center !important;
+				background-size: 20px 20px !important;
+				content: '' !important;
+				width: 20px;
+				height: 20px;
+				display: inline-block;
+				opacity: 1 !important;
+				filter: none !important;
 			}
 		</style>
 		<?php
@@ -75,7 +85,7 @@ class TemplatePostType {
 			'show_ui'             => true,
 			'show_in_menu'        => true,
 			'show_in_rest'        => false,
-			'menu_icon'           => 'none',
+			'menu_icon'           => 'dashicons-randomize',
 			'menu_position'       => 25,
 			'supports'            => array( 'title', 'editor' ),
 			'capability_type'     => 'spintax_template',

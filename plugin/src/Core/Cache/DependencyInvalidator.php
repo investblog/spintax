@@ -18,7 +18,11 @@ use Spintax\Support\OptionKeys;
  */
 class DependencyInvalidator {
 
-	/** @var CacheManager Cache manager instance. */
+	/**
+	 * Cache manager used to invalidate individual template caches.
+	 *
+	 * @var CacheManager
+	 */
 	private CacheManager $cache;
 
 	/**

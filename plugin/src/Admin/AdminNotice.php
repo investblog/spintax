@@ -48,16 +48,13 @@ trait AdminNotice {
 
 		delete_transient( $key );
 
-		$type    = in_array( $notice['type'], array( 'success', 'error', 'warning', 'info' ), true )
+		$type = in_array( $notice['type'], array( 'success', 'error', 'warning', 'info' ), true )
 			? $notice['type']
 			: 'info';
-		$message = esc_html( $notice['message'] );
-
-		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $message is already escaped with esc_html() above.
 		printf(
 			'<div class="notice notice-%s is-dismissible"><p>%s</p></div>',
 			esc_attr( $type ),
-			$message
+			esc_html( $notice['message'] )
 		);
 	}
 }

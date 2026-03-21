@@ -16,7 +16,11 @@ use Spintax\Core\Render\Renderer;
  */
 class ShortcodeController {
 
-	/** @var Renderer Template renderer instance. */
+	/**
+	 * Template renderer for processing spintax output.
+	 *
+	 * @var Renderer
+	 */
 	private Renderer $renderer;
 
 	/**

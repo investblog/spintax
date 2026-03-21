@@ -24,10 +24,18 @@ use Spintax\Support\OptionKeys;
  */
 class CacheManager {
 
-	/** @var string Cache group prefix constant. */
+	/**
+	 * Cache group prefix prepended to the global salt.
+	 *
+	 * @var string
+	 */
 	public const CACHE_GROUP_PREFIX = 'spintax_';
 
-	/** @var SettingsRepository Settings repository instance. */
+	/**
+	 * Settings repository for reading TTL and cache salt.
+	 *
+	 * @var SettingsRepository
+	 */
 	private SettingsRepository $settings;
 
 	/**

@@ -22,7 +22,11 @@ class SettingsPage {
 
 	use AdminNotice;
 
-	/** @var SettingsRepository Settings repository instance. */
+	/**
+	 * Settings repository instance.
+	 *
+	 * @var SettingsRepository
+	 */
 	private SettingsRepository $repo;
 
 	/**
@@ -151,11 +155,18 @@ class SettingsPage {
 				</p>
 				<p class="description"><code>#set %name% = value</code></p>
 
-				<?php $this->render_variable_errors(); ?>
+				<?php
+				$this->render_variable_errors();
+
+				$placeholder = "#set %company% = {Acme Corp|Acme Inc}\n"
+					. "#set %year% = 2026\n"
+					. "#set %products% = [<minsize=2;maxsize=3;sep=\", \";lastsep=\" and \"> widgets|gadgets|tools|services]\n"
+					. '#set %slogan% = {Quality|Reliable|Trusted} {solutions|products} since %year%';
+				?>
 
 				<textarea name="spintax_global_variables_raw" id="spintax-global-variables"
 					class="large-text code" rows="16"
-					placeholder="<?php esc_attr_e( "#set %company% = {Acme Corp|Acme Inc}\n#set %year% = 2026\n#set %products% = [<minsize=2;maxsize=3;sep=\", \";lastsep=\" and \"> widgets|gadgets|tools|services]\n#set %slogan% = {Quality|Reliable|Trusted} {solutions|products} since %year%", 'spintax' ); ?>"
+					placeholder="<?php echo esc_attr( $placeholder ); ?>"
 				><?php echo esc_textarea( $variables_raw ); ?></textarea>
 
 				<?php submit_button( __( 'Save Settings', 'spintax' ), 'primary', 'spintax_save_settings' ); ?>
@@ -193,9 +204,11 @@ class SettingsPage {
 	 */
 	private function save_global_variables(): void {
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- nonce verified in handle_actions().
+		// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- raw spintax syntax must be preserved; sanitize_text_field would strip bracket expressions.
 		$raw = isset( $_POST['spintax_global_variables_raw'] )
 			? wp_unslash( $_POST['spintax_global_variables_raw'] )
 			: '';
+		// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		// phpcs:enable WordPress.Security.NonceVerification.Missing
 
 		// Validate syntax before saving.

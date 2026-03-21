@@ -29,10 +29,18 @@ class Parser {
 	 */
 	private $random_fn;
 
-	/** @var int Maximum iterations for enumeration/permutation resolution. */
+	/**
+	 * Maximum iterations for enumeration/permutation resolution.
+	 *
+	 * @var int
+	 */
 	private const MAX_ITERATIONS = 10000;
 
-	/** @var int Maximum depth for variable expansion. */
+	/**
+	 * Maximum recursion depth for variable expansion.
+	 *
+	 * @var int
+	 */
 	private const MAX_VARIABLE_DEPTH = 50;
 
 	/**
@@ -146,10 +154,11 @@ class Parser {
 			}
 		}
 
-		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped, WordPress.Security.EscapeOutput.OutputNotEscaped -- exception message, not rendered output.
 		throw new \RuntimeException(
 			'Variable expansion exceeded maximum depth (' . self::MAX_VARIABLE_DEPTH . '). Possible circular reference.'
 		);
+		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped, WordPress.Security.EscapeOutput.OutputNotEscaped
 	}
 
 	/**

@@ -264,6 +264,7 @@ class MetaBoxes {
 		// Do NOT sanitise input with wp_kses_post — it strips spintax config
 		// like <minsize=3;sep=", "> which looks like an HTML tag to kses.
 		// Output sanitisation happens inside Renderer::process_template().
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- raw spintax markup must be preserved; sanitize_text_field would destroy bracket expressions.
 		$content = isset( $_POST['content'] ) ? wp_unslash( $_POST['content'] ) : null;
 		if ( null === $content ) {
 			$post = get_post( $post_id );

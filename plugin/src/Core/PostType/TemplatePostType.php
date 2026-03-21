@@ -14,7 +14,11 @@ defined( 'ABSPATH' ) || exit;
  */
 class TemplatePostType {
 
-	/** @var string Custom post type identifier. */
+	/**
+	 * Custom post type identifier for spintax templates.
+	 *
+	 * @var string
+	 */
 	public const POST_TYPE = 'spintax_template';
 
 	/**

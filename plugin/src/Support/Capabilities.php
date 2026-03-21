@@ -15,7 +15,11 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Capabilities {
 
-	/** @var string Custom capability name for managing templates. */
+	/**
+	 * Custom capability name for managing spintax templates.
+	 *
+	 * @var string
+	 */
 	public const CAP = 'manage_spintax_templates';
 
 	/**

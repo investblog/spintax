@@ -16,8 +16,8 @@ $spintax_post_ids = $wpdb->get_col(
 	$wpdb->prepare( "SELECT ID FROM {$wpdb->posts} WHERE post_type = %s", 'spintax_template' )
 );
 if ( ! empty( $spintax_post_ids ) ) {
-	foreach ( $spintax_post_ids as $post_id ) {
-		wp_delete_post( (int) $post_id, true );
+	foreach ( $spintax_post_ids as $spintax_pid ) {
+		wp_delete_post( (int) $spintax_pid, true );
 	}
 }
 

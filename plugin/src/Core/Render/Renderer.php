@@ -35,22 +35,46 @@ use Spintax\Core\Settings\SettingsRepository;
  */
 class Renderer {
 
-	/** @var Parser Spintax template parser. */
+	/**
+	 * Spintax template parser for syntax processing.
+	 *
+	 * @var Parser
+	 */
 	private Parser $parser;
 
-	/** @var SettingsRepository Settings repository instance. */
+	/**
+	 * Settings repository for reading global variables and TTL.
+	 *
+	 * @var SettingsRepository
+	 */
 	private SettingsRepository $settings;
 
-	/** @var CacheManager Cache manager instance. */
+	/**
+	 * Cache manager for reading and storing rendered output.
+	 *
+	 * @var CacheManager
+	 */
 	private CacheManager $cache;
 
-	/** @var DependencyInvalidator Dependency invalidation handler. */
+	/**
+	 * Handles cascade invalidation for nested template dependencies.
+	 *
+	 * @var DependencyInvalidator
+	 */
 	private DependencyInvalidator $deps;
 
-	/** @var int[] Template IDs rendered during the current top-level render. */
+	/**
+	 * Template IDs rendered during the current top-level render.
+	 *
+	 * @var int[]
+	 */
 	private array $rendered_ids = array();
 
-	/** @var bool When true, skip cache reads for the entire subtree (force fresh render). */
+	/**
+	 * When true, skip cache reads for the entire subtree.
+	 *
+	 * @var bool
+	 */
 	private bool $bypass_cache = false;
 
 	/**
@@ -334,7 +358,7 @@ class Renderer {
 	/**
 	 * Parse shortcode-style attributes from a string.
 	 *
-	 * @param string $attr_string e.g. 'id="123" city="Moscow"'
+	 * @param string $attr_string Attribute string, e.g. 'id="123" city="Moscow"'.
 	 * @return array<string, string>
 	 */
 	private function parse_shortcode_attrs( string $attr_string ): array {

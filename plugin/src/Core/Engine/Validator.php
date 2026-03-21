@@ -51,6 +51,7 @@ class Validator {
 	/**
 	 * Check that all { } and [ ] are balanced and properly nested.
 	 *
+	 * @param string $text Template body to check.
 	 * @return array<array{message: string, line: int, column: int}>
 	 */
 	private function check_brackets( string $text ): array {
@@ -127,6 +128,7 @@ class Validator {
 	/**
 	 * Check #set directives for correct syntax.
 	 *
+	 * @param string $text Template body to check.
 	 * @return array<array{message: string, line: int, column: int}>
 	 */
 	private function check_set_directives( string $text ): array {
@@ -156,6 +158,7 @@ class Validator {
 	/**
 	 * Check permutation <config> blocks for valid syntax.
 	 *
+	 * @param string $text Template body to check.
 	 * @return array<array{message: string, line: int, column: int}>
 	 */
 	private function check_permutation_configs( string $text ): array {

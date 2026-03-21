@@ -16,16 +16,32 @@ defined( 'ABSPATH' ) || exit;
  */
 class RenderContext {
 
-	/** @var array<string, string> */
+	/**
+	 * Site-wide variables defined in plugin settings.
+	 *
+	 * @var array<string, string>
+	 */
 	private array $global_vars;
 
-	/** @var array<string, string> */
+	/**
+	 * Variables defined via #set directives inside the template.
+	 *
+	 * @var array<string, string>
+	 */
 	private array $local_vars;
 
-	/** @var array<string, string> */
+	/**
+	 * Variables passed at render time via shortcode attributes or PHP call.
+	 *
+	 * @var array<string, string>
+	 */
 	private array $runtime_vars;
 
-	/** @var int[] Template IDs currently being rendered (for circular-ref detection). */
+	/**
+	 * Template IDs currently being rendered for circular-reference detection.
+	 *
+	 * @var int[]
+	 */
 	private array $call_stack;
 
 	/**
@@ -155,7 +171,7 @@ class RenderContext {
 	/**
 	 * Normalise variable keys to lowercase.
 	 *
-	 * @param array<string, string> $vars
+	 * @param array<string, string> $vars Variable name-value pairs to normalise.
 	 * @return array<string, string>
 	 */
 	private static function normalize_keys( array $vars ): array {

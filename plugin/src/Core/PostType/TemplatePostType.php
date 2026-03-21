@@ -27,6 +27,27 @@ class TemplatePostType {
 	public function init(): void {
 		add_action( 'init', array( $this, 'register' ) );
 		add_filter( 'use_block_editor_for_post_type', array( $this, 'disable_block_editor' ), 10, 2 );
+		add_action( 'admin_head', array( $this, 'menu_icon_css' ) );
+	}
+
+	/**
+	 * Output CSS for the branded menu icon via background-image.
+	 *
+	 * Uses admin_head to bypass WordPress SVG icon color filtering.
+	 */
+	public function menu_icon_css(): void {
+		$svg_url = SPINTAX_PLUGIN_URL . 'assets/img/menu-icon.svg';
+		?>
+		<style>
+			#adminmenu .toplevel_page_edit-post_type-spintax_template .wp-menu-image::before {
+				content: '';
+			}
+			#adminmenu .toplevel_page_edit-post_type-spintax_template .wp-menu-image {
+				background: url('<?php echo esc_url( $svg_url ); ?>') no-repeat center center;
+				background-size: 20px 20px;
+			}
+		</style>
+		<?php
 	}
 
 	/**
@@ -54,8 +75,7 @@ class TemplatePostType {
 			'show_ui'             => true,
 			'show_in_menu'        => true,
 			'show_in_rest'        => false,
-			// phpcs:ignore Generic.Files.LineLength.TooLong -- base64 data URI for admin menu icon.
-			'menu_icon'           => 'data:image/svg+xml;base64,' . base64_encode( file_get_contents( SPINTAX_PLUGIN_DIR . 'assets/img/menu-icon.svg' ) ),
+			'menu_icon'           => 'none',
 			'menu_position'       => 25,
 			'supports'            => array( 'title', 'editor' ),
 			'capability_type'     => 'spintax_template',

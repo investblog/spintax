@@ -39,14 +39,6 @@ class AdminMenu {
 	 * @param string $hook_suffix Admin page hook suffix.
 	 */
 	public function enqueue_assets( string $hook_suffix ): void {
-		// Menu icon CSS — loads on ALL admin pages (tiny file, just the icon override).
-		wp_enqueue_style(
-			'spintax-menu-icon',
-			$this->asset_url( 'css/menu-icon.css' ),
-			array(),
-			SPINTAX_VERSION
-		);
-
 		$screen = get_current_screen();
 
 		$is_our_cpt  = $screen && TemplatePostType::POST_TYPE === $screen->post_type;

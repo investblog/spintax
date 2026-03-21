@@ -63,8 +63,66 @@ register_activation_hook(
 		$cpt = new Core\PostType\TemplatePostType();
 		$cpt->register();
 		flush_rewrite_rules( false );
+
+		// Seed a demo template on first activation.
+		spintax_maybe_seed_demo();
 	}
 );
+
+/**
+ * Create a demo template if none exist yet.
+ */
+function spintax_maybe_seed_demo(): void {
+	$existing = get_posts(
+		array(
+			'post_type'      => Core\PostType\TemplatePostType::POST_TYPE,
+			'posts_per_page' => 1,
+			'post_status'    => 'any',
+			'fields'         => 'ids',
+		)
+	);
+
+	if ( ! empty( $existing ) ) {
+		return;
+	}
+
+	$demo = <<<'SPINTAX'
+/#
+  Spintax Demo Template
+  This template showcases the core syntax features.
+  Edit it or create your own templates under Spintax > Add New.
+#/
+
+#set %product% = {Widget|Gadget|Tool}
+#set %company% = {Acme|Nova|Apex} {Corp|Inc|Labs}
+#set %features% = [<minsize=2;maxsize=3;sep=", ";lastsep=" and "> lightweight|durable|affordable|eco-friendly|portable|customizable]
+
+<h2>{Introducing|Meet|Discover} the %product% by %company%</h2>
+
+<p>{Our|The} {latest|newest|brand-new} %product% is {designed|built|crafted} for {professionals|creators|everyday use}. It is %features%.</p>
+
+<p>{Key|Main|Top} {benefits|advantages|highlights}:</p>
+<ul>
+[<minsize=3;maxsize=4;> <li>{Fast|Quick|Rapid} {setup|installation} — {ready|up and running} in {minutes|under 5 minutes}.</li>
+|<li>{Works|Compatible} with [<minsize=2;maxsize=3;sep=", ";lastsep=" and "> Windows|macOS|Linux|Android|iOS].</li>
+|<li>{Free|Complimentary} {updates|upgrades} for {a year|12 months|the first year}.</li>
+|<li>{24/7|Round-the-clock} {support|customer service} via [< and > email|live chat].</li>
+|<li>{Trusted|Used} by [<minsize=2;maxsize=3;sep=", ";lastsep=" and "> startups|enterprises|freelancers|agencies|universities].</li>]
+</ul>
+
+<p>{Get started|Try it|Learn more} {today|now} at <strong>%company%</strong>.</p>
+SPINTAX;
+
+	wp_insert_post(
+		array(
+			'post_type'    => Core\PostType\TemplatePostType::POST_TYPE,
+			'post_title'   => 'Demo Template',
+			'post_name'    => 'demo',
+			'post_content' => $demo,
+			'post_status'  => 'publish',
+		)
+	);
+}
 
 /**
  * Deactivation hook — clear cron events but keep data.

@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 6.9
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -83,6 +83,18 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 1.0.1 =
+* Fix: permutation minsize/maxsize logic when only one parameter is specified
+* Fix: preview rendering no longer strips spintax config from template input
+* Fix: child templates no longer inherit parent's local #set variables
+* Improve: global variables editor now uses #set textarea (paste full blocks)
+* Improve: validation errors displayed on template edit screen with line numbers
+* Improve: "Regenerate Public Cache" now forces fresh subtree render
+* Add: demo template created on first activation
+* Add: SECURITY.md with responsible disclosure policy
+* Add: Privacy Policy and External Services sections in readme.txt
+* Code: PHPCS 0 errors, full WP.org review compliance
+
 = 1.0.0 =
 * Initial release
 * GTW-compatible spintax engine with nested enumerations and permutations
@@ -94,6 +106,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 1.0.1 =
+Fixes permutation config handling, preview rendering, and scope isolation. Recommended update.
 
 = 1.0.0 =
 Initial release.

@@ -466,10 +466,28 @@ class Parser {
 		}
 
 		$total   = count( $elements );
-		$minsize = $config['minsize'] ?? $total;
-		$maxsize = $config['maxsize'] ?? $total;
 		$sep     = $config['sep'];
 		$lastsep = $config['lastsep'] ?? $sep;
+
+		// When only maxsize is set, minsize defaults to 1 (not total).
+		// When only minsize is set, maxsize defaults to total.
+		// When neither is set, both default to total (use all elements).
+		$has_min = null !== $config['minsize'];
+		$has_max = null !== $config['maxsize'];
+
+		if ( $has_min && $has_max ) {
+			$minsize = $config['minsize'];
+			$maxsize = $config['maxsize'];
+		} elseif ( $has_min ) {
+			$minsize = $config['minsize'];
+			$maxsize = $total;
+		} elseif ( $has_max ) {
+			$minsize = 1;
+			$maxsize = $config['maxsize'];
+		} else {
+			$minsize = $total;
+			$maxsize = $total;
+		}
 
 		$minsize = max( 1, min( $minsize, $total ) );
 		$maxsize = max( $minsize, min( $maxsize, $total ) );

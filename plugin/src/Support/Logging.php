@@ -7,6 +7,8 @@
 
 namespace Spintax\Support;
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Ring-buffer logger stored in a single WordPress option.
  */

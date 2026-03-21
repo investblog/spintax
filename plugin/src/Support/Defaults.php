@@ -7,6 +7,8 @@
 
 namespace Spintax\Support;
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Static factory methods for default configuration values.
  */

@@ -7,6 +7,8 @@
 
 namespace Spintax\Core\Cron;
 
+defined( 'ABSPATH' ) || exit;
+
 use Spintax\Core\Cache\CacheManager;
 use Spintax\Core\Cache\DependencyInvalidator;
 use Spintax\Core\PostType\TemplatePostType;

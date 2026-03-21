@@ -5,6 +5,8 @@
  * @package Spintax
  */
 
+defined( 'ABSPATH' ) || exit;
+
 if ( ! function_exists( 'spintax_render' ) ) {
 	/**
 	 * Render a spintax template.

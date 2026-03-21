@@ -7,6 +7,8 @@
 
 namespace Spintax\Core\PostType;
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Registers and configures the spintax_template CPT.
  */

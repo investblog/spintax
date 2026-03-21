@@ -7,6 +7,8 @@
 
 namespace Spintax\Core\Cache;
 
+defined( 'ABSPATH' ) || exit;
+
 use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Support\OptionKeys;
 

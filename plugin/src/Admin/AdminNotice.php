@@ -7,6 +7,8 @@
 
 namespace Spintax\Admin;
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Provides redirect-with-notice and render-notice helpers.
  */

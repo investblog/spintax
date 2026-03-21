@@ -7,6 +7,8 @@
 
 namespace Spintax\Core\Engine;
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Validates spintax template syntax.
  */

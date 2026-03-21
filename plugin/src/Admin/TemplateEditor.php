@@ -7,6 +7,8 @@
 
 namespace Spintax\Admin;
 
+defined( 'ABSPATH' ) || exit;
+
 use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Support\OptionKeys;
 

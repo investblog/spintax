@@ -10,28 +10,29 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 global $wpdb;
 
 // 1. Delete all spintax_template posts and their meta.
-$post_ids = $wpdb->get_col(
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+$spintax_post_ids = $wpdb->get_col(
 	"SELECT ID FROM {$wpdb->posts} WHERE post_type = 'spintax_template'"
 );
-if ( ! empty( $post_ids ) ) {
-	foreach ( $post_ids as $post_id ) {
+if ( ! empty( $spintax_post_ids ) ) {
+	foreach ( $spintax_post_ids as $post_id ) {
 		wp_delete_post( (int) $post_id, true );
 	}
 }
 
 // 2. Delete plugin options.
-$options = array(
+$spintax_options = array(
 	'spintax_settings',
 	'spintax_global_variables',
 	'spintax_cache_salt',
 	'spintax_logs',
 );
-foreach ( $options as $option ) {
-	delete_option( $option );
+foreach ( $spintax_options as $spintax_option ) {
+	delete_option( $spintax_option );
 }
 
 // 3. Remove custom capabilities from all roles.
-$caps = array(
+$spintax_caps = array(
 	'manage_spintax_templates',
 	'edit_spintax_template',
 	'read_spintax_template',
@@ -49,8 +50,8 @@ $caps = array(
 );
 
 foreach ( wp_roles()->role_objects as $role ) {
-	foreach ( $caps as $cap ) {
-		$role->remove_cap( $cap );
+	foreach ( $spintax_caps as $spintax_cap ) {
+		$role->remove_cap( $spintax_cap );
 	}
 }
 

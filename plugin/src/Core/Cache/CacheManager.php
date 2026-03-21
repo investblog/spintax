@@ -7,6 +7,8 @@
 
 namespace Spintax\Core\Cache;
 
+defined( 'ABSPATH' ) || exit;
+
 use Spintax\Core\Settings\SettingsRepository;
 use Spintax\Support\OptionKeys;
 

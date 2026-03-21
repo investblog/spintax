@@ -7,6 +7,8 @@
 
 namespace Spintax\Support;
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * All WordPress option and post-meta keys used by the plugin.
  */

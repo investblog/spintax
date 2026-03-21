@@ -7,6 +7,8 @@
 
 namespace Spintax\Core\Settings;
 
+defined( 'ABSPATH' ) || exit;
+
 use Spintax\Support\Defaults;
 use Spintax\Support\OptionKeys;
 use Spintax\Support\Validators;

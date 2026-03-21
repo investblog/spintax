@@ -15,6 +15,8 @@
 
 namespace Spintax\Core\Engine;
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Spintax template parser.
  */
@@ -137,6 +139,7 @@ class Parser {
 			}
 		}
 
+		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		throw new \RuntimeException(
 			'Variable expansion exceeded maximum depth (' . self::MAX_VARIABLE_DEPTH . '). Possible circular reference.'
 		);

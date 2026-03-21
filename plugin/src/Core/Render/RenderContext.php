@@ -7,6 +7,8 @@
 
 namespace Spintax\Core\Render;
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Immutable context object passed through the rendering pipeline.
  *

@@ -7,6 +7,8 @@
 
 namespace Spintax\Core\Shortcode;
 
+defined( 'ABSPATH' ) || exit;
+
 use Spintax\Core\Render\Renderer;
 
 /**

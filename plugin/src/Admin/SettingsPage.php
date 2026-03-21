@@ -7,6 +7,8 @@
 
 namespace Spintax\Admin;
 
+defined( 'ABSPATH' ) || exit;
+
 use Spintax\Core\Cache\CacheManager;
 use Spintax\Core\Settings\SettingsRepository;
 use Spintax\Support\Capabilities;
@@ -185,6 +187,7 @@ class SettingsPage {
 	 * Save settings from POST data.
 	 */
 	private function save_settings(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified in handle_actions().
 		$patch = array(
 			'default_ttl'        => isset( $_POST['default_ttl'] ) ? (int) $_POST['default_ttl'] : 3600,
 			'editors_can_manage' => ! empty( $_POST['editors_can_manage'] ),
@@ -199,6 +202,7 @@ class SettingsPage {
 	 * Save global variables from POST data.
 	 */
 	private function save_global_variables(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified in handle_actions().
 		$names  = isset( $_POST['spintax_var_names'] ) && is_array( $_POST['spintax_var_names'] )
 			? array_map( 'sanitize_text_field', wp_unslash( $_POST['spintax_var_names'] ) )
 			: array();

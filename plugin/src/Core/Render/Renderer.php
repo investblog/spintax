@@ -7,6 +7,8 @@
 
 namespace Spintax\Core\Render;
 
+defined( 'ABSPATH' ) || exit;
+
 use Spintax\Core\Cache\CacheManager;
 use Spintax\Core\Cache\DependencyInvalidator;
 use Spintax\Core\Engine\Parser;
@@ -304,6 +306,7 @@ class Renderer {
 	 */
 	private function log_error( string $message ): void {
 		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 			error_log( '[Spintax] ' . $message );
 		}
 	}

@@ -7,6 +7,8 @@
 
 namespace Spintax\Support;
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Manages the custom `manage_spintax_templates` capability
  * and maps it to CPT primitive capabilities.

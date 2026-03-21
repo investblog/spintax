@@ -7,6 +7,8 @@
 
 namespace Spintax\Support;
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * Static validation and normalisation methods.
  */

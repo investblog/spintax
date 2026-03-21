@@ -53,26 +53,57 @@ spl_autoload_register(
 register_activation_hook(
 	__FILE__,
 	function () {
-		// Activation logic.
+		$settings = new Core\Settings\SettingsRepository();
+		$settings->init_cache_salt();
+
+		$s = $settings->get();
+		Support\Capabilities::register( $s['editors_can_manage'] );
+
+		// CPT must be registered before flushing rewrite rules.
+		$cpt = new Core\PostType\TemplatePostType();
+		$cpt->register();
+		flush_rewrite_rules( false );
 	}
 );
 
 /**
- * Deactivation hook.
+ * Deactivation hook — clear cron events but keep data.
  */
 register_deactivation_hook(
 	__FILE__,
 	function () {
-		// Deactivation logic.
+		wp_clear_scheduled_hook( 'spintax_cron_regenerate' );
 	}
 );
 
 /**
- * Initialize plugin.
+ * Initialize plugin on plugins_loaded.
  */
 add_action(
 	'plugins_loaded',
 	function () {
-		// Plugin initialization.
+		// Register CPT.
+		$cpt = new Core\PostType\TemplatePostType();
+		$cpt->init();
+
+		// Sync capabilities with current settings.
+		if ( is_admin() ) {
+			$settings = new Core\Settings\SettingsRepository();
+			$s        = $settings->get();
+			Support\Capabilities::sync( $s['editors_can_manage'] );
+		}
+	}
+);
+
+/**
+ * Add "Settings" link on the plugins page.
+ */
+add_filter(
+	'plugin_action_links_' . SPINTAX_PLUGIN_BASENAME,
+	function ( array $links ): array {
+		$url  = admin_url( 'options-general.php?page=spintax-settings' );
+		$link = '<a href="' . esc_url( $url ) . '">' . esc_html__( 'Settings', 'spintax' ) . '</a>';
+		array_unshift( $links, $link );
+		return $links;
 	}
 );

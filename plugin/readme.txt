@@ -58,6 +58,29 @@ The plugin uses the WordPress Object Cache API. With a persistent backend (Redis
 
 Yes: `[spintax slug="greeting" name="Alice" city="Moscow"]` makes `%name%` and `%city%` available inside the template.
 
+== Screenshots ==
+
+1. Template editor with spintax markup and live preview.
+2. Settings page with global variables editor.
+3. Template list with shortcode, cache status, and cron schedule.
+
+== External services ==
+
+This plugin does **not** connect to any external services, APIs, or third-party servers.
+
+All content generation happens locally on your WordPress server. No data is sent externally. No remote requests are made during activation, rendering, or caching.
+
+== Privacy Policy ==
+
+This plugin does not collect, store, or transmit any personal user data. It does not use cookies, tracking pixels, analytics, or any form of telemetry.
+
+Templates and their rendered output are stored entirely within your WordPress database and object cache.
+
+== Credits ==
+
+* Syntax based on the [GTW (Generating The Web)](https://spintax.net) standard
+* Developed by [301st](https://301.st)
+
 == Changelog ==
 
 = 1.0.0 =
@@ -69,3 +92,8 @@ Yes: `[spintax slug="greeting" name="Alice" city="Moscow"]` makes `%name%` and `
 * Per-template cron regeneration
 * Global and local variable scopes
 * Settings page with global variables editor
+
+== Upgrade Notice ==
+
+= 1.0.0 =
+Initial release.

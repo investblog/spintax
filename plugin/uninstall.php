@@ -10,10 +10,10 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 global $wpdb;
 
 // 1. Delete all spintax_template posts and their meta.
-// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 $spintax_post_ids = $wpdb->get_col(
-	"SELECT ID FROM {$wpdb->posts} WHERE post_type = 'spintax_template'"
+	$wpdb->prepare( "SELECT ID FROM {$wpdb->posts} WHERE post_type = %s", 'spintax_template' )
 );
 if ( ! empty( $spintax_post_ids ) ) {
 	foreach ( $spintax_post_ids as $post_id ) {

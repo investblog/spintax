@@ -440,11 +440,24 @@ Example shape:
 spintax_{global_salt}_{template_id}_{template_version}_{context_hash}
 ```
 
-### 8.3 Why Versioned Keys Are Required
+### 8.3 Cache Backend
 
-WordPress transients do not support reliable wildcard deletion. Versioned keys let the plugin invalidate caches safely by bumping versions instead of scanning the database for every possible key.
+v1 uses the WordPress Object Cache API (`wp_cache_set` / `wp_cache_get`) with a dedicated cache group `spintax`.
 
-### 8.4 Invalidation Rules
+Rationale:
+
+- Object cache does not pollute `wp_options` — no expired-entry garbage, no autoload bloat
+- With a persistent backend (Redis, Memcached) caching is fast and cross-request
+- Without a persistent backend, object cache is per-request only — the template is re-rendered on each page load, which is acceptable for low-traffic sites
+- `wp_cache_flush_group( 'spintax' )` (WP 6.1+) enables clean bulk invalidation
+
+Transients are explicitly avoided — they write to the database on every cache miss and accumulate stale rows.
+
+### 8.4 Why Versioned Keys Are Required
+
+Versioned keys let the plugin invalidate caches safely by bumping a version counter instead of scanning for and deleting every possible key.
+
+### 8.5 Invalidation Rules
 
 The following actions invalidate public caches:
 
@@ -456,13 +469,13 @@ The following actions invalidate public caches:
 
 When a template changes, any parent template that embeds it must also be invalidated.
 
-### 8.5 Default vs Contextual Cache Entries
+### 8.6 Default vs Contextual Cache Entries
 
 - The default render context is the render with no runtime variables
 - Contextual renders are keyed by runtime variable hash
 - v1 stores no historical archive of old variants; only active cache entries for the current versions exist
 
-### 8.6 Manual Regeneration
+### 8.7 Manual Regeneration
 
 The edit screen has two different actions:
 
@@ -471,7 +484,7 @@ The edit screen has two different actions:
 
 Manual public regeneration should bypass child caches for that single regeneration request so the new public variant reflects a fresh full subtree render.
 
-### 8.7 Cron Regeneration
+### 8.8 Cron Regeneration
 
 Per-template cron is optional.
 
@@ -665,7 +678,7 @@ Rules:
 | Global variables | `wp_options` | `spintax_global_variables` |
 | Plugin settings | `wp_options` | `spintax_settings` |
 | Global cache salt/version | `wp_options` | `spintax_cache_salt` |
-| Cached output | transients | versioned key pattern |
+| Cached output | WP Object Cache | group `spintax`, versioned key pattern |
 
 ### 12.2 Dependency Tracking
 
@@ -678,7 +691,7 @@ On uninstall, the plugin removes:
 - All `spintax_template` posts and their post meta
 - All plugin options
 - All plugin capabilities from roles
-- All current cache entries by bumping/removing cache salt and deleting known transients where practical
+- All current cache entries via `wp_cache_flush_group( 'spintax' )` where supported, or cache salt bump
 
 Deactivation does not delete data.
 

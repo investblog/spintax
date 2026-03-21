@@ -48,7 +48,7 @@ Templates are standalone entities (Custom Post Type `spintax_template`), not tie
 - Raw spintax syntax `[a|b|c]` lives ONLY inside CPT content — never in post/page content directly. No shortcode conflict.
 
 ### Generation & caching
-- On first render: spin the template, cache the result (WP transients)
+- On first render: spin the template, cache via WP Object Cache API (group `spintax`). No transients — no DB pollution.
 - Cache TTL: configurable per template (meta) with global default fallback (settings)
 - Cached variant is shown to ALL visitors until TTL expires or manual purge
 - Manual regeneration via admin button ("Regenerate" on template edit screen)

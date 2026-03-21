@@ -54,7 +54,7 @@ foreach ( wp_roles()->role_objects as $role ) {
 	}
 }
 
-// 4. Clean up transients (best-effort via known prefix).
-$wpdb->query(
-	"DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_spintax_%' OR option_name LIKE '_transient_timeout_spintax_%'"
-);
+// 4. Flush object cache group (WP 6.1+).
+if ( function_exists( 'wp_cache_flush_group' ) ) {
+	wp_cache_flush_group( 'spintax' );
+}

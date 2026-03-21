@@ -1,0 +1,20 @@
+{
+  "core": "WordPress/WordPress",
+  "phpVersion": "8.2",
+  "port": 8892,
+  "testsPort": 8893,
+  "mappings": {
+    "wp-content/plugins/spintax": "./plugin",
+    "wp-content/plugins/spintax/tests": "./tests",
+    "wp-content/plugins/spintax/phpunit.xml.dist": "./phpunit.xml.dist"
+  },
+  "plugins": [
+    "https://downloads.wordpress.org/plugin/plugin-check.latest-stable.zip",
+    "https://downloads.wordpress.org/plugin/query-monitor.latest-stable.zip"
+  ],
+  "config": {
+    "WP_DEBUG": true,
+    "WP_DEBUG_LOG": true,
+    "SCRIPT_DEBUG": true
+  }
+}

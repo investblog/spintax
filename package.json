@@ -1,0 +1,20 @@
+{
+  "name": "spintax-dev",
+  "private": true,
+  "scripts": {
+    "env:start": "wp-env start",
+    "env:stop": "wp-env stop",
+    "env:destroy": "wp-env destroy",
+    "env:logs": "wp-env logs",
+    "wp:cli": "wp-env run cli wp",
+    "wp:plugin:activate": "wp-env run cli wp plugin activate spintax",
+    "wp:plugin:deactivate": "wp-env run cli wp plugin deactivate spintax",
+    "wp:db:reset": "wp-env run cli wp db reset --yes",
+    "lint:php": "composer run phpcs",
+    "lint:php:fix": "composer run phpcbf",
+    "test:php": "wp-env run tests-cli --env-cwd=wp-content/plugins/spintax phpunit"
+  },
+  "devDependencies": {
+    "@wordpress/env": "^10.0.0"
+  }
+}

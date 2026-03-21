@@ -274,6 +274,103 @@ class ParserTest extends \WP_UnitTestCase {
 		$this->assertSame( 'Привет', $parser->post_process( 'привет' ) );
 	}
 
+	public function test_post_process_preserves_domain(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Visit example.com today.',
+			$parser->post_process( 'visit example.com today.' )
+		);
+	}
+
+	public function test_post_process_preserves_url(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Go to https://example.com/path?q=1 now.',
+			$parser->post_process( 'go to https://example.com/path?q=1 now.' )
+		);
+	}
+
+	public function test_post_process_preserves_email(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Mail support@1xslots.com for help.',
+			$parser->post_process( 'mail support@1xslots.com for help.' )
+		);
+	}
+
+	public function test_post_process_preserves_email_in_html(): void {
+		$parser = $this->make_first();
+		$input  = '<a href="mailto:support@1xslots.com">support@1xslots.com</a>';
+		$result = $parser->post_process( $input );
+		$this->assertStringContainsString( 'support@1xslots.com', $result );
+		$this->assertStringNotContainsString( '1xslots. com', $result );
+	}
+
+	public function test_post_process_preserves_subdomain(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Check t.me/channel now.',
+			$parser->post_process( 'check t.me/channel now.' )
+		);
+	}
+
+	public function test_post_process_preserves_decimal(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Rating 4.5 out of 5.',
+			$parser->post_process( 'rating 4.5 out of 5.' )
+		);
+	}
+
+	public function test_post_process_preserves_idn_domain(): void {
+		$parser = $this->make_first();
+		$this->assertStringContainsString(
+			'xn--e1afmapc.xn--p1ai',
+			$parser->post_process( 'visit xn--e1afmapc.xn--p1ai today' )
+		);
+	}
+
+	public function test_post_process_capitalize_after_html_tag(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'<h1>Hello world</h1>',
+			$parser->post_process( '<h1>hello world</h1>' )
+		);
+	}
+
+	public function test_post_process_capitalize_after_p_tag(): void {
+		$parser = $this->make_first();
+		$result = $parser->post_process( '<p>first paragraph.</p><p>second paragraph.</p>' );
+		$this->assertStringContainsString( '<p>First paragraph.', $result );
+		$this->assertStringContainsString( '<p>Second paragraph.', $result );
+	}
+
+	public function test_post_process_capitalize_after_li_tag(): void {
+		$parser = $this->make_first();
+		$result = $parser->post_process( '<li>item one.</li><li>item two.</li>' );
+		$this->assertStringContainsString( '<li>Item one.', $result );
+		$this->assertStringContainsString( '<li>Item two.', $result );
+	}
+
+	public function test_post_process_capitalize_through_closing_opening_tags(): void {
+		$parser = $this->make_first();
+		// Sentence ends with period, then closing + opening tags, then lowercase.
+		$result = $parser->post_process( 'end.</p><p>start of next' );
+		$this->assertStringContainsString( '<p>Start of next', $result );
+	}
+
+	public function test_post_process_capitalize_after_newline(): void {
+		$parser = $this->make_first();
+		$this->assertSame( "First line.\nSecond line.", $parser->post_process( "first line.\nsecond line." ) );
+	}
+
+	public function test_post_process_preserves_abbreviation(): void {
+		$parser = $this->make_first();
+		$result = $parser->post_process( 'и т.д. другие' );
+		// "т.д." is an abbreviation — should NOT capitalize "другие".
+		$this->assertStringContainsString( 'т.д.', $result );
+	}
+
 	// =========================================================================
 	// #include directives
 	// =========================================================================

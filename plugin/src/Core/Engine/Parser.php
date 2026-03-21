@@ -198,31 +198,137 @@ class Parser {
 
 	/**
 	 * Lightweight sentence and whitespace correction.
+	 *
+	 * Processing order matters — URLs, emails and domains are shielded
+	 * from punctuation/capitalisation rules via placeholders.
+	 *
+	 * Pipeline:
+	 *   1. Shield URLs, emails, domains → placeholders
+	 *   2. Collapse duplicate whitespace
+	 *   3. Fix punctuation spacing
+	 *   4. Capitalise sentences
+	 *   5. Restore placeholders
 	 */
 	public function post_process( string $text ): string {
-		// Collapse multiple spaces/tabs (not newlines).
+		$placeholders = array();
+		$counter      = 0;
+
+		// --- 1. Shield: full URLs (with protocol) --------------------------
+		$text = preg_replace_callback(
+			'~(?:https?|ftp)://[^\s<>"\')\]]+~iu',
+			static function ( array $m ) use ( &$placeholders, &$counter ): string {
+				$key                    = "\x00URL_{$counter}\x00";
+				$placeholders[ $key ]   = $m[0];
+				++$counter;
+				return $key;
+			},
+			$text
+		);
+
+		// --- 2. Shield: email addresses ------------------------------------
+		$text = preg_replace_callback(
+			'/[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/iu',
+			static function ( array $m ) use ( &$placeholders, &$counter ): string {
+				$key                    = "\x00EMAIL_{$counter}\x00";
+				$placeholders[ $key ]   = $m[0];
+				++$counter;
+				return $key;
+			},
+			$text
+		);
+
+		// --- 3. Shield: bare domains (ASCII + punycode + IDN) --------------
+		// Matches: example.com, sub.domain.co.uk, xn--e1afmapc.xn--p1ai, домен.рф
+		// Requires dot-separated labels ending with a 2-63 char TLD that
+		// contains at least one letter (excludes pure numbers like 3.14).
+		$text = preg_replace_callback(
+			'~\b(?:(?:(?:xn--)?[a-z0-9]+(?:-[a-z0-9]+)*|[^\s<>,.;:!?/\[\]{}|%]+)\.)+(?:xn--)?[a-z][a-z0-9\-]{1,62}\b~iu',
+			static function ( array $m ) use ( &$placeholders, &$counter ): string {
+				$key                    = "\x00DOM_{$counter}\x00";
+				$placeholders[ $key ]   = $m[0];
+				++$counter;
+				return $key;
+			},
+			$text
+		);
+
+		// --- 4. Shield: decimal numbers (3.14, 100.5) ----------------------
+		$text = preg_replace_callback(
+			'/\b\d+\.\d+\b/',
+			static function ( array $m ) use ( &$placeholders, &$counter ): string {
+				$key                    = "\x00NUM_{$counter}\x00";
+				$placeholders[ $key ]   = $m[0];
+				++$counter;
+				return $key;
+			},
+			$text
+		);
+
+		// --- 5. Shield: abbreviations (т.д., и т.п., etc.) ----------------
+		// 1-2 letter words followed by period, repeated — covers т.д., т.п., и т.д., etc.
+		$text = preg_replace_callback(
+			'/\b(?:\p{L}{1,2}\.){1,}(?:\s\p{L}{1,2}\.)*/u',
+			static function ( array $m ) use ( &$placeholders, &$counter ): string {
+				$key                    = "\x00ABBR_{$counter}\x00";
+				$placeholders[ $key ]   = $m[0];
+				++$counter;
+				return $key;
+			},
+			$text
+		);
+
+		// --- 6. Whitespace cleanup -----------------------------------------
 		$text = preg_replace( '/[ \t]{2,}/u', ' ', $text );
 
-		// Remove space before punctuation.
+		// --- 7. Punctuation spacing ----------------------------------------
+		// Remove whitespace BEFORE punctuation:  "word ," → "word,"
 		$text = preg_replace( '/\s+([,;:!?.])/u', '$1', $text );
-
-		// Ensure space after sentence-ending punctuation unless followed by
-		// digit (decimal), closing tag, whitespace, or end of string.
+		// Ensure space AFTER comma/semicolon/colon unless followed by
+		// digit, whitespace, end, or tag. Placeholders (\x00) are allowed
+		// — they will be restored later and need the space before them.
+		$text = preg_replace( '/([,;:])(?!\d)(?!\s|$|<)/u', '$1 ', $text );
+		// Ensure space AFTER sentence-ending punctuation (.!?) same rules.
 		$text = preg_replace( '/([.!?])(?!\d)(?!\s|$|<)/u', '$1 ', $text );
 
-		// Capitalize first letter of the text.
+		// --- 8. Capitalise first letter (skip leading HTML tags) -----------
 		$text = preg_replace_callback(
-			'/^(\s*)(\p{Ll})/u',
+			'/^(\s*(?:<[^>]+>\s*)*)(\p{Ll})/u',
 			static fn( array $m ): string => $m[1] . mb_strtoupper( $m[2], 'UTF-8' ),
 			$text
 		);
 
-		// Capitalize after sentence-ending punctuation + whitespace.
+		// --- 9. Capitalise after sentence-ending punctuation ---------------
+		// Handles punctuation followed by optional HTML tags before the letter:
+		//   "text. Next"  and  "text.</p><p>next"
 		$text = preg_replace_callback(
-			'/([.!?]\s+)(\p{Ll})/u',
+			'/([.!?…])(\s*(?:<\/?[^>]+>\s*)*)(\p{Ll})/u',
+			static fn( array $m ): string => $m[1] . $m[2] . mb_strtoupper( $m[3], 'UTF-8' ),
+			$text
+		);
+
+		// --- 10. Capitalise after block-level HTML tags --------------------
+		// After <p>, </p><p>, <h1>–<h6>, <li>, <blockquote>, <div>, <td>, <th>
+		$text = preg_replace_callback(
+			'/(<\/?(?:p|h[1-6]|li|blockquote|div|td|th)[^>]*>\s*)(\p{Ll})/ui',
 			static fn( array $m ): string => $m[1] . mb_strtoupper( $m[2], 'UTF-8' ),
 			$text
 		);
+
+		// --- 11. Capitalise after line breaks ------------------------------
+		$text = preg_replace_callback(
+			'/(\n\s*)(\p{Ll})/u',
+			static fn( array $m ): string => $m[1] . mb_strtoupper( $m[2], 'UTF-8' ),
+			$text
+		);
+
+		// --- 9. Restore placeholders (reverse order for safety) ------------
+		if ( ! empty( $placeholders ) ) {
+			$text = str_replace(
+				array_keys( $placeholders ),
+				array_values( $placeholders ),
+				$text
+			);
+		}
 
 		return trim( $text );
 	}

@@ -86,6 +86,22 @@ Templates are standalone entities (Custom Post Type `spintax_template`), not tie
 - Configurable in settings: checkbox to restrict to admins only
 - Custom capability `manage_spintax_templates` mapped to roles based on setting
 
+## Post-processing pipeline (Parser::post_process)
+
+Order matters — incorrect sequencing causes domain/email corruption or missing spaces.
+
+1. **Shield** URLs, emails, bare domains (ASCII + punycode + IDN), decimals, abbreviations → opaque placeholders
+2. **Collapse** duplicate spaces/tabs
+3. **Remove** whitespace before punctuation (`,;:!?.`)
+4. **Add** space after `,;:` and `.!?` where missing (not before digits, tags, end-of-string)
+5. **Capitalise** first letter (skip leading HTML tags)
+6. **Capitalise** after `.!?…` (looking through HTML closing/opening tags)
+7. **Capitalise** after block-level HTML tags (`<p>`, `<h1>`–`<h6>`, `<li>`, `<div>`, etc.)
+8. **Capitalise** after line breaks
+9. **Restore** placeholders
+
+Key: shielding MUST happen before any punctuation rules. Restoration MUST happen after all corrections.
+
 ## Known bugs in old WP plugin (do NOT repeat)
 
 - Spintax pattern `[^{}]*` doesn't support true nesting

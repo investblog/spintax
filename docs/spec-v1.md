@@ -339,18 +339,19 @@ The PHP implementation should match the Java reference pipeline semantically whi
 
 1. Resolve the template by ID or slug
 2. Load raw `post_content`
-3. Parse local `#set` definitions and strip them from the visible template body
-4. Build the effective variable context:
+3. Strip block comments (`/#...#/`)
+4. Parse local `#set` definitions and strip them from the visible template body
+5. Build the effective variable context:
    - global settings
    - local `#set`
    - runtime variables
-5. Expand `%var%` references lazily with recursion and cycle guards
-6. Resolve enumeration expressions `{...}` from the innermost level outward
-7. Resolve permutation expressions `[...]` from the innermost level outward
-8. Resolve `#include` directives and nested `[spintax ...]` shortcodes in the already-selected output branches only
-9. Apply lightweight formatting cleanup and sentence correction
-10. Sanitize the final HTML for frontend output
-11. Store or refresh cache if caching is enabled
+6. Expand `%var%` references lazily with recursion and cycle guards
+7. Resolve enumeration expressions `{...}` from the innermost level outward
+8. Resolve permutation expressions `[...]` from the innermost level outward
+9. Resolve `#include` directives and nested `[spintax ...]` shortcodes in the already-selected output branches only
+10. Apply formatting cleanup and sentence correction (see 7.3)
+11. Sanitize the final HTML for frontend output
+12. Store or refresh cache if caching is enabled
 
 ### 7.2 Important Semantics
 
@@ -363,16 +364,40 @@ The PHP implementation should match the Java reference pipeline semantically whi
 
 v1 keeps this stage intentionally lightweight and close to the Java reference.
 
-Guaranteed goals:
+The stage uses a placeholder-shielding strategy: URLs, emails, bare domains, decimal numbers and short abbreviations are temporarily replaced with opaque tokens before any spacing or capitalisation rules run, then restored at the end. This prevents punctuation rules from breaking `support@site.com` into `support@site. Com` or capitalising after `т.д.`.
 
-- Remove obviously broken spacing around punctuation
-- Collapse accidental duplicate spaces
-- Uppercase the first letter of the text
-- Uppercase the first letter after sentence-ending punctuation and line breaks where safe
+#### 7.3.1 Shielding (before corrections)
 
-Non-goal:
+Shielded in this order:
 
-- Heavy natural-language normalization
+1. Full URLs with protocol (`https://example.com/path?q=1`)
+2. Email addresses (`user@domain.com`)
+3. Bare domains — ASCII, punycode (`xn--...`) and IDN (`домен.рф`), including subdomains (`sub.domain.co.uk`). TLD must contain at least one letter to exclude pure numbers.
+4. Decimal numbers (`3.14`, `100.5`)
+5. Short abbreviations — sequences of 1–2 letter words followed by periods (`т.д.`, `и т.п.`, `т.е.`)
+
+#### 7.3.2 Corrections
+
+Applied in this order after shielding:
+
+1. Collapse duplicate spaces and tabs (not newlines)
+2. Remove whitespace before punctuation (`,;:!?.`)
+3. Ensure space after comma, semicolon, colon — unless followed by digit, whitespace, end-of-string or HTML tag
+4. Ensure space after sentence-ending punctuation (`.!?`) — same exclusions
+5. Capitalise first letter of text, skipping leading HTML tags
+6. Capitalise after sentence-ending punctuation (`.!?…`), looking through closing/opening HTML tags
+7. Capitalise after block-level HTML tags (`<p>`, `<h1>`–`<h6>`, `<li>`, `<blockquote>`, `<div>`, `<td>`, `<th>`)
+8. Capitalise after line breaks
+
+#### 7.3.3 Restore
+
+All placeholders are replaced back with original values.
+
+#### 7.3.4 Non-goals
+
+- Heavy natural-language normalisation
+- Abbreviation-aware sentence boundary detection beyond the short-word heuristic
+- Fixing missing spaces inside template content that was authored without them (e.g. separator `, а` without trailing space is a template issue, not a post-processing issue)
 
 ### 7.4 Runtime Error Behavior
 

@@ -61,7 +61,7 @@ class SettingsRepository {
 	}
 
 	/**
-	 * Replace all global variables.
+	 * Replace all global variables (parsed key-value pairs).
 	 *
 	 * @param array<string, string> $vars name => value (names without %).
 	 */
@@ -71,6 +71,39 @@ class SettingsRepository {
 
 		// Bump global cache salt so all cached renders are invalidated.
 		$this->bump_cache_salt();
+	}
+
+	/**
+	 * Get raw global variables text (for the editor).
+	 *
+	 * @return string Raw #set text.
+	 */
+	public function get_global_variables_raw(): string {
+		$raw = get_option( OptionKeys::GLOBAL_VARIABLES_RAW, '' );
+		if ( is_string( $raw ) && '' !== $raw ) {
+			return $raw;
+		}
+
+		// Fallback: reconstruct from parsed variables (migration from old format).
+		$vars = $this->get_global_variables();
+		if ( empty( $vars ) ) {
+			return '';
+		}
+
+		$lines = array();
+		foreach ( $vars as $name => $value ) {
+			$lines[] = '#set %' . $name . '% = ' . $value;
+		}
+		return implode( "\n", $lines );
+	}
+
+	/**
+	 * Save raw global variables text.
+	 *
+	 * @param string $raw Raw #set text from editor.
+	 */
+	public function set_global_variables_raw( string $raw ): void {
+		update_option( OptionKeys::GLOBAL_VARIABLES_RAW, $raw, false );
 	}
 
 	/**

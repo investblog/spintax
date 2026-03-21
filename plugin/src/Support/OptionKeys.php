@@ -22,11 +22,18 @@ final class OptionKeys {
 	public const SETTINGS = 'spintax_settings';
 
 	/**
-	 * Global variables option key.
+	 * Global variables parsed key-value pairs.
 	 *
 	 * @var string
 	 */
 	public const GLOBAL_VARIABLES = 'spintax_global_variables';
+
+	/**
+	 * Global variables raw #set text (for the editor).
+	 *
+	 * @var string
+	 */
+	public const GLOBAL_VARIABLES_RAW = 'spintax_global_variables_raw';
 
 	/**
 	 * Global cache salt/version option key.

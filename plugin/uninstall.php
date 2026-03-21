@@ -25,6 +25,7 @@ if ( ! empty( $spintax_post_ids ) ) {
 $spintax_options = array(
 	'spintax_settings',
 	'spintax_global_variables',
+	'spintax_global_variables_raw',
 	'spintax_cache_salt',
 	'spintax_logs',
 );

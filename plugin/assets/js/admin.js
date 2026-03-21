@@ -118,20 +118,15 @@
     setTimeout(function () { $tip.fadeOut(300, function () { $tip.remove(); }); }, 1000);
   }
 
-  // --- Global variables: add/remove rows ---
-  $(document).on("click", ".spintax-add-row", function () {
-    var $tbody = $("#spintax-variables-table tbody");
-    $tbody.append(
-      '<tr>' +
-        '<td><input type="text" name="spintax_var_names[]" value="" class="regular-text" placeholder="name"></td>' +
-        '<td><input type="text" name="spintax_var_values[]" value="" class="large-text" placeholder="value"></td>' +
-        '<td><button type="button" class="button spintax-remove-row">&times;</button></td>' +
-      '</tr>'
-    );
-  });
-
-  $(document).on("click", ".spintax-remove-row", function () {
-    $(this).closest("tr").remove();
+  // --- Global variables textarea: tab key inserts tab ---
+  $(document).on("keydown", "#spintax-global-variables", function (e) {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      var start = this.selectionStart;
+      var end = this.selectionEnd;
+      this.value = this.value.substring(0, start) + "\t" + this.value.substring(end);
+      this.selectionStart = this.selectionEnd = start + 1;
+    }
   });
 
   // --- Helpers ---

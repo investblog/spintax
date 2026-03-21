@@ -92,8 +92,8 @@ class SettingsPage {
 	 * Render the settings page.
 	 */
 	public function render(): void {
-		$settings  = $this->repo->get();
-		$variables = $this->repo->get_global_variables();
+		$settings      = $this->repo->get();
+		$variables_raw = $this->repo->get_global_variables_raw();
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'Spintax Settings', 'spintax' ); ?></h1>
@@ -142,38 +142,21 @@ class SettingsPage {
 
 				<h2><?php esc_html_e( 'Global Variables', 'spintax' ); ?></h2>
 				<p class="description">
-					<?php esc_html_e( 'Available to all templates as %name%. Variable names are case-insensitive.', 'spintax' ); ?>
+					<?php
+					esc_html_e(
+						'One variable per line using #set syntax. Available to all templates. Local #set in a template overrides globals with the same name.',
+						'spintax'
+					);
+					?>
 				</p>
+				<p class="description"><code>#set %name% = value</code></p>
 
-				<table class="widefat spintax-variables-table" id="spintax-variables-table">
-					<thead>
-						<tr>
-							<th><?php esc_html_e( 'Name', 'spintax' ); ?></th>
-							<th><?php esc_html_e( 'Value', 'spintax' ); ?></th>
-							<th class="spintax-col-actions"></th>
-						</tr>
-					</thead>
-					<tbody>
-						<?php if ( ! empty( $variables ) ) : ?>
-							<?php foreach ( $variables as $name => $value ) : ?>
-								<tr>
-									<td><input type="text" name="spintax_var_names[]" value="<?php echo esc_attr( $name ); ?>" class="regular-text"></td>
-									<td><input type="text" name="spintax_var_values[]" value="<?php echo esc_attr( $value ); ?>" class="large-text"></td>
-									<td><button type="button" class="button spintax-remove-row">&times;</button></td>
-								</tr>
-							<?php endforeach; ?>
-						<?php endif; ?>
-					</tbody>
-					<tfoot>
-						<tr>
-							<td colspan="3">
-								<button type="button" class="button spintax-add-row">
-									<?php esc_html_e( '+ Add Variable', 'spintax' ); ?>
-								</button>
-							</td>
-						</tr>
-					</tfoot>
-				</table>
+				<?php $this->render_variable_errors(); ?>
+
+				<textarea name="spintax_global_variables_raw" id="spintax-global-variables"
+					class="large-text code" rows="16"
+					placeholder="<?php esc_attr_e( "#set %sitename% = My Site\n#set %year% = 2026\n#set %colors% = {red|blue|green}", 'spintax' ); ?>"
+				><?php echo esc_textarea( $variables_raw ); ?></textarea>
 
 				<?php submit_button( __( 'Save Settings', 'spintax' ), 'primary', 'spintax_save_settings' ); ?>
 			</form>
@@ -206,27 +189,93 @@ class SettingsPage {
 	}
 
 	/**
-	 * Save global variables from POST data.
+	 * Save global variables from raw #set textarea.
 	 */
 	private function save_global_variables(): void {
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- nonce verified in handle_actions().
-		$names  = isset( $_POST['spintax_var_names'] ) && is_array( $_POST['spintax_var_names'] )
-			? array_map( 'sanitize_text_field', wp_unslash( $_POST['spintax_var_names'] ) )
-			: array();
-		$values = isset( $_POST['spintax_var_values'] ) && is_array( $_POST['spintax_var_values'] )
-			? array_map( 'sanitize_text_field', wp_unslash( $_POST['spintax_var_values'] ) )
-			: array();
+		$raw = isset( $_POST['spintax_global_variables_raw'] )
+			? wp_unslash( $_POST['spintax_global_variables_raw'] )
+			: '';
 		// phpcs:enable WordPress.Security.NonceVerification.Missing
 
-		$vars = array();
-		foreach ( $names as $i => $name ) {
-			$name = trim( $name );
-			if ( '' === $name ) {
-				continue;
-			}
-			$vars[ $name ] = $values[ $i ] ?? '';
+		// Validate syntax before saving.
+		$errors = $this->validate_global_variables( $raw );
+		if ( ! empty( $errors ) ) {
+			// Store errors for display after redirect.
+			set_transient(
+				'spintax_global_vars_errors_' . get_current_user_id(),
+				$errors,
+				120
+			);
 		}
 
-		$this->repo->set_global_variables( $vars );
+		// Parse #set directives into name => value pairs.
+		$parser    = new \Spintax\Core\Engine\Parser();
+		$extracted = $parser->extract_set_directives( $raw );
+
+		// Save both raw text (for the editor) and parsed variables (for rendering).
+		$this->repo->set_global_variables_raw( $raw );
+		$this->repo->set_global_variables( $extracted['variables'] );
+	}
+
+	/**
+	 * Validate global variables raw text.
+	 *
+	 * @param string $raw Raw #set text.
+	 * @return array<array{message: string, line: int}> Validation errors.
+	 */
+	private function validate_global_variables( string $raw ): array {
+		$errors = array();
+		$lines  = explode( "\n", $raw );
+
+		foreach ( $lines as $line_num => $line_text ) {
+			$trimmed = trim( $line_text );
+			if ( '' === $trimmed ) {
+				continue;
+			}
+
+			// Every non-empty line must be a valid #set directive.
+			if ( ! preg_match( '/^#set\s+%(\w+)%\s*=\s*(.+)$/u', $trimmed ) ) {
+				$errors[] = array(
+					'message' => sprintf(
+						/* translators: %1$d: line number, %2$s: line content. */
+						__( 'Line %1$d: invalid syntax. Expected: #set %%name%% = value. Got: %2$s', 'spintax' ),
+						$line_num + 1,
+						mb_substr( $trimmed, 0, 60 )
+					),
+					'line'    => $line_num + 1,
+				);
+			}
+		}
+
+		// Check bracket balance in values.
+		$validator = new \Spintax\Core\Engine\Validator();
+		$result    = $validator->validate( $raw );
+		foreach ( $result['errors'] as $err ) {
+			$errors[] = array(
+				'message' => $err['message'],
+				'line'    => $err['line'] ?? 0,
+			);
+		}
+
+		return $errors;
+	}
+
+	/**
+	 * Render global variable validation errors if any.
+	 */
+	private function render_variable_errors(): void {
+		$key    = 'spintax_global_vars_errors_' . get_current_user_id();
+		$errors = get_transient( $key );
+		if ( ! $errors || ! is_array( $errors ) ) {
+			return;
+		}
+		delete_transient( $key );
+
+		echo '<div class="notice notice-error"><ul>';
+		foreach ( $errors as $error ) {
+			printf( '<li>%s</li>', esc_html( $error['message'] ) );
+		}
+		echo '</ul></div>';
 	}
 }

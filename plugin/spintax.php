@@ -7,7 +7,7 @@
  * Requires at least: 6.2
  * Requires PHP:      8.0
  * Author:            301st
- * Author URI:        https://spintax.net
+ * Author URI:        https://301.st
  * License:           GPL-2.0+
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       spintax

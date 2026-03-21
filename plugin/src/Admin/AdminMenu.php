@@ -39,6 +39,12 @@ class AdminMenu {
 	 * @param string $hook_suffix Admin page hook suffix.
 	 */
 	public function enqueue_assets( string $hook_suffix ): void {
+		// Menu icon color fix — must load on ALL admin pages.
+		wp_add_inline_style(
+			'admin-menu',
+			'#adminmenu .toplevel_page_edit-post_type-spintax_template .wp-menu-image img { opacity: 1; }'
+		);
+
 		$screen = get_current_screen();
 
 		$is_our_cpt  = $screen && TemplatePostType::POST_TYPE === $screen->post_type;

@@ -93,6 +93,12 @@ add_action(
 		// Load global helper function.
 		require_once SPINTAX_PLUGIN_DIR . 'src/Core/Render/functions.php';
 
+		// Admin UI.
+		if ( is_admin() ) {
+			$admin_menu = new Admin\AdminMenu();
+			$admin_menu->init();
+		}
+
 		// Invalidate cache when a template is saved.
 		add_action(
 			'save_post_' . Core\PostType\TemplatePostType::POST_TYPE,

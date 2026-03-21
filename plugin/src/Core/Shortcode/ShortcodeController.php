@@ -48,10 +48,11 @@ class ShortcodeController {
 	 *   [spintax id="123" city="Moscow" name="John"]
 	 *
 	 * @param array|string $atts    Shortcode attributes.
-	 * @param string|null  $content Enclosed content (unused).
+	 * @param string|null  $content Enclosed content (unused, required by WP shortcode API).
 	 * @return string Rendered template output.
 	 */
 	public function handle( $atts, ?string $content = null ): string {
+		unset( $content ); // Required by WP shortcode API but not used.
 		$raw_atts = is_array( $atts ) ? $atts : array();
 
 		$defaults = array(

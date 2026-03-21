@@ -7,18 +7,17 @@
 
 defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
-global $wpdb;
-
 // 1. Delete all spintax_template posts and their meta.
-// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
-$spintax_post_ids = $wpdb->get_col(
-	$wpdb->prepare( "SELECT ID FROM {$wpdb->posts} WHERE post_type = %s", 'spintax_template' )
+$spintax_post_ids = get_posts(
+	array(
+		'post_type'      => 'spintax_template',
+		'posts_per_page' => -1,
+		'post_status'    => 'any',
+		'fields'         => 'ids',
+	)
 );
-if ( ! empty( $spintax_post_ids ) ) {
-	foreach ( $spintax_post_ids as $spintax_pid ) {
-		wp_delete_post( (int) $spintax_pid, true );
-	}
+foreach ( $spintax_post_ids as $spintax_pid ) {
+	wp_delete_post( (int) $spintax_pid, true );
 }
 
 // 2. Delete plugin options.

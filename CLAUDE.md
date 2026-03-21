@@ -2,152 +2,177 @@
 
 ## Project overview
 
-Free WordPress plugin for spintax-based content generation. Target audience: content managers and SEO specialists (with developer-friendly architecture). Rewrite of existing personal plugin "nested-spintax-for-acf" with the Java engine (spintax-java) as the reference algorithm.
+Free WordPress plugin for spintax-based content generation. Slug `spintax` on WP.org (submitted, awaiting review). Target audience: content managers and SEO specialists. Rewrite of old plugin "nested-spintax-for-acf" with GTW engine syntax.
+
+- **GitHub:** https://github.com/investblog/spintax
+- **Plugin URI:** https://spintax.net
+- **Author:** 301st (https://301.st)
+- **Current version:** 1.0.1
+- **Status:** All 7 implementation phases complete. WP.org review pending.
 
 ## Reference sources
 
-- **Existing WP plugin (old, buggy):** `C:\Users\Admin\Local Sites\testcom\app\public\wp-content\plugins\nested-spintax-for-acf`
-- **Java spintax engine (reference algorithm):** `W:\spintax-java` — Spring Boot WAR (com.solut.tech.spinacf, v1.2.5)
-- **Project structure template:** `W:\Projects\wpci` (images-sync-for-cloudflare plugin)
+- **GTW syntax reference:** `docs/gtw-syntax-reference.md`
+- **Product spec:** `docs/spec-v1.md`
+- **Old WP plugin (buggy, for reference only):** `C:\Users\Admin\Local Sites\testcom\app\public\wp-content\plugins\nested-spintax-for-acf`
+- **Java spintax engine (algorithm reference):** `W:\spintax-java`
+- **Project structure template:** `W:\Projects\wpci` (images-sync-for-cloudflare, approved on WP.org)
 
-## Architecture decisions
+## Architecture
 
-- Project structure mirrors `wpci`: root dev tooling + `plugin/` directory with PSR-4 autoloaded `src/`
-- Namespace: `Spintax\`, global prefix: `spintax_` / `SPINTAX_`
-- PHP 8.0+, WordPress 6.2+
-- wp-env for local dev (ports 8892/8893)
-- PHPCS with WordPress coding standards
-- PHPUnit via wp-env
-- Free plugin, no feature gates. Commercial features — after traction.
-- i18n: all UI strings wrapped in `__()` / `esc_html__()` with text domain `spintax`. No translation files in v1.0 — just the keys.
+```
+plugin/
+  spintax.php                    # Bootstrap: PSR-4 autoloader, hooks, demo seed
+  uninstall.php                  # Full cleanup with $wpdb->prepare()
+  readme.txt                     # WP.org metadata
+  src/
+    Admin/
+      AdminMenu.php              # Centralised admin wiring + asset enqueuing
+      AdminNotice.php            # PRG flash-message trait
+      MetaBoxes.php              # Cache settings, preview (AJAX), usage boxes
+      SettingsPage.php           # Global variables textarea, TTL, access, debug
+      TemplateEditor.php         # List columns, forced text editor
+    Core/
+      Cache/
+        CacheManager.php         # WP Object Cache API, versioned keys, TTL
+        DependencyInvalidator.php # Cascade invalidation up dependency graph
+      Cron/
+        CronManager.php          # Per-template WP-Cron scheduling
+      Engine/
+        Parser.php               # GTW-compatible recursive-descent parser
+        Validator.php            # Static syntax analysis with line/column errors
+      PostType/
+        TemplatePostType.php     # CPT registration, block editor disabled
+      Render/
+        RenderContext.php        # Immutable variable scopes + call stack
+        Renderer.php             # 12-stage pipeline with cache + dependency tracking
+        functions.php            # Global spintax_render() helper
+      Settings/
+        SettingsRepository.php   # CRUD for settings, global vars, cache salt
+      Shortcode/
+        ShortcodeController.php  # [spintax] handler
+    Support/
+      Capabilities.php           # manage_spintax_templates role mapping
+      Defaults.php               # Factory methods for default config
+      Logging.php                # Ring-buffer debug logger
+      OptionKeys.php             # Centralised option/meta key constants
+      Validators.php             # Data normalisation helpers
+  assets/css/admin.css           # Native WP styles augmentation
+  assets/js/admin.js             # Preview AJAX, copy shortcode, variables
+```
 
-## Spintax syntax (GTW original — adopted as standard)
+## Spintax syntax (GTW original)
 
-- `{a|b|c}` — enumeration: randomly pick one option. Supports nesting: `{a|{b|c}}`, empty options: `{|a|b}`
-- `[a|b|c]` — permutation: pick N elements, shuffle, join with separator
-  - Simple: `[a|b|c]` (all elements, space-separated)
-  - Single separator: `[< и > a|b|c]`
-  - Configured: `[<minsize=2;maxsize=3;sep=", ";lastsep=" и "> a|b|c]`
-  - Per-element separator: `[<,> a|b < и >|c]`
-- `%var%` — variable reference
-- `#set %var% = value` — variable definition (value can contain spintax)
-- `/#...#/` — comments (stripped from output)
-- `#include "slug-or-id"` — GTW-compatible alias for nested template embedding (no variables, simple form)
-- NOT implementing in v1: `#const`, synonyms, shingles, links syntax
+- `{a|b|c}` — enumeration: pick one. Nesting: `{a|{b|c}}`. Empty options: `{|a|b}`.
+- `[a|b|c]` — permutation: pick N, shuffle, join.
+  - `[< and > a|b]` — single separator
+  - `[<minsize=2;maxsize=3;sep=", ";lastsep=" and "> a|b|c]` — configured
+- `%var%` — variable reference (case-insensitive)
+- `#set %var% = value` — local variable (value can contain spintax)
+- `/#...#/` — block comments (stripped)
+- `#include "slug-or-id"` — embed another template (GTW-compatible)
 
-## Templates — core concept
+## Key design decisions
 
-Templates are standalone entities (Custom Post Type `spintax_template`), not tied to specific fields or posts. A template contains spintax markup and can be embedded anywhere in the site.
-
-### Embedding methods
-- Shortcode only in posts/pages: `[spintax id="123"]` or `[spintax slug="my-template"]`
-- Shortcode with inline variables: `[spintax id="123" city="Moscow"]` → `%city%` available in template
-- Nested templates: a template can embed another via `[spintax id="..."]` inside its body
-- PHP function: `spintax_render( $id_or_slug, $vars = [] )` — for theme developers
-- Gutenberg block (future)
-- Raw spintax syntax `[a|b|c]` lives ONLY inside CPT content — never in post/page content directly. No shortcode conflict.
-
-### Generation & caching
-- On first render: spin the template, cache via WP Object Cache API (group `spintax`). No transients — no DB pollution.
-- Cache TTL: configurable per template (meta) with global default fallback (settings)
-- Cached variant is shown to ALL visitors until TTL expires or manual purge
-- Manual regeneration via admin button ("Regenerate" on template edit screen)
-- Cron-based regeneration: optional, per-template schedule
-- No history — just the current cached variant
-
-### Variables — two scopes
-- **Global variables:** site-wide, defined in plugin settings page. Available to all templates.
-- **Local variables:** defined inside template via `#set %var% = value`. Override globals if same name.
-- **Shortcode variables:** passed via shortcode attributes. Override both global and local.
-
-### ACF / meta integration (future feature)
-- Map template output to a post meta field or ACF field (wpci-style mapping)
-- Not in v1.0 scope — templates + shortcodes first
-
-## Admin UI
-
-- Native WordPress styles only, no custom CSS frameworks. Professional look like top WP plugins.
-- **Template CPT (`spintax_template`):**
-  - Title: template name. Slug auto-generated from title, auto-resolve conflicts.
-  - Editor: code editor (textarea) for spintax markup — NO visual/block editor
-  - Meta boxes: Cache TTL override, Cron schedule, Regenerate button, Preview panel
-  - Preview: shows one rendered variant with "Regenerate preview" button for a new spin
-  - Validation on save: check bracket matching, undefined variables → block save with error message (like old plugin's `check_template_syntax_with_field` but done right)
-  - Supports: title, editor, slug. No comments, no taxonomies, no featured image.
-- **Settings page** (Settings > Spintax):
-  - Global variables editor (key-value table)
-  - Default cache TTL
-  - Access control: allow editors to manage templates (default: yes, admins + editors)
-  - Debug mode toggle
-
-## Permissions
-
-- Default: `manage_options` (admins) and `edit_others_posts` (editors) can manage templates
-- Configurable in settings: checkbox to restrict to admins only
-- Custom capability `manage_spintax_templates` mapped to roles based on setting
+- **No transients** — WP Object Cache API only (no DB pollution)
+- **Scope isolation** — child templates inherit global+runtime vars, NOT parent's #set locals
+- **[spintax] shielding** — shortcodes inside templates are placeholder-shielded before permutation resolution to avoid bracket conflicts
+- **Preview uses editor content** — AJAX sends textarea value, NOT saved DB content
+- **No wp_kses_post on input** — template source is raw spintax, sanitisation only on render OUTPUT
+- **minsize/maxsize defaults** — if only maxsize set, minsize=1 (not total). If only minsize set, maxsize=total.
 
 ## Post-processing pipeline (Parser::post_process)
 
-Order matters — incorrect sequencing causes domain/email corruption or missing spaces.
+Order matters — incorrect sequencing causes domain/email corruption.
 
-1. **Shield** URLs, emails, bare domains (ASCII + punycode + IDN), decimals, abbreviations → opaque placeholders
+1. **Shield** URLs, emails, bare domains (ASCII+punycode+IDN), decimals, abbreviations → placeholders
 2. **Collapse** duplicate spaces/tabs
-3. **Remove** whitespace before punctuation (`,;:!?.`)
-4. **Add** space after `,;:` and `.!?` where missing (not before digits, tags, end-of-string)
+3. **Remove** whitespace before punctuation
+4. **Add** space after `,;:` and `.!?` where missing
 5. **Capitalise** first letter (skip leading HTML tags)
-6. **Capitalise** after `.!?…` (looking through HTML closing/opening tags)
+6. **Capitalise** after `.!?…` (through HTML tags)
 7. **Capitalise** after block-level HTML tags (`<p>`, `<h1>`–`<h6>`, `<li>`, `<div>`, etc.)
 8. **Capitalise** after line breaks
 9. **Restore** placeholders
 
-Key: shielding MUST happen before any punctuation rules. Restoration MUST happen after all corrections.
+## Global variables
 
-## Known bugs in old WP plugin (do NOT repeat)
+Entered as raw `#set` syntax in Settings → Spintax textarea (not key-value table). Parsed by `Parser::extract_set_directives()`, validated with line-number errors on save. Stored as both raw text (for editor) and parsed pairs (for rendering).
 
-- Spintax pattern `[^{}]*` doesn't support true nesting
-- `minsize=1` forcibly reset to 2
-- Dead code: `firstsep`, `parse_variables()`
-- No content sanitization
-- GraphQL filter with unindexed `LIKE` query
-- Silent failures on iteration limit
-- No caching
-- No i18n
+## WP.org compliance checklist
 
-## Dev environment
-
-- Windows 11, bash shell (Git Bash)
-- PHP and Composer NOT installed system-wide — need to install for `composer install`
-- Node.js available, npm dependencies installed (`@wordpress/env`)
-- Remote: https://github.com/investblog/spintax
+All met for v1.0.1:
+- PHPCS: 0 errors (5 acceptable warnings)
+- Plugin Check: passing (test files excluded from ZIP)
+- Nonces on all forms/AJAX
+- Capability checks on all admin actions
+- Input sanitisation (raw spintax exempted with phpcs:disable + explanation)
+- Output escaping (wp_kses_post on render output)
+- $wpdb->prepare() for direct queries
+- ABSPATH guard on all PHP files
+- SECURITY.md with responsible disclosure
+- readme.txt: External Services, Privacy Policy, Screenshots, Credits, Upgrade Notice
+- .distignore for 10up deploy action
+- Demo template seeded on first activation
 
 ## Versioning
 
-Version lives in 3 places (must be in sync):
-1. `plugin/spintax.php` — Plugin header `Version:` field
-2. `plugin/spintax.php` — `SPINTAX_VERSION` constant
-3. `plugin/readme.txt` — `Stable tag:`
+Version in 3 places (must sync): plugin header, SPINTAX_VERSION constant, readme.txt Stable tag.
 
-Update all at once: `npm run version:set -- X.Y.Z`
-Verify sync: `npm run version:check`
+```bash
+npm run version:set -- X.Y.Z   # Update all 3
+npm run version:check           # Verify sync
+```
 
-Release process:
-1. `npm run version:set -- 1.2.3`
-2. `git add plugin/spintax.php plugin/readme.txt`
-3. `git commit -m "Release 1.2.3"`
-4. `git tag v1.2.3`
-5. `git push && git push --tags`
-
-CI validates all 3 sources match the tag before creating a GitHub Release.
+Release: version:set → commit → `git tag vX.Y.Z` → push + push tags. CI validates all 3 match.
 
 ## Commands
 
 ```bash
-npm run env:start          # Start wp-env
-npm run env:stop           # Stop wp-env
-npm run wp:plugin:activate # Activate plugin
-npm run lint:php           # PHPCS
-npm run lint:php:fix       # Auto-fix PHPCS
-npm run test:php           # PHPUnit via wp-env
+npm run env:start              # Start wp-env (ports 8892/8893)
+npm run env:stop               # Stop wp-env
+npm run wp:plugin:activate     # Activate plugin
+npm run lint:php               # PHPCS via wp-env container
+npm run lint:php:fix           # Auto-fix PHPCS
+npm run lint:php:ci            # PHPCS via local composer (CI)
+npm run test:php               # PHPUnit via wp-env
+npm run test:php:setup         # Install PHPUnit + polyfills in container
 npm run version:set -- X.Y.Z  # Set version everywhere
-npm run version:check      # Verify version sync
+npm run version:check          # Verify version sync
 ```
+
+## Pre-push checklist (MANDATORY before every push)
+
+Run ALL of these locally. Zero errors AND zero warnings required:
+
+```bash
+npm run test:php           # PHPUnit — all tests must pass
+npm run lint:php           # PHPCS — 0 errors, 0 warnings
+```
+
+Then on WP.org for releases:
+1. Build ZIP: exclude tests/, phpunit.xml.dist, composer.*, .phpunit.result.cache
+2. Run Plugin Check in wp-admin — 0 errors, 0 warnings
+3. Bump version if uploading new ZIP: `npm run version:set -- X.Y.Z`
+
+**Common traps:**
+- `wp_kses_post()` on template INPUT destroys spintax config — only sanitise OUTPUT
+- `$wpdb->get_col()` triggers PCP DirectDatabaseQuery warning — use `get_posts()` instead
+- `meta_query` triggers PCP SlowDBQuery warning — add `phpcs:ignore` with justification
+- Inline `/** @var type */` without short description — PHPCS requires multi-line doc block
+- `$post_id`, `$role` in uninstall.php — prefix with `spintax_` to avoid GlobalVariablesOverride
+
+## CI/CD (GitHub Actions)
+
+- `ci.yml` — PHPCS on PHP 8.0-8.3, PHPUnit on PHP 8.0+8.2 × WP 6.2+latest, build ZIP
+- `release.yml` — version validation (all 3 sources), PHPCS, build, GitHub Release
+- `wporg-deploy.yml` — 10up action for WP.org SVN (needs SVN_USERNAME/SVN_PASSWORD secrets)
+
+## Future work (not in v1)
+
+- ACF / post meta mapping (wpci-style) — highest priority for migration
+- Gutenberg block
+- REST API, WP-CLI, Import/Export
+- Template taxonomy
+- `#const` (correlated constants from GTW)
+- Rebrand demo template from Acme to 301.st promotional content

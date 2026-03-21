@@ -55,7 +55,7 @@ final class Validators {
 				continue;
 			}
 			// Strip % wrappers if present.
-			$name                  = trim( $name, '%' );
+			$name                = trim( $name, '%' );
 			$normalised[ $name ] = (string) $value;
 		}
 
@@ -64,6 +64,11 @@ final class Validators {
 
 	/**
 	 * Clamp an integer to a min/max range.
+	 *
+	 * @param int $value Value to clamp.
+	 * @param int $min   Minimum allowed value.
+	 * @param int $max   Maximum allowed value.
+	 * @return int Clamped value.
 	 */
 	public static function clamp_int( int $value, int $min, int $max ): int {
 		return max( $min, min( $max, $value ) );

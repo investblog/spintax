@@ -18,8 +18,14 @@ use Spintax\Support\OptionKeys;
  */
 class DependencyInvalidator {
 
+	/** @var CacheManager Cache manager instance. */
 	private CacheManager $cache;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param CacheManager|null $cache Optional cache manager instance.
+	 */
 	public function __construct( ?CacheManager $cache = null ) {
 		$this->cache = $cache ?? new CacheManager();
 	}
@@ -70,20 +76,22 @@ class DependencyInvalidator {
 	 * @return int[] Parent template IDs.
 	 */
 	private function find_parents( int $child_id ): array {
-		// WordPress serializes arrays: [42, 7] → a:2:{i:0;i:42;i:1;i:7;}
-		// Search for the integer value in serialized format: i:42;
-		$query = new \WP_Query( array(
-			'post_type'      => TemplatePostType::POST_TYPE,
-			'posts_per_page' => -1,
-			'fields'         => 'ids',
-			'meta_query'     => array(
-				array(
-					'key'     => OptionKeys::META_EMBEDS,
-					'value'   => sprintf( 'i:%d;', $child_id ),
-					'compare' => 'LIKE',
+		// WordPress serializes arrays: [42, 7] as a:2:{i:0;i:42;i:1;i:7;}.
+		// Search for the integer value in serialized format: i:42;.
+		$query = new \WP_Query(
+			array(
+				'post_type'      => TemplatePostType::POST_TYPE,
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+				'meta_query'     => array(
+					array(
+						'key'     => OptionKeys::META_EMBEDS,
+						'value'   => sprintf( 'i:%d;', $child_id ),
+						'compare' => 'LIKE',
+					),
 				),
-			),
-		) );
+			)
+		);
 
 		return array_map( 'intval', $query->posts );
 	}

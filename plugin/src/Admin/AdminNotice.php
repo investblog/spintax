@@ -23,7 +23,14 @@ trait AdminNotice {
 	 */
 	private function redirect_with_notice( string $url, string $message, string $type = 'success' ): void {
 		$key = 'spintax_admin_notice_' . get_current_user_id();
-		set_transient( $key, array( 'message' => $message, 'type' => $type ), 60 );
+		set_transient(
+			$key,
+			array(
+				'message' => $message,
+				'type'    => $type,
+			),
+			60
+		);
 		wp_safe_redirect( $url );
 		exit;
 	}
@@ -46,6 +53,7 @@ trait AdminNotice {
 			: 'info';
 		$message = esc_html( $notice['message'] );
 
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $message is already escaped with esc_html() above.
 		printf(
 			'<div class="notice notice-%s is-dismissible"><p>%s</p></div>',
 			esc_attr( $type ),

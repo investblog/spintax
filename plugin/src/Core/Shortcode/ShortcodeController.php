@@ -16,8 +16,14 @@ use Spintax\Core\Render\Renderer;
  */
 class ShortcodeController {
 
+	/** @var Renderer Template renderer instance. */
 	private Renderer $renderer;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param Renderer|null $renderer Optional renderer instance.
+	 */
 	public function __construct( ?Renderer $renderer = null ) {
 		$this->renderer = $renderer ?? new Renderer();
 	}
@@ -48,7 +54,7 @@ class ShortcodeController {
 			'id'   => '',
 			'slug' => '',
 		);
-		$parsed = array_merge( $defaults, $raw_atts );
+		$parsed   = array_merge( $defaults, $raw_atts );
 
 		$id_or_slug = '' !== $parsed['id'] ? $parsed['id'] : $parsed['slug'];
 

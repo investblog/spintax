@@ -35,9 +35,16 @@ use Spintax\Core\Settings\SettingsRepository;
  */
 class Renderer {
 
+	/** @var Parser Spintax template parser. */
 	private Parser $parser;
+
+	/** @var SettingsRepository Settings repository instance. */
 	private SettingsRepository $settings;
+
+	/** @var CacheManager Cache manager instance. */
 	private CacheManager $cache;
+
+	/** @var DependencyInvalidator Dependency invalidation handler. */
 	private DependencyInvalidator $deps;
 
 	/** @var int[] Template IDs rendered during the current top-level render. */
@@ -46,6 +53,14 @@ class Renderer {
 	/** @var bool When true, skip cache reads for the entire subtree (force fresh render). */
 	private bool $bypass_cache = false;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param Parser|null                $parser   Optional parser instance.
+	 * @param SettingsRepository|null    $settings Optional settings repository.
+	 * @param CacheManager|null          $cache    Optional cache manager.
+	 * @param DependencyInvalidator|null $deps     Optional dependency invalidator.
+	 */
 	public function __construct(
 		?Parser $parser = null,
 		?SettingsRepository $settings = null,
@@ -80,13 +95,13 @@ class Renderer {
 	/**
 	 * Render a template by ID or slug.
 	 *
-	 * @param int|string           $id_or_slug   Template post ID or slug.
+	 * @param int|string            $id_or_slug   Template post ID or slug.
 	 * @param array<string, string> $runtime_vars Runtime variables (from shortcode/PHP).
-	 * @param RenderContext|null   $parent_ctx    Parent context for nested renders.
+	 * @param RenderContext|null    $parent_ctx    Parent context for nested renders.
 	 * @return string Rendered HTML (sanitised) or empty string on failure.
 	 */
 	public function render( $id_or_slug, array $runtime_vars = array(), ?RenderContext $parent_ctx = null ): string {
-		// --- Stage 1: Resolve template -------------------------------------
+		// Stage 1: Resolve template.
 		$post = $this->resolve_template( $id_or_slug );
 		if ( ! $post ) {
 			$this->log_error( sprintf( 'Template not found: %s', $id_or_slug ) );
@@ -98,22 +113,24 @@ class Renderer {
 			return '';
 		}
 
-		// --- Circular reference check --------------------------------------
+		// Circular reference check.
 		$template_id = $post->ID;
 		$context     = $parent_ctx ?? new RenderContext( $this->settings->get_global_variables() );
 
 		if ( $context->has_template( $template_id ) ) {
-			$this->log_error( sprintf(
-				'Circular template reference detected: %s → %d',
-				implode( ' → ', $context->get_call_stack() ),
-				$template_id
-			) );
+			$this->log_error(
+				sprintf(
+					'Circular template reference detected: %s → %d',
+					implode( ' → ', $context->get_call_stack() ),
+					$template_id
+				)
+			);
 			return '';
 		}
 
 		$context = $context->push_template( $template_id );
 
-		// --- Cache check ---------------------------------------------------
+		// Cache check.
 		$context_hash = $context->with_runtime( $runtime_vars )->get_context_hash();
 		if ( ! $this->bypass_cache ) {
 			$cached = $this->cache->get( $template_id, $context_hash );
@@ -122,7 +139,7 @@ class Renderer {
 			}
 		}
 
-		// --- Stage 2: Load raw content -------------------------------------
+		// Stage 2: Load raw content.
 		$raw = $post->post_content;
 		if ( '' === trim( $raw ) ) {
 			return '';
@@ -137,7 +154,7 @@ class Renderer {
 		try {
 			$output = $this->process_template( $raw, $runtime_vars, $context );
 
-			// --- Cache store -----------------------------------------------
+			// Cache store.
 			$this->cache->set( $template_id, $context_hash, $output );
 
 			// Record dependency graph for the top-level template.
@@ -157,55 +174,55 @@ class Renderer {
 	 *
 	 * Extracted so it can also be used for admin preview without post lookup.
 	 *
-	 * @param string               $raw          Raw spintax markup.
+	 * @param string                $raw          Raw spintax markup.
 	 * @param array<string, string> $runtime_vars Runtime variables.
-	 * @param RenderContext|null   $context      Render context (created if null).
+	 * @param RenderContext|null    $context      Render context (created if null).
 	 * @return string Processed and sanitised HTML.
 	 */
 	public function process_template( string $raw, array $runtime_vars = array(), ?RenderContext $context = null ): string {
 		$context = $context ?? new RenderContext( $this->settings->get_global_variables() );
 
-		// --- Stage 3: Strip comments ---------------------------------------
+		// Stage 3: Strip comments.
 		$text = $this->parser->strip_comments( $raw );
 
-		// --- Stage 4: Parse #set, strip from body --------------------------
+		// Stage 4: Parse #set, strip from body.
 		$extracted = $this->parser->extract_set_directives( $text );
 		$text      = $extracted['body'];
 
-		// --- Stage 5: Build variable context --------------------------------
-		$context  = $context->with_local( $extracted['variables'] );
+		// Stage 5: Build variable context.
+		$context = $context->with_local( $extracted['variables'] );
 		if ( ! empty( $runtime_vars ) ) {
 			$context = $context->with_runtime( $runtime_vars );
 		}
 		$all_vars = $context->get_merged_variables();
 
-		// --- Shield [spintax] and #include before spintax resolution ------
-		// [spintax ...] shortcodes use square brackets which would be consumed
+		// Shield [spintax] and #include before spintax resolution.
+		// Shortcodes use square brackets which would be consumed
 		// by the permutation resolver. Shield them with placeholders first,
 		// then restore and resolve after enum/perm processing.
 		$nested_placeholders = array();
 		$nested_counter      = 0;
-		$text = preg_replace_callback(
+		$text                = preg_replace_callback(
 			'/\[spintax\s+[^\]]+\]/i',
 			static function ( array $m ) use ( &$nested_placeholders, &$nested_counter ): string {
-				$key                          = "\x00NESTED_{$nested_counter}\x00";
-				$nested_placeholders[ $key ]  = $m[0];
+				$key                         = "\x00NESTED_{$nested_counter}\x00";
+				$nested_placeholders[ $key ] = $m[0];
 				++$nested_counter;
 				return $key;
 			},
 			$text
 		);
 
-		// --- Stage 6: Expand variables -------------------------------------
+		// Stage 6: Expand variables.
 		$text = $this->parser->expand_variables( $text, $all_vars );
 
-		// --- Stage 7: Resolve enumerations ---------------------------------
+		// Stage 7: Resolve enumerations.
 		$text = $this->parser->resolve_enumerations( $text );
 
-		// --- Stage 8: Resolve permutations ---------------------------------
+		// Stage 8: Resolve permutations.
 		$text = $this->parser->resolve_permutations( $text );
 
-		// --- Restore [spintax] placeholders --------------------------------
+		// Restore [spintax] placeholders.
 		if ( ! empty( $nested_placeholders ) ) {
 			$text = str_replace(
 				array_keys( $nested_placeholders ),
@@ -214,13 +231,13 @@ class Renderer {
 			);
 		}
 
-		// --- Stage 9: Resolve #include and [spintax] -----------------------
+		// Stage 9: Resolve #include and [spintax].
 		$text = $this->resolve_nested( $text, $context );
 
-		// --- Stage 10: Post-process ----------------------------------------
+		// Stage 10: Post-process.
 		$text = $this->parser->post_process( $text );
 
-		// --- Stage 11: Sanitize HTML ---------------------------------------
+		// Stage 11: Sanitize HTML.
 		$text = wp_kses_post( $text );
 
 		return $text;
@@ -237,7 +254,6 @@ class Renderer {
 	 */
 	private function resolve_nested( string $text, RenderContext $context ): string {
 		// Resolve #include directives.
-		$renderer = $this;
 		// Child context: inherits global + runtime but NOT parent's #set locals.
 		$child_ctx = $context->for_child_render();
 
@@ -303,12 +319,14 @@ class Renderer {
 			return null;
 		}
 
-		$posts = get_posts( array(
-			'post_type'      => TemplatePostType::POST_TYPE,
-			'name'           => sanitize_title( (string) $id_or_slug ),
-			'posts_per_page' => 1,
-			'post_status'    => array( 'publish', 'draft', 'private' ),
-		) );
+		$posts = get_posts(
+			array(
+				'post_type'      => TemplatePostType::POST_TYPE,
+				'name'           => sanitize_title( (string) $id_or_slug ),
+				'posts_per_page' => 1,
+				'post_status'    => array( 'publish', 'draft', 'private' ),
+			)
+		);
 
 		return $posts[0] ?? null;
 	}
@@ -330,6 +348,8 @@ class Renderer {
 
 	/**
 	 * Log an error if debug mode is enabled.
+	 *
+	 * @param string $message Error message to log.
 	 */
 	private function log_error( string $message ): void {
 		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {

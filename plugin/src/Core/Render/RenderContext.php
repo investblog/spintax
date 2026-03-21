@@ -29,6 +29,8 @@ class RenderContext {
 	private array $call_stack;
 
 	/**
+	 * Constructor.
+	 *
 	 * @param array<string, string> $global_vars  Site-wide variables.
 	 * @param array<string, string> $local_vars   From #set directives.
 	 * @param array<string, string> $runtime_vars From shortcode/PHP call.
@@ -110,7 +112,7 @@ class RenderContext {
 	public function for_child_render(): self {
 		return new self(
 			$this->global_vars,
-			array(), // child has its own #set scope
+			array(), // Child has its own #set scope.
 			$this->runtime_vars,
 			$this->call_stack
 		);
@@ -133,6 +135,9 @@ class RenderContext {
 
 	/**
 	 * Check if a template is already in the render chain (circular reference).
+	 *
+	 * @param int $template_id Template post ID to check.
+	 * @return bool True if template is already being rendered.
 	 */
 	public function has_template( int $template_id ): bool {
 		return in_array( $template_id, $this->call_stack, true );

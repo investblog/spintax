@@ -15,6 +15,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Capabilities {
 
+	/** @var string Custom capability name for managing templates. */
 	public const CAP = 'manage_spintax_templates';
 
 	/**
@@ -42,6 +43,8 @@ final class Capabilities {
 
 	/**
 	 * Grant template capabilities to a role.
+	 *
+	 * @param string $role_name WordPress role name.
 	 */
 	private static function grant_to_role( string $role_name ): void {
 		$role = get_role( $role_name );
@@ -56,6 +59,8 @@ final class Capabilities {
 
 	/**
 	 * Revoke template capabilities from a role.
+	 *
+	 * @param string $role_name WordPress role name.
 	 */
 	private static function revoke_from_role( string $role_name ): void {
 		$role = get_role( $role_name );

@@ -24,10 +24,17 @@ use Spintax\Support\OptionKeys;
  */
 class CacheManager {
 
+	/** @var string Cache group prefix constant. */
 	public const CACHE_GROUP_PREFIX = 'spintax_';
 
+	/** @var SettingsRepository Settings repository instance. */
 	private SettingsRepository $settings;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param SettingsRepository|null $settings Optional settings repository instance.
+	 */
 	public function __construct( ?SettingsRepository $settings = null ) {
 		$this->settings = $settings ?? new SettingsRepository();
 	}
@@ -136,6 +143,10 @@ class CacheManager {
 
 	/**
 	 * Build the cache key for a template + context.
+	 *
+	 * @param int    $template_id  Template post ID.
+	 * @param string $context_hash Context hash string.
+	 * @return string Cache key.
 	 */
 	private function build_key( int $template_id, string $context_hash ): string {
 		$version = $this->get_template_version( $template_id );

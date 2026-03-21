@@ -50,10 +50,6 @@ class SettingsRepository {
 		delete_option( OptionKeys::SETTINGS );
 	}
 
-	// =========================================================================
-	// Global variables
-	// =========================================================================
-
 	/**
 	 * Get normalised global variables.
 	 *
@@ -76,10 +72,6 @@ class SettingsRepository {
 		// Bump global cache salt so all cached renders are invalidated.
 		$this->bump_cache_salt();
 	}
-
-	// =========================================================================
-	// Cache salt
-	// =========================================================================
 
 	/**
 	 * Get current global cache salt.

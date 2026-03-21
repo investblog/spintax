@@ -131,6 +131,9 @@ class TemplateEditor {
 
 	/**
 	 * Format seconds as a human-readable duration.
+	 *
+	 * @param int $seconds Duration in seconds.
+	 * @return string Human-readable duration string.
 	 */
 	private function format_duration( int $seconds ): string {
 		if ( $seconds >= 86400 ) {

@@ -41,7 +41,7 @@ class AdminMenu {
 	public function enqueue_assets( string $hook_suffix ): void {
 		$screen = get_current_screen();
 
-		$is_our_cpt = $screen && TemplatePostType::POST_TYPE === $screen->post_type;
+		$is_our_cpt  = $screen && TemplatePostType::POST_TYPE === $screen->post_type;
 		$is_settings = 'settings_page_spintax-settings' === $hook_suffix;
 
 		if ( ! $is_our_cpt && ! $is_settings ) {
@@ -81,6 +81,9 @@ class AdminMenu {
 
 	/**
 	 * Build asset URL relative to the plugin's assets/ directory.
+	 *
+	 * @param string $path Relative path within the assets directory.
+	 * @return string Full asset URL.
 	 */
 	private function asset_url( string $path ): string {
 		return SPINTAX_PLUGIN_URL . 'assets/' . $path;

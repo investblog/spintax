@@ -140,7 +140,7 @@ class Validator {
 				continue;
 			}
 
-			// Must match: #set %name% = value
+			// Must match: #set %name% = value.
 			if ( ! preg_match( '/^#set\s+%(\w+)%\s*=\s*(.+)$/u', $trimmed ) ) {
 				$errors[] = array(
 					'message' => 'Malformed #set directive. Expected: #set %name% = value',
@@ -174,7 +174,7 @@ class Validator {
 			// If it looks like a full config (has key=), validate known keys.
 			if ( preg_match( '/\w+\s*=/', $config_str ) ) {
 				// Check for unknown config keys.
-				$known   = array( 'minsize', 'maxsize', 'sep', 'lastsep' );
+				$known    = array( 'minsize', 'maxsize', 'sep', 'lastsep' );
 				$all_keys = array();
 				preg_match_all( '/(\w+)\s*=/', $config_str, $key_matches );
 				if ( ! empty( $key_matches[1] ) ) {
@@ -328,8 +328,8 @@ class Validator {
 	 * @return array<array{message: string, line: int, column: int}>
 	 */
 	private function check_include_targets( string $text, array $known_slugs ): array {
-		$errors = array();
-		$parser = new Parser();
+		$errors   = array();
+		$parser   = new Parser();
 		$includes = $parser->find_include_directives( $text );
 
 		foreach ( $includes as $inc ) {

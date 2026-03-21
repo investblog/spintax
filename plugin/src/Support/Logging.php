@@ -93,6 +93,8 @@ class Logging {
 
 	/**
 	 * Save log data to option.
+	 *
+	 * @param array $data Log data array containing items and max.
 	 */
 	private function save( array $data ): void {
 		update_option( OptionKeys::LOGS, $data, false );

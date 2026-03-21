@@ -261,7 +261,7 @@ class MetaBoxes {
 		}
 
 		// Use editor content if sent, otherwise fall back to saved content.
-		$content = isset( $_POST['content'] ) ? wp_unslash( $_POST['content'] ) : null;
+		$content = isset( $_POST['content'] ) ? wp_kses_post( wp_unslash( $_POST['content'] ) ) : null;
 		if ( null === $content ) {
 			$post = get_post( $post_id );
 			if ( ! $post || TemplatePostType::POST_TYPE !== $post->post_type ) {
@@ -277,10 +277,12 @@ class MetaBoxes {
 		$renderer = new Renderer();
 		$output   = $renderer->process_template( $content );
 
-		wp_send_json_success( array(
-			'html'       => $output,
-			'validation' => $validation,
-		) );
+		wp_send_json_success(
+			array(
+				'html'       => $output,
+				'validation' => $validation,
+			)
+		);
 	}
 
 	/**
@@ -304,9 +306,11 @@ class MetaBoxes {
 		$renderer = new Renderer();
 		$renderer->render_fresh( $post_id );
 
-		wp_send_json_success( array(
-			'message' => __( 'Cache regenerated.', 'spintax' ),
-		) );
+		wp_send_json_success(
+			array(
+				'message' => __( 'Cache regenerated.', 'spintax' ),
+			)
+		);
 	}
 
 	/**
@@ -316,12 +320,14 @@ class MetaBoxes {
 	 * @return array{errors: array, warnings: array}
 	 */
 	private function run_validation( string $content ): array {
-		$known_slugs = get_posts( array(
-			'post_type'      => TemplatePostType::POST_TYPE,
-			'posts_per_page' => -1,
-			'fields'         => 'ids',
-			'post_status'    => array( 'publish', 'draft', 'private' ),
-		) );
+		$known_slugs = get_posts(
+			array(
+				'post_type'      => TemplatePostType::POST_TYPE,
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+				'post_status'    => array( 'publish', 'draft', 'private' ),
+			)
+		);
 
 		// Collect slugs from post names.
 		$slugs = array();

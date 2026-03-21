@@ -14,6 +14,7 @@ defined( 'ABSPATH' ) || exit;
  */
 class TemplatePostType {
 
+	/** @var string Custom post type identifier. */
 	public const POST_TYPE = 'spintax_template';
 
 	/**
@@ -29,18 +30,18 @@ class TemplatePostType {
 	 */
 	public function register(): void {
 		$labels = array(
-			'name'                  => __( 'Spintax Templates', 'spintax' ),
-			'singular_name'        => __( 'Spintax Template', 'spintax' ),
-			'add_new'              => __( 'Add New', 'spintax' ),
-			'add_new_item'         => __( 'Add New Template', 'spintax' ),
-			'edit_item'            => __( 'Edit Template', 'spintax' ),
-			'new_item'             => __( 'New Template', 'spintax' ),
-			'view_item'            => __( 'View Template', 'spintax' ),
-			'search_items'         => __( 'Search Templates', 'spintax' ),
-			'not_found'            => __( 'No templates found.', 'spintax' ),
-			'not_found_in_trash'   => __( 'No templates found in Trash.', 'spintax' ),
-			'all_items'            => __( 'All Templates', 'spintax' ),
-			'menu_name'            => __( 'Spintax', 'spintax' ),
+			'name'               => __( 'Spintax Templates', 'spintax' ),
+			'singular_name'      => __( 'Spintax Template', 'spintax' ),
+			'add_new'            => __( 'Add New', 'spintax' ),
+			'add_new_item'       => __( 'Add New Template', 'spintax' ),
+			'edit_item'          => __( 'Edit Template', 'spintax' ),
+			'new_item'           => __( 'New Template', 'spintax' ),
+			'view_item'          => __( 'View Template', 'spintax' ),
+			'search_items'       => __( 'Search Templates', 'spintax' ),
+			'not_found'          => __( 'No templates found.', 'spintax' ),
+			'not_found_in_trash' => __( 'No templates found in Trash.', 'spintax' ),
+			'all_items'          => __( 'All Templates', 'spintax' ),
+			'menu_name'          => __( 'Spintax', 'spintax' ),
 		);
 
 		$args = array(

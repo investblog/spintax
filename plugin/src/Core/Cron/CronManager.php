@@ -21,6 +21,7 @@ use Spintax\Support\OptionKeys;
  */
 class CronManager {
 
+	/** @var string WP-Cron hook name for template regeneration. */
 	public const HOOK = 'spintax_cron_regenerate';
 
 	/**

@@ -22,8 +22,12 @@ class SettingsPage {
 
 	use AdminNotice;
 
+	/** @var SettingsRepository Settings repository instance. */
 	private SettingsRepository $repo;
 
+	/**
+	 * Constructor.
+	 */
 	public function __construct() {
 		$this->repo = new SettingsRepository();
 	}
@@ -66,6 +70,7 @@ class SettingsPage {
 		$redirect_url = admin_url( 'options-general.php?page=spintax-settings' );
 
 		// Save settings.
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified by check_admin_referer() below.
 		if ( isset( $_POST['spintax_save_settings'] ) ) {
 			check_admin_referer( 'spintax_settings_save' );
 			$this->save_settings();
@@ -74,6 +79,7 @@ class SettingsPage {
 		}
 
 		// Purge all cache.
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified by check_admin_referer() below.
 		if ( isset( $_POST['spintax_purge_cache'] ) ) {
 			check_admin_referer( 'spintax_settings_save' );
 			$cache = new CacheManager( $this->repo );
@@ -187,12 +193,13 @@ class SettingsPage {
 	 * Save settings from POST data.
 	 */
 	private function save_settings(): void {
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified in handle_actions().
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- nonce verified in handle_actions().
 		$patch = array(
 			'default_ttl'        => isset( $_POST['default_ttl'] ) ? (int) $_POST['default_ttl'] : 3600,
 			'editors_can_manage' => ! empty( $_POST['editors_can_manage'] ),
 			'debug'              => ! empty( $_POST['debug'] ),
 		);
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
 
 		$this->repo->update( $patch );
 		Capabilities::sync( $patch['editors_can_manage'] );
@@ -202,13 +209,14 @@ class SettingsPage {
 	 * Save global variables from POST data.
 	 */
 	private function save_global_variables(): void {
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified in handle_actions().
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- nonce verified in handle_actions().
 		$names  = isset( $_POST['spintax_var_names'] ) && is_array( $_POST['spintax_var_names'] )
 			? array_map( 'sanitize_text_field', wp_unslash( $_POST['spintax_var_names'] ) )
 			: array();
 		$values = isset( $_POST['spintax_var_values'] ) && is_array( $_POST['spintax_var_values'] )
 			? array_map( 'sanitize_text_field', wp_unslash( $_POST['spintax_var_values'] ) )
 			: array();
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
 
 		$vars = array();
 		foreach ( $names as $i => $name ) {

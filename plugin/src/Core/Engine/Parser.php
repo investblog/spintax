@@ -29,10 +29,15 @@ class Parser {
 	 */
 	private $random_fn;
 
-	private const MAX_ITERATIONS    = 10000;
+	/** @var int Maximum iterations for enumeration/permutation resolution. */
+	private const MAX_ITERATIONS = 10000;
+
+	/** @var int Maximum depth for variable expansion. */
 	private const MAX_VARIABLE_DEPTH = 50;
 
 	/**
+	 * Constructor.
+	 *
 	 * @param callable|null $random_fn Custom RNG for deterministic testing. Signature: fn(int $min, int $max): int.
 	 */
 	public function __construct( ?callable $random_fn = null ) {
@@ -40,10 +45,6 @@ class Parser {
 			return random_int( $min, $max );
 		};
 	}
-
-	// =========================================================================
-	// Public API
-	// =========================================================================
 
 	/**
 	 * Process a spintax template through all stages.
@@ -55,6 +56,8 @@ class Parser {
 	 * @param string $template Raw spintax markup.
 	 * @param array  $variables Merged variable context (name => raw value, without % delimiters).
 	 * @return string Processed text.
+	 *
+	 * @throws \RuntimeException If template processing encounters unresolvable syntax.
 	 */
 	public function process( string $template, array $variables = array() ): string {
 		$text      = $this->strip_comments( $template );
@@ -71,6 +74,9 @@ class Parser {
 
 	/**
 	 * Strip block comments delimited by /# ... #/.
+	 *
+	 * @param string $text Text containing block comments.
+	 * @return string Text with comments removed.
 	 */
 	public function strip_comments( string $text ): string {
 		return preg_replace( '~/\#.*?\#/~su', '', $text );
@@ -79,6 +85,7 @@ class Parser {
 	/**
 	 * Extract #set directives and remove them from the body.
 	 *
+	 * @param string $text Text containing #set directives.
 	 * @return array{body: string, variables: array<string, string>}
 	 */
 	public function extract_set_directives( string $text ): array {
@@ -87,7 +94,7 @@ class Parser {
 		$body = preg_replace_callback(
 			'/^[ \t]*#set\s+%(\w+)%\s*=\s*(.*?)$/mu',
 			static function ( array $m ) use ( &$variables ): string {
-				$name              = strtolower( $m[1] );
+				$name               = strtolower( $m[1] );
 				$variables[ $name ] = trim( $m[2] );
 				return '';
 			},
@@ -147,6 +154,11 @@ class Parser {
 
 	/**
 	 * Resolve all enumerations {a|b|c} from innermost outward.
+	 *
+	 * @param string $text Text containing enumeration syntax.
+	 * @return string Text with enumerations resolved.
+	 *
+	 * @throws \RuntimeException If resolution exceeds maximum iterations.
 	 */
 	public function resolve_enumerations( string $text ): string {
 		$iteration = 0;
@@ -176,6 +188,11 @@ class Parser {
 
 	/**
 	 * Resolve all permutations [<config>a|b|c] from innermost outward.
+	 *
+	 * @param string $text Text containing permutation syntax.
+	 * @return string Text with permutations resolved.
+	 *
+	 * @throws \RuntimeException If resolution exceeds maximum iterations.
 	 */
 	public function resolve_permutations( string $text ): string {
 		$iteration = 0;
@@ -211,12 +228,15 @@ class Parser {
 	 *   3. Fix punctuation spacing
 	 *   4. Capitalise sentences
 	 *   5. Restore placeholders
+	 *
+	 * @param string $text Text to post-process.
+	 * @return string Cleaned-up text.
 	 */
 	public function post_process( string $text ): string {
-		$placeholders = array();
-		$counter      = 0;
-		$domain_part  = '(?:(?:(?:xn--)?[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*)\.)+(?:xn--[a-z0-9\-]{2,59}|[\p{L}][\p{L}\p{N}-]{1,62})';
-		$store_placeholder = static function ( string $value, string $prefix ) use ( &$placeholders, &$counter ): string {
+		$placeholders                    = array();
+		$counter                         = 0;
+		$domain_part                     = '(?:(?:(?:xn--)?[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*)\.)+(?:xn--[a-z0-9\-]{2,59}|[\p{L}][\p{L}\p{N}-]{1,62})';
+		$store_placeholder               = static function ( string $value, string $prefix ) use ( &$placeholders, &$counter ): string {
 			$key                  = "\x00{$prefix}_{$counter}\x00";
 			$placeholders[ $key ] = $value;
 			++$counter;
@@ -237,7 +257,7 @@ class Parser {
 			return $store_placeholder( $value, $prefix );
 		};
 
-		// --- 1. Shield: full URLs (with protocol) --------------------------
+		// 1. Shield: full URLs (with protocol).
 		$text = preg_replace_callback(
 			'~(?:https?|ftp)://[^\s<>"\')\]]+~iu',
 			static function ( array $m ) use ( $store_with_trailing_punctuation ): string {
@@ -246,7 +266,7 @@ class Parser {
 			$text
 		);
 
-		// --- 2. Shield: email addresses ------------------------------------
+		// 2. Shield: email addresses.
 		$text = preg_replace_callback(
 			'~[a-z0-9._%+\-]+@' . $domain_part . '\b~iu',
 			static function ( array $m ) use ( $store_placeholder ): string {
@@ -255,8 +275,8 @@ class Parser {
 			$text
 		);
 
-		// --- 3. Shield: bare domains (ASCII + punycode + IDN) --------------
-		// Matches: example.com, sub.domain.co.uk, xn--e1afmapc.xn--p1ai, домен.рф
+		// 3. Shield: bare domains (ASCII + punycode + IDN).
+		// Matches: example.com, sub.domain.co.uk, xn--e1afmapc.xn--p1ai, etc.
 		// Requires dot-separated labels ending with a 2-63 char TLD that
 		// contains at least one letter (excludes pure numbers like 3.14).
 		$text = preg_replace_callback(
@@ -267,19 +287,19 @@ class Parser {
 			$text
 		);
 
-		// --- 4. Shield: decimal numbers (3.14, 100.5) ----------------------
+		// 4. Shield: decimal numbers (3.14, 100.5).
 		$text = preg_replace_callback(
 			'/\b\d+\.\d+\b/',
 			static function ( array $m ) use ( &$placeholders, &$counter ): string {
-				$key                    = "\x00NUM_{$counter}\x00";
-				$placeholders[ $key ]   = $m[0];
+				$key                  = "\x00NUM_{$counter}\x00";
+				$placeholders[ $key ] = $m[0];
 				++$counter;
 				return $key;
 			},
 			$text
 		);
 
-		// --- 5. Shield: abbreviations (т.д., и т.п., etc.) ----------------
+		// 5. Shield: abbreviations (e.g. etc.).
 		// Requires at least two dotted groups, so plain "A." still ends a sentence.
 		$text = preg_replace_callback(
 			'/\b(?:\p{L}{1,2}\.\s*){2,}/u',
@@ -289,51 +309,51 @@ class Parser {
 			$text
 		);
 
-		// --- 6. Whitespace cleanup -----------------------------------------
+		// 6. Whitespace cleanup.
 		$text = preg_replace( '/[ \t]{2,}/u', ' ', $text );
 
-		// --- 7. Punctuation spacing ----------------------------------------
-		// Remove whitespace BEFORE punctuation:  "word ," → "word,"
+		// 7. Punctuation spacing.
+		// Remove whitespace BEFORE punctuation: "word ," becomes "word,".
 		$text = preg_replace( '/\s+([,;:!?.])/u', '$1', $text );
 		// Ensure space AFTER comma/semicolon/colon unless followed by
-		// digit, whitespace, end, or tag. Placeholders (\x00) are allowed
-		// — they will be restored later and need the space before them.
+		// digit, whitespace, end, or tag. Placeholders (\x00) are allowed;
+		// they will be restored later and need the space before them.
 		$text = preg_replace( '/([,;:])(?!\d)(?!\s|$|<)/u', '$1 ', $text );
-		// Ensure space AFTER sentence-ending punctuation (.!?) same rules.
+		// Ensure space AFTER sentence-ending punctuation (.!?) with same rules.
 		$text = preg_replace( '/([.!?])(?!\d)(?!\s|$|<)/u', '$1 ', $text );
 
-		// --- 8. Capitalise first letter (skip leading HTML tags) -----------
+		// 8. Capitalise first letter (skip leading HTML tags).
 		$text = preg_replace_callback(
 			'/^(\s*(?:<[^>]+>\s*)*)(\p{Ll})/u',
 			static fn( array $m ): string => $m[1] . mb_strtoupper( $m[2], 'UTF-8' ),
 			$text
 		);
 
-		// --- 9. Capitalise after sentence-ending punctuation ---------------
-		// Handles punctuation followed by optional HTML tags before the letter:
-		//   "text. Next"  and  "text.</p><p>next"
+		// 9. Capitalise after sentence-ending punctuation.
+		// Handles punctuation followed by optional HTML tags before the letter.
+		// For example: "text. Next" and "text.</p><p>next".
 		$text = preg_replace_callback(
 			'/([.!?…])(\s*(?:<\/?[^>]+>\s*)*)(\p{Ll})/u',
 			static fn( array $m ): string => $m[1] . $m[2] . mb_strtoupper( $m[3], 'UTF-8' ),
 			$text
 		);
 
-		// --- 10. Capitalise after block-level HTML tags --------------------
-		// After <p>, </p><p>, <h1>–<h6>, <li>, <blockquote>, <div>, <td>, <th>
+		// 10. Capitalise after block-level HTML tags.
+		// Covers p, h1-h6, li, blockquote, div, td, th.
 		$text = preg_replace_callback(
 			'/(<\/?(?:p|h[1-6]|li|blockquote|div|td|th)[^>]*>\s*)(\p{Ll})/ui',
 			static fn( array $m ): string => $m[1] . mb_strtoupper( $m[2], 'UTF-8' ),
 			$text
 		);
 
-		// --- 11. Capitalise after line breaks ------------------------------
+		// 11. Capitalise after line breaks.
 		$text = preg_replace_callback(
 			'/(\n\s*)(\p{Ll})/u',
 			static fn( array $m ): string => $m[1] . mb_strtoupper( $m[2], 'UTF-8' ),
 			$text
 		);
 
-		// --- 9. Restore placeholders (reverse order for safety) ------------
+		// 12. Restore placeholders (reverse order for safety).
 		if ( ! empty( $placeholders ) ) {
 			$text = str_replace(
 				array_keys( $placeholders ),
@@ -348,6 +368,7 @@ class Parser {
 	/**
 	 * Find #include directives in text.
 	 *
+	 * @param string $text Text to search for #include directives.
 	 * @return array<array{slug: string, line: int, start: int, length: int}>
 	 */
 	public function find_include_directives( string $text ): array {
@@ -385,13 +406,10 @@ class Parser {
 		);
 	}
 
-	// =========================================================================
-	// Private helpers
-	// =========================================================================
-
 	/**
 	 * Split text by | respecting {} and [] nesting.
 	 *
+	 * @param string $text Text to split by top-level pipe characters.
 	 * @return string[]
 	 */
 	private function split_top_level( string $text ): array {
@@ -430,6 +448,9 @@ class Parser {
 
 	/**
 	 * Process a single permutation expression (content between [ and ]).
+	 *
+	 * @param string $content Permutation content without outer brackets.
+	 * @return string Resolved permutation result.
 	 */
 	private function process_permutation( string $content ): string {
 		$extracted = $this->extract_permutation_config( $content );
@@ -464,6 +485,7 @@ class Parser {
 	/**
 	 * Extract optional <config> prefix from permutation content.
 	 *
+	 * @param string $content Raw permutation content.
 	 * @return array{config: array, content: string}
 	 */
 	private function extract_permutation_config( string $content ): array {
@@ -495,6 +517,10 @@ class Parser {
 
 	/**
 	 * Find closing > of a config block, respecting quoted strings.
+	 *
+	 * @param string $text  Text to search.
+	 * @param int    $start Start position (opening <).
+	 * @return int Position of closing > or -1 if not found.
 	 */
 	private function find_config_end( string $text, int $start ): int {
 		$in_quote = false;
@@ -518,6 +544,9 @@ class Parser {
 	 * Supports two forms:
 	 *   - Full config:  minsize=2;maxsize=3;sep=", ";lastsep=" and "
 	 *   - Single separator: , (literal separator string)
+	 *
+	 * @param string $str Config string to parse.
+	 * @return array Parsed configuration parameters.
 	 */
 	private function parse_config_string( string $str ): array {
 		$config = $this->default_permutation_config();
@@ -560,19 +589,26 @@ class Parser {
 
 	/**
 	 * Fisher-Yates shuffle using the custom RNG.
+	 *
+	 * @param array $arr Array to shuffle in place.
 	 */
 	private function shuffle_array( array &$arr ): void {
 		$n = count( $arr );
 		for ( $i = $n - 1; $i > 0; $i-- ) {
-			$j          = $this->random_int( 0, $i );
-			$tmp        = $arr[ $i ];
-			$arr[ $i ]  = $arr[ $j ];
-			$arr[ $j ]  = $tmp;
+			$j         = $this->random_int( 0, $i );
+			$tmp       = $arr[ $i ];
+			$arr[ $i ] = $arr[ $j ];
+			$arr[ $j ] = $tmp;
 		}
 	}
 
 	/**
 	 * Join elements with sep between non-final items and lastsep before the last.
+	 *
+	 * @param array  $elements Array of string elements to join.
+	 * @param string $sep      Separator between non-final items.
+	 * @param string $lastsep  Separator before the last item.
+	 * @return string Joined string.
 	 */
 	private function join_with_separators( array $elements, string $sep, string $lastsep ): string {
 		$count = count( $elements );
@@ -590,6 +626,10 @@ class Parser {
 
 	/**
 	 * Generate a random integer using the configured RNG.
+	 *
+	 * @param int $min Minimum value (inclusive).
+	 * @param int $max Maximum value (inclusive).
+	 * @return int Random integer between min and max.
 	 */
 	private function random_int( int $min, int $max ): int {
 		if ( $min === $max ) {

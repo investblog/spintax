@@ -11,6 +11,7 @@ global $wpdb;
 
 // 1. Delete all spintax_template posts and their meta.
 // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 $spintax_post_ids = $wpdb->get_col(
 	"SELECT ID FROM {$wpdb->posts} WHERE post_type = 'spintax_template'"
 );
@@ -49,6 +50,7 @@ $spintax_caps = array(
 	'edit_published_spintax_templates',
 );
 
+// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 foreach ( wp_roles()->role_objects as $role ) {
 	foreach ( $spintax_caps as $spintax_cap ) {
 		$role->remove_cap( $spintax_cap );

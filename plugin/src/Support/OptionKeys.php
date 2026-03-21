@@ -14,34 +14,66 @@ defined( 'ABSPATH' ) || exit;
  */
 final class OptionKeys {
 
-	// --- wp_options -----------------------------------------------------------
-
-	/** @var string Plugin settings (array). */
+	/**
+	 * Plugin settings option key.
+	 *
+	 * @var string
+	 */
 	public const SETTINGS = 'spintax_settings';
 
-	/** @var string Global variables (array of name => value). */
+	/**
+	 * Global variables option key.
+	 *
+	 * @var string
+	 */
 	public const GLOBAL_VARIABLES = 'spintax_global_variables';
 
-	/** @var string Global cache salt/version (int). */
+	/**
+	 * Global cache salt/version option key.
+	 *
+	 * @var string
+	 */
 	public const CACHE_SALT = 'spintax_cache_salt';
 
-	/** @var string Debug log entries (array). */
+	/**
+	 * Debug log entries option key.
+	 *
+	 * @var string
+	 */
 	public const LOGS = 'spintax_logs';
 
-	// --- wp_postmeta (template CPT) ------------------------------------------
-
-	/** @var string Per-template cache TTL override in seconds (int, 0 = no cache). */
+	/**
+	 * Per-template cache TTL override in seconds.
+	 *
+	 * @var string
+	 */
 	public const META_CACHE_TTL = '_spintax_cache_ttl';
 
-	/** @var string Per-template cron schedule (string: disabled|hourly|twicedaily|daily). */
+	/**
+	 * Per-template cron schedule meta key.
+	 *
+	 * @var string
+	 */
 	public const META_CRON_SCHEDULE = '_spintax_cron_schedule';
 
-	/** @var string Per-template cache version counter (int). */
+	/**
+	 * Per-template cache version counter meta key.
+	 *
+	 * @var string
+	 */
 	public const META_CACHE_VERSION = '_spintax_cache_version';
 
-	/** @var string Embedded template IDs for dependency tracking (array of int). */
+	/**
+	 * Embedded template IDs for dependency tracking.
+	 *
+	 * @var string
+	 */
 	public const META_EMBEDS = '_spintax_embeds';
 
-	/** @var string Last default regeneration timestamp (int). */
+	/**
+	 * Last default regeneration timestamp meta key.
+	 *
+	 * @var string
+	 */
 	public const META_LAST_REGENERATED = '_spintax_last_regenerated_at';
 }

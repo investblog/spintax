@@ -15,7 +15,7 @@ if ( ! function_exists( 'spintax_render' ) ) {
 	 *   echo spintax_render( 'my-template' );
 	 *   echo spintax_render( 123, [ 'city' => 'Moscow' ] );
 	 *
-	 * @param int|string           $id_or_slug Template post ID or slug.
+	 * @param int|string            $id_or_slug Template post ID or slug.
 	 * @param array<string, string> $vars       Runtime variables.
 	 * @return string Rendered HTML.
 	 */

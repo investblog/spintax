@@ -261,7 +261,10 @@ class MetaBoxes {
 		}
 
 		// Use editor content if sent, otherwise fall back to saved content.
-		$content = isset( $_POST['content'] ) ? wp_kses_post( wp_unslash( $_POST['content'] ) ) : null;
+		// Do NOT sanitise input with wp_kses_post — it strips spintax config
+		// like <minsize=3;sep=", "> which looks like an HTML tag to kses.
+		// Output sanitisation happens inside Renderer::process_template().
+		$content = isset( $_POST['content'] ) ? wp_unslash( $_POST['content'] ) : null;
 		if ( null === $content ) {
 			$post = get_post( $post_id );
 			if ( ! $post || TemplatePostType::POST_TYPE !== $post->post_type ) {

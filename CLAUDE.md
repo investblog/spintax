@@ -21,14 +21,19 @@ Free WordPress plugin for spintax-based content generation. Target audience: con
 - Free plugin, no feature gates. Commercial features — after traction.
 - i18n: all UI strings wrapped in `__()` / `esc_html__()` with text domain `spintax`. No translation files in v1.0 — just the keys.
 
-## Spintax syntax (Java engine — adopted as standard)
+## Spintax syntax (GTW original — adopted as standard)
 
-- `[a|b|c]` — replacement: randomly pick one option. Supports true nesting: `[a|[b|c]]`
-- `<a|b|c>` — transposition (permutation): pick N elements, shuffle, join with separator
-  - Config: `<minsize=N;maxsize=N;sep="str";lastsep="str">` inline before options
+- `{a|b|c}` — enumeration: randomly pick one option. Supports nesting: `{a|{b|c}}`, empty options: `{|a|b}`
+- `[a|b|c]` — permutation: pick N elements, shuffle, join with separator
+  - Simple: `[a|b|c]` (all elements, space-separated)
+  - Single separator: `[< и > a|b|c]`
+  - Configured: `[<minsize=2;maxsize=3;sep=", ";lastsep=" и "> a|b|c]`
+  - Per-element separator: `[<,> a|b < и >|c]`
 - `%var%` — variable reference
 - `#set %var% = value` — variable definition (value can contain spintax)
-- `#const` — NOT implementing (same functionality covered by variables)
+- `/#...#/` — comments (stripped from output)
+- `#include "slug-or-id"` — GTW-compatible alias for nested template embedding (no variables, simple form)
+- NOT implementing in v1: `#const`, synonyms, shingles, links syntax
 
 ## Templates — core concept
 

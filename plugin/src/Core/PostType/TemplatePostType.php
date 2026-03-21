@@ -54,7 +54,7 @@ class TemplatePostType {
 			'show_ui'             => true,
 			'show_in_menu'        => true,
 			'show_in_rest'        => false,
-			'menu_icon'           => 'dashicons-randomize',
+			'menu_icon'           => SPINTAX_PLUGIN_URL . 'assets/img/menu-icon.svg',
 			'menu_position'       => 25,
 			'supports'            => array( 'title', 'editor' ),
 			'capability_type'     => 'spintax_template',

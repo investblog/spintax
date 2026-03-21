@@ -7,36 +7,50 @@
 
 namespace Spintax\Core\Render;
 
+use Spintax\Core\Cache\CacheManager;
+use Spintax\Core\Cache\DependencyInvalidator;
 use Spintax\Core\Engine\Parser;
 use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Core\Settings\SettingsRepository;
 
 /**
- * Orchestrates the multi-stage rendering pipeline.
+ * Orchestrates the multi-stage rendering pipeline with object cache.
  *
  * Pipeline (spec section 7.1):
  *   1.  Resolve template by ID or slug
- *   2.  Load raw post_content
- *   3.  Strip comments
- *   4.  Parse #set definitions, strip from body
- *   5.  Build variable context (global → local → runtime)
- *   6.  Expand %var% references
- *   7.  Resolve enumerations {…}
- *   8.  Resolve permutations [...]
- *   9.  Resolve #include and nested [spintax] shortcodes
- *   10. Post-process (spacing, capitalisation)
- *   11. Sanitize HTML
- *
- * Caching is not implemented here — it will wrap this class in Phase 4.
+ *   2.  Check cache → return on hit
+ *   3.  Load raw post_content
+ *   4.  Strip comments
+ *   5.  Parse #set definitions, strip from body
+ *   6.  Build variable context (global → local → runtime)
+ *   7.  Expand %var% references
+ *   8.  Resolve enumerations {…}
+ *   9.  Resolve permutations [...]
+ *   10. Resolve #include and nested [spintax] shortcodes
+ *   11. Post-process (spacing, capitalisation)
+ *   12. Sanitize HTML
+ *   13. Store in cache
  */
 class Renderer {
 
 	private Parser $parser;
 	private SettingsRepository $settings;
+	private CacheManager $cache;
+	private DependencyInvalidator $deps;
 
-	public function __construct( ?Parser $parser = null, ?SettingsRepository $settings = null ) {
+	/** @var int[] Template IDs rendered during the current top-level render. */
+	private array $rendered_ids = array();
+
+	public function __construct(
+		?Parser $parser = null,
+		?SettingsRepository $settings = null,
+		?CacheManager $cache = null,
+		?DependencyInvalidator $deps = null
+	) {
 		$this->parser   = $parser ?? new Parser();
 		$this->settings = $settings ?? new SettingsRepository();
+		$this->cache    = $cache ?? new CacheManager( $this->settings );
+		$this->deps     = $deps ?? new DependencyInvalidator( $this->cache );
 	}
 
 	/**
@@ -75,14 +89,37 @@ class Renderer {
 
 		$context = $context->push_template( $template_id );
 
+		// --- Cache check ---------------------------------------------------
+		$context_hash = $context->with_runtime( $runtime_vars )->get_context_hash();
+		$cached       = $this->cache->get( $template_id, $context_hash );
+		if ( null !== $cached ) {
+			return $cached;
+		}
+
 		// --- Stage 2: Load raw content -------------------------------------
 		$raw = $post->post_content;
 		if ( '' === trim( $raw ) ) {
 			return '';
 		}
 
+		// Track which template IDs are nested (for dependency graph).
+		$is_top_level = empty( $parent_ctx );
+		if ( $is_top_level ) {
+			$this->rendered_ids = array();
+		}
+
 		try {
-			return $this->process_template( $raw, $runtime_vars, $context );
+			$output = $this->process_template( $raw, $runtime_vars, $context );
+
+			// --- Cache store -----------------------------------------------
+			$this->cache->set( $template_id, $context_hash, $output );
+
+			// Record dependency graph for the top-level template.
+			if ( $is_top_level && ! empty( $this->rendered_ids ) ) {
+				$this->deps->record_dependencies( $template_id, $this->rendered_ids );
+			}
+
+			return $output;
 		} catch ( \RuntimeException $e ) {
 			$this->log_error( sprintf( 'Render error for template %d: %s', $template_id, $e->getMessage() ) );
 			return '';
@@ -177,8 +214,9 @@ class Renderer {
 		$renderer = $this;
 		$text     = $this->parser->resolve_includes(
 			$text,
-			static function ( string $slug_or_id ) use ( $renderer, $context ): string {
-				return $renderer->render( $slug_or_id, array(), $context );
+			function ( string $slug_or_id ) use ( $context ): string {
+				$this->track_nested_id( $slug_or_id );
+				return $this->render( $slug_or_id, array(), $context );
 			}
 		);
 
@@ -191,12 +229,13 @@ class Renderer {
 					return '';
 				}
 
-				$id_or_slug  = $attrs['id'] ?? $attrs['slug'] ?? '';
+				$id_or_slug = $attrs['id'] ?? $attrs['slug'] ?? '';
 				if ( '' === $id_or_slug ) {
 					return '';
 				}
 
-				// Remaining attributes become runtime variables.
+				$this->track_nested_id( $id_or_slug );
+
 				$nested_vars = $attrs;
 				unset( $nested_vars['id'], $nested_vars['slug'] );
 
@@ -206,6 +245,18 @@ class Renderer {
 		);
 
 		return $text;
+	}
+
+	/**
+	 * Track a nested template ID for dependency recording.
+	 *
+	 * @param int|string $id_or_slug Template ID or slug.
+	 */
+	private function track_nested_id( $id_or_slug ): void {
+		$post = $this->resolve_template( $id_or_slug );
+		if ( $post ) {
+			$this->rendered_ids[] = $post->ID;
+		}
 	}
 
 	/**

@@ -93,6 +93,21 @@ add_action(
 		// Load global helper function.
 		require_once SPINTAX_PLUGIN_DIR . 'src/Core/Render/functions.php';
 
+		// Invalidate cache when a template is saved.
+		add_action(
+			'save_post_' . Core\PostType\TemplatePostType::POST_TYPE,
+			function ( int $post_id ): void {
+				if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+					return;
+				}
+				$cache = new Core\Cache\CacheManager();
+				$cache->invalidate_template( $post_id );
+
+				$deps = new Core\Cache\DependencyInvalidator( $cache );
+				$deps->invalidate_dependents( $post_id );
+			}
+		);
+
 		// Sync capabilities with current settings.
 		if ( is_admin() ) {
 			$settings = new Core\Settings\SettingsRepository();

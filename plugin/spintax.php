@@ -86,6 +86,13 @@ add_action(
 		$cpt = new Core\PostType\TemplatePostType();
 		$cpt->init();
 
+		// Register [spintax] shortcode.
+		$shortcode = new Core\Shortcode\ShortcodeController();
+		$shortcode->init();
+
+		// Load global helper function.
+		require_once SPINTAX_PLUGIN_DIR . 'src/Core/Render/functions.php';
+
 		// Sync capabilities with current settings.
 		if ( is_admin() ) {
 			$settings = new Core\Settings\SettingsRepository();

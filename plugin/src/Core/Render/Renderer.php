@@ -43,6 +43,9 @@ class Renderer {
 	/** @var int[] Template IDs rendered during the current top-level render. */
 	private array $rendered_ids = array();
 
+	/** @var bool When true, skip cache reads for the entire subtree (force fresh render). */
+	private bool $bypass_cache = false;
+
 	public function __construct(
 		?Parser $parser = null,
 		?SettingsRepository $settings = null,
@@ -53,6 +56,25 @@ class Renderer {
 		$this->settings = $settings ?? new SettingsRepository();
 		$this->cache    = $cache ?? new CacheManager( $this->settings );
 		$this->deps     = $deps ?? new DependencyInvalidator( $this->cache );
+	}
+
+	/**
+	 * Render a template with cache bypass — fresh full subtree render.
+	 *
+	 * Used by the "Regenerate Public Cache" button: skips cache reads
+	 * for the entire subtree so nested templates are also re-rendered.
+	 * The result IS stored in cache after rendering.
+	 *
+	 * @param int|string $id_or_slug Template post ID or slug.
+	 * @return string Rendered HTML.
+	 */
+	public function render_fresh( $id_or_slug ): string {
+		$this->bypass_cache = true;
+		try {
+			return $this->render( $id_or_slug );
+		} finally {
+			$this->bypass_cache = false;
+		}
 	}
 
 	/**
@@ -93,9 +115,11 @@ class Renderer {
 
 		// --- Cache check ---------------------------------------------------
 		$context_hash = $context->with_runtime( $runtime_vars )->get_context_hash();
-		$cached       = $this->cache->get( $template_id, $context_hash );
-		if ( null !== $cached ) {
-			return $cached;
+		if ( ! $this->bypass_cache ) {
+			$cached = $this->cache->get( $template_id, $context_hash );
+			if ( null !== $cached ) {
+				return $cached;
+			}
 		}
 
 		// --- Stage 2: Load raw content -------------------------------------
@@ -214,18 +238,21 @@ class Renderer {
 	private function resolve_nested( string $text, RenderContext $context ): string {
 		// Resolve #include directives.
 		$renderer = $this;
-		$text     = $this->parser->resolve_includes(
+		// Child context: inherits global + runtime but NOT parent's #set locals.
+		$child_ctx = $context->for_child_render();
+
+		$text = $this->parser->resolve_includes(
 			$text,
-			function ( string $slug_or_id ) use ( $context ): string {
+			function ( string $slug_or_id ) use ( $child_ctx ): string {
 				$this->track_nested_id( $slug_or_id );
-				return $this->render( $slug_or_id, array(), $context );
+				return $this->render( $slug_or_id, array(), $child_ctx );
 			}
 		);
 
 		// Resolve [spintax ...] shortcodes.
 		$text = preg_replace_callback(
 			'/\[spintax\s+([^\]]+)\]/i',
-			function ( array $m ) use ( $context ): string {
+			function ( array $m ) use ( $child_ctx ): string {
 				$attrs = $this->parse_shortcode_attrs( $m[1] );
 				if ( empty( $attrs ) ) {
 					return '';
@@ -241,7 +268,7 @@ class Renderer {
 				$nested_vars = $attrs;
 				unset( $nested_vars['id'], $nested_vars['slug'] );
 
-				return $this->render( $id_or_slug, $nested_vars, $context );
+				return $this->render( $id_or_slug, $nested_vars, $child_ctx );
 			},
 			$text
 		);

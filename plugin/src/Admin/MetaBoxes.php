@@ -16,6 +16,7 @@ use Spintax\Core\Engine\Parser;
 use Spintax\Core\Engine\Validator;
 use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Core\Render\Renderer;
+use Spintax\Core\Settings\SettingsRepository;
 use Spintax\Support\Defaults;
 use Spintax\Support\OptionKeys;
 
@@ -33,6 +34,7 @@ class MetaBoxes {
 	public function init(): void {
 		add_action( 'add_meta_boxes_' . TemplatePostType::POST_TYPE, array( $this, 'register' ) );
 		add_action( 'save_post_' . TemplatePostType::POST_TYPE, array( $this, 'save' ), 10, 2 );
+		add_action( 'admin_notices', array( $this, 'show_validation_notices' ) );
 		add_action( 'wp_ajax_spintax_preview', array( $this, 'ajax_preview' ) );
 		add_action( 'wp_ajax_spintax_regenerate', array( $this, 'ajax_regenerate' ) );
 	}
@@ -194,17 +196,14 @@ class MetaBoxes {
 			}
 		}
 
-		// Validate template content.
-		$validator = new Validator();
-		$result    = $validator->validate( $post->post_content );
+		// Validate template content with full context.
+		$result = $this->run_validation( $post->post_content );
 
-		if ( ! empty( $result['errors'] ) ) {
-			// Store errors for display — don't block save in this implementation,
-			// the validation notice will be shown after redirect.
+		if ( ! empty( $result['errors'] ) || ! empty( $result['warnings'] ) ) {
 			set_transient(
 				'spintax_validation_' . $post_id,
 				$result,
-				60
+				120
 			);
 		}
 
@@ -214,7 +213,44 @@ class MetaBoxes {
 	}
 
 	/**
-	 * AJAX: render a fresh preview.
+	 * Display validation notices on the template edit screen.
+	 */
+	public function show_validation_notices(): void {
+		$screen = get_current_screen();
+		if ( ! $screen || TemplatePostType::POST_TYPE !== $screen->post_type ) {
+			return;
+		}
+
+		global $post;
+		if ( ! $post ) {
+			return;
+		}
+
+		$key    = 'spintax_validation_' . $post->ID;
+		$result = get_transient( $key );
+		if ( ! $result || ! is_array( $result ) ) {
+			return;
+		}
+		delete_transient( $key );
+
+		foreach ( $result['errors'] ?? array() as $error ) {
+			printf(
+				'<div class="notice notice-error"><p><strong>%s</strong> %s</p></div>',
+				esc_html__( 'Spintax Error:', 'spintax' ),
+				esc_html( $error['message'] )
+			);
+		}
+		foreach ( $result['warnings'] ?? array() as $warning ) {
+			printf(
+				'<div class="notice notice-warning is-dismissible"><p><strong>%s</strong> %s</p></div>',
+				esc_html__( 'Spintax Warning:', 'spintax' ),
+				esc_html( $warning['message'] )
+			);
+		}
+	}
+
+	/**
+	 * AJAX: render a fresh preview from editor content (not DB).
 	 */
 	public function ajax_preview(): void {
 		check_ajax_referer( 'spintax_admin', 'nonce' );
@@ -224,18 +260,22 @@ class MetaBoxes {
 			wp_send_json_error( __( 'Permission denied.', 'spintax' ) );
 		}
 
-		$post = get_post( $post_id );
-		if ( ! $post || TemplatePostType::POST_TYPE !== $post->post_type ) {
-			wp_send_json_error( __( 'Template not found.', 'spintax' ) );
+		// Use editor content if sent, otherwise fall back to saved content.
+		$content = isset( $_POST['content'] ) ? wp_unslash( $_POST['content'] ) : null;
+		if ( null === $content ) {
+			$post = get_post( $post_id );
+			if ( ! $post || TemplatePostType::POST_TYPE !== $post->post_type ) {
+				wp_send_json_error( __( 'Template not found.', 'spintax' ) );
+			}
+			$content = $post->post_content;
 		}
 
-		// Validate.
-		$validator  = new Validator();
-		$validation = $validator->validate( $post->post_content );
+		// Validate with full context.
+		$validation = $this->run_validation( $content );
 
 		// Render preview (does NOT touch public cache).
 		$renderer = new Renderer();
-		$output   = $renderer->process_template( $post->post_content );
+		$output   = $renderer->process_template( $content );
 
 		wp_send_json_success( array(
 			'html'       => $output,
@@ -260,12 +300,43 @@ class MetaBoxes {
 		$deps = new DependencyInvalidator( $cache );
 		$deps->invalidate_dependents( $post_id );
 
-		// Warm the default context cache.
+		// Warm with a full fresh subtree render (bypasses child caches too).
 		$renderer = new Renderer();
-		$renderer->render( $post_id );
+		$renderer->render_fresh( $post_id );
 
 		wp_send_json_success( array(
 			'message' => __( 'Cache regenerated.', 'spintax' ),
 		) );
+	}
+
+	/**
+	 * Run validation with known template slugs and global variables.
+	 *
+	 * @param string $content Template content to validate.
+	 * @return array{errors: array, warnings: array}
+	 */
+	private function run_validation( string $content ): array {
+		$known_slugs = get_posts( array(
+			'post_type'      => TemplatePostType::POST_TYPE,
+			'posts_per_page' => -1,
+			'fields'         => 'ids',
+			'post_status'    => array( 'publish', 'draft', 'private' ),
+		) );
+
+		// Collect slugs from post names.
+		$slugs = array();
+		foreach ( $known_slugs as $pid ) {
+			$p = get_post( $pid );
+			if ( $p ) {
+				$slugs[] = $p->post_name;
+				$slugs[] = (string) $p->ID;
+			}
+		}
+
+		$settings    = new SettingsRepository();
+		$global_vars = array_keys( $settings->get_global_variables() );
+
+		$validator = new Validator();
+		return $validator->validate( $content, $slugs, $global_vars );
 	}
 }

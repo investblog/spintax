@@ -137,6 +137,42 @@ class RendererTest extends \WP_UnitTestCase {
 		$this->assertStringContainsString( 'Hello Bob!', $result );
 	}
 
+	/**
+	 * Regression: child templates must NOT inherit parent's #set local variables.
+	 * Only global and runtime vars are passed; child defines its own locals.
+	 */
+	public function test_child_does_not_inherit_parent_set_vars(): void {
+		$this->make_template( 'child-scope', 'Child sees %x%' );
+		$parent = $this->make_template( 'Parent Scope', "#set %x% = parent\n#include \"child-scope\"" );
+
+		$renderer = new Renderer( new Parser( static fn( int $min, int $max ): int => $min ) );
+		$result   = $renderer->render( $parent );
+		// %x% is NOT defined in child and NOT a global → should remain as literal %x%.
+		$this->assertStringContainsString( '%x%', $result );
+		$this->assertStringNotContainsString( 'parent', strtolower( $result ) );
+	}
+
+	/**
+	 * Regression: force-fresh render bypasses child caches.
+	 */
+	public function test_render_fresh_bypasses_child_cache(): void {
+		$child  = $this->make_template( 'cached-child', '{Alpha|Beta}' );
+		$parent = $this->make_template( 'cached-parent', "#include \"cached-child\"" );
+
+		$renderer = new Renderer( new Parser( static fn( int $min, int $max ): int => $min ) );
+
+		// First render — populates caches.
+		$first = $renderer->render( $parent );
+
+		// render_fresh should bypass cache and produce a fresh render.
+		$fresh = $renderer->render_fresh( $parent );
+
+		// Both should contain valid output (not empty, not raw spintax).
+		$this->assertNotEmpty( $first );
+		$this->assertNotEmpty( $fresh );
+		$this->assertStringNotContainsString( '{', $fresh );
+	}
+
 	// =========================================================================
 	// Shortcode integration
 	// =========================================================================

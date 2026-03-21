@@ -99,6 +99,24 @@ class RenderContext {
 	}
 
 	/**
+	 * Return a clean context for nested template rendering.
+	 *
+	 * Nested templates inherit global and runtime variables but NOT
+	 * the parent's local (#set) variables — they define their own.
+	 * The call stack is preserved for circular reference detection.
+	 *
+	 * @return self
+	 */
+	public function for_child_render(): self {
+		return new self(
+			$this->global_vars,
+			array(), // child has its own #set scope
+			$this->runtime_vars,
+			$this->call_stack
+		);
+	}
+
+	/**
 	 * Return a new context with a template ID pushed onto the call stack.
 	 *
 	 * @param int $template_id Template post ID.

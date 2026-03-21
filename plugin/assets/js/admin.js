@@ -19,10 +19,22 @@
     $spinner.addClass("is-active");
     $validation.empty();
 
+    // Send current editor content (not yet saved) for live preview.
+    var editorContent = "";
+    if (typeof wp !== "undefined" && wp.editor && wp.editor.getContent) {
+      editorContent = wp.editor.getContent("content");
+    } else {
+      var $textarea = $("#content");
+      if ($textarea.length) {
+        editorContent = $textarea.val();
+      }
+    }
+
     $.post(spintaxAdmin.ajaxUrl, {
       action: "spintax_preview",
       nonce: spintaxAdmin.nonce,
       post_id: postId,
+      content: editorContent,
     })
       .done(function (res) {
         if (res.success) {

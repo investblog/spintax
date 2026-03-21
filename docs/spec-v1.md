@@ -212,9 +212,15 @@ Rules:
 Local variables are declared one per line:
 
 ```text
-#set %greeting% = [Hello|Hi|Hey]
+#set %greeting% = {Hello|Hi|Hey}
+#set %navigation_features% = [<minsize=2;maxsize=3;sep=", ";lastsep=" and "> Slots|Live Casino|Games|Promo]
 #set %city% = Moscow
 ```
+
+In the examples above:
+
+- `%greeting%` uses enumeration and resolves to one option
+- `%navigation_features%` uses permutation and resolves to a shuffled joined list
 
 Rules:
 
@@ -471,7 +477,7 @@ The template must not save when any of the following is detected:
 - Malformed `#set` declarations
 - Circular template references that can be resolved from current IDs/slugs
 - Self-referential variable loops that are statically detectable
-- Nested `spintax` shortcode references that point to a non-existent template
+- Nested `spintax` shortcode references or `#include` directives that point to a non-existent template
 
 Validation errors should point to line and column where possible.
 

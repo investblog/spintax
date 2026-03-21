@@ -155,7 +155,7 @@ class SettingsPage {
 
 				<textarea name="spintax_global_variables_raw" id="spintax-global-variables"
 					class="large-text code" rows="16"
-					placeholder="<?php esc_attr_e( "#set %sitename% = My Site\n#set %year% = 2026\n#set %colors% = {red|blue|green}", 'spintax' ); ?>"
+					placeholder="<?php esc_attr_e( "#set %company% = {Acme Corp|Acme Inc}\n#set %year% = 2026\n#set %products% = [<minsize=2;maxsize=3;sep=\", \";lastsep=\" and \"> widgets|gadgets|tools|services]\n#set %slogan% = {Quality|Reliable|Trusted} {solutions|products} since %year%", 'spintax' ); ?>"
 				><?php echo esc_textarea( $variables_raw ); ?></textarea>
 
 				<?php submit_button( __( 'Save Settings', 'spintax' ), 'primary', 'spintax_save_settings' ); ?>

@@ -290,11 +290,35 @@ class ParserTest extends \WP_UnitTestCase {
 		);
 	}
 
+	public function test_post_process_preserves_url_before_next_sentence(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Visit https://example.com. Next sentence',
+			$parser->post_process( 'visit https://example.com. next sentence' )
+		);
+	}
+
 	public function test_post_process_preserves_email(): void {
 		$parser = $this->make_first();
 		$this->assertSame(
 			'Mail support@1xslots.com for help.',
 			$parser->post_process( 'mail support@1xslots.com for help.' )
+		);
+	}
+
+	public function test_post_process_preserves_idn_email(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Mail first.last@домен.рф for help.',
+			$parser->post_process( 'mail first.last@домен.рф for help.' )
+		);
+	}
+
+	public function test_post_process_preserves_idn_email_before_next_sentence(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Send first.last@домен.рф. Next sentence',
+			$parser->post_process( 'send first.last@домен.рф. next sentence' )
 		);
 	}
 
@@ -327,6 +351,14 @@ class ParserTest extends \WP_UnitTestCase {
 		$this->assertStringContainsString(
 			'xn--e1afmapc.xn--p1ai',
 			$parser->post_process( 'visit xn--e1afmapc.xn--p1ai today' )
+		);
+	}
+
+	public function test_post_process_preserves_unicode_idn_domain(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Visit домен.рф today.',
+			$parser->post_process( 'visit домен.рф today.' )
 		);
 	}
 
@@ -366,9 +398,15 @@ class ParserTest extends \WP_UnitTestCase {
 
 	public function test_post_process_preserves_abbreviation(): void {
 		$parser = $this->make_first();
-		$result = $parser->post_process( 'и т.д. другие' );
-		// "т.д." is an abbreviation — should NOT capitalize "другие".
-		$this->assertStringContainsString( 'т.д.', $result );
+		$this->assertSame( 'И т.д. другие', $parser->post_process( 'и т.д. другие' ) );
+	}
+
+	public function test_post_process_single_letter_period_still_ends_sentence(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Option A. Next step',
+			$parser->post_process( 'option A. next step' )
+		);
 	}
 
 	// =========================================================================

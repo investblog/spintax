@@ -212,27 +212,42 @@ class Parser {
 	public function post_process( string $text ): string {
 		$placeholders = array();
 		$counter      = 0;
+		$domain_part  = '(?:(?:(?:xn--)?[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*)\.)+(?:xn--[a-z0-9\-]{2,59}|[\p{L}][\p{L}\p{N}-]{1,62})';
+		$store_placeholder = static function ( string $value, string $prefix ) use ( &$placeholders, &$counter ): string {
+			$key                  = "\x00{$prefix}_{$counter}\x00";
+			$placeholders[ $key ] = $value;
+			++$counter;
+			return $key;
+		};
+		$store_with_trailing_punctuation = static function ( string $value, string $prefix ) use ( $store_placeholder ): string {
+			if ( preg_match( '/([.,;:!]+)$/u', $value, $m ) ) {
+				$suffix = $m[1];
+				$value  = substr( $value, 0, -strlen( $suffix ) );
+
+				if ( '' === $value ) {
+					return $suffix;
+				}
+
+				return $store_placeholder( $value, $prefix ) . $suffix;
+			}
+
+			return $store_placeholder( $value, $prefix );
+		};
 
 		// --- 1. Shield: full URLs (with protocol) --------------------------
 		$text = preg_replace_callback(
 			'~(?:https?|ftp)://[^\s<>"\')\]]+~iu',
-			static function ( array $m ) use ( &$placeholders, &$counter ): string {
-				$key                    = "\x00URL_{$counter}\x00";
-				$placeholders[ $key ]   = $m[0];
-				++$counter;
-				return $key;
+			static function ( array $m ) use ( $store_with_trailing_punctuation ): string {
+				return $store_with_trailing_punctuation( $m[0], 'URL' );
 			},
 			$text
 		);
 
 		// --- 2. Shield: email addresses ------------------------------------
 		$text = preg_replace_callback(
-			'/[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/iu',
-			static function ( array $m ) use ( &$placeholders, &$counter ): string {
-				$key                    = "\x00EMAIL_{$counter}\x00";
-				$placeholders[ $key ]   = $m[0];
-				++$counter;
-				return $key;
+			'~[a-z0-9._%+\-]+@' . $domain_part . '\b~iu',
+			static function ( array $m ) use ( $store_placeholder ): string {
+				return $store_placeholder( $m[0], 'EMAIL' );
 			},
 			$text
 		);
@@ -242,12 +257,9 @@ class Parser {
 		// Requires dot-separated labels ending with a 2-63 char TLD that
 		// contains at least one letter (excludes pure numbers like 3.14).
 		$text = preg_replace_callback(
-			'~\b(?:(?:(?:xn--)?[a-z0-9]+(?:-[a-z0-9]+)*|[^\s<>,.;:!?/\[\]{}|%]+)\.)+(?:xn--)?[a-z][a-z0-9\-]{1,62}\b~iu',
-			static function ( array $m ) use ( &$placeholders, &$counter ): string {
-				$key                    = "\x00DOM_{$counter}\x00";
-				$placeholders[ $key ]   = $m[0];
-				++$counter;
-				return $key;
+			'~\b' . $domain_part . '\b~iu',
+			static function ( array $m ) use ( $store_placeholder ): string {
+				return $store_placeholder( $m[0], 'DOM' );
 			},
 			$text
 		);
@@ -265,14 +277,11 @@ class Parser {
 		);
 
 		// --- 5. Shield: abbreviations (т.д., и т.п., etc.) ----------------
-		// 1-2 letter words followed by period, repeated — covers т.д., т.п., и т.д., etc.
+		// Requires at least two dotted groups, so plain "A." still ends a sentence.
 		$text = preg_replace_callback(
-			'/\b(?:\p{L}{1,2}\.){1,}(?:\s\p{L}{1,2}\.)*/u',
-			static function ( array $m ) use ( &$placeholders, &$counter ): string {
-				$key                    = "\x00ABBR_{$counter}\x00";
-				$placeholders[ $key ]   = $m[0];
-				++$counter;
-				return $key;
+			'/\b(?:\p{L}{1,2}\.\s*){2,}/u',
+			static function ( array $m ) use ( $store_placeholder ): string {
+				return $store_placeholder( $m[0], 'ABBR' );
 			},
 			$text
 		);

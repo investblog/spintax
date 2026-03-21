@@ -81,6 +81,8 @@ jobs:
           mkdir -p build/spintax
           cp -r plugin/* build/spintax/
           cd build
+          rm -f spintax/composer.json spintax/composer.lock spintax/phpcs.xml.dist spintax/phpunit.xml.dist
+          rm -rf spintax/vendor spintax/.phpunit.result.cache spintax/tests
           zip -r ../spintax.zip spintax -x '*.DS_Store' -x '*.git*'
 
       - name: Upload artifact

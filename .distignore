@@ -1,0 +1,24 @@
+# Files to exclude from plugin distribution (used by 10up deploy action).
+.distignore
+.git
+.github
+.gitignore
+.editorconfig
+.wp-env.json
+.phpunit.result.cache
+phpunit.xml.dist
+phpcs.xml.dist
+composer.json
+composer.lock
+vendor
+node_modules
+package.json
+package-lock.json
+tests
+docs
+scripts
+build
+CLAUDE.md
+AGENTS.md
+README.md
+*.zip

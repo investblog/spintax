@@ -474,6 +474,99 @@ class ParserTest extends \WP_UnitTestCase {
 		$this->assertSame( '<h1>Hello</h1>', $result );
 	}
 
+	// =========================================================================
+	// Per-element separators
+	// =========================================================================
+
+	public function test_perm_per_element_sep_basic(): void {
+		$parser = $this->make_first();
+		$result = $parser->resolve_permutations( '[<, > a|b < and >|c]' );
+		$this->assertStringContainsString( ' and ', $result );
+		$this->assertStringContainsString( ', ', $result );
+		// first-RNG Fisher-Yates shuffles [a,b,c] → [b,c,a].
+		$this->assertSame( 'b and c, a', $result );
+	}
+
+	public function test_perm_per_element_sep_shuffled(): void {
+		$parser = $this->make_last();
+		$result = $parser->resolve_permutations( '[<, > a|b < and >|c]' );
+		// last-RNG keeps order [a,b,c]. c has customSep " and ".
+		$this->assertStringContainsString( 'a', $result );
+		$this->assertStringContainsString( 'b', $result );
+		$this->assertStringContainsString( 'c', $result );
+	}
+
+	public function test_perm_per_element_sep_cyrillic(): void {
+		$parser = $this->make_first();
+		$result = $parser->resolve_permutations( '[<до> баккары <до>| рулетки <и>| покера]' );
+		$this->assertStringContainsString( ' до ', $result );
+		$this->assertStringContainsString( ' и ', $result );
+		$this->assertStringContainsString( 'баккары', $result );
+		$this->assertStringContainsString( 'рулетки', $result );
+		$this->assertStringContainsString( 'покера', $result );
+	}
+
+	public function test_perm_per_element_sep_first_no_prefix(): void {
+		$parser = $this->make_last();
+		// last-RNG keeps [a,b,c]. c has customSep, is last → " and " before c.
+		$result = $parser->resolve_permutations( '[<, > a|b < and >|c]' );
+		$this->assertStringNotContainsString( 'and a', $result );
+	}
+
+	public function test_perm_per_element_sep_with_minmax(): void {
+		$parser = $this->make_first();
+		$result = $parser->resolve_permutations( '[<minsize=1;maxsize=1;sep=", "> a|b < and >|c]' );
+		$this->assertStringNotContainsString( ',', $result );
+		$this->assertStringNotContainsString( ' and ', $result );
+	}
+
+	public function test_perm_per_element_sep_overrides_lastsep(): void {
+		$parser = $this->make_last();
+		// last-RNG identity order: a, b, c. c is last with customSep " and " → overrides lastsep " or ".
+		$result = $parser->resolve_permutations( '[<sep=", ";lastsep=" or "> a|b < and >|c]' );
+		$this->assertStringContainsString( ' and ', $result );
+		$this->assertStringNotContainsString( ' or ', $result );
+		$this->assertSame( 'a, b and c', $result );
+	}
+
+	public function test_perm_per_element_sep_html_not_confused(): void {
+		$parser = $this->make_first();
+		$result = $parser->resolve_permutations( '[<li>item1</li>|<li>item2</li>]' );
+		$this->assertStringContainsString( '<li>', $result );
+		$this->assertStringContainsString( 'item1', $result );
+		$this->assertStringContainsString( 'item2', $result );
+	}
+
+	// =========================================================================
+	// Auto-spacing for word separators
+	// =========================================================================
+
+	public function test_perm_word_separator_auto_padded(): void {
+		$parser = $this->make_first();
+		$result = $parser->resolve_permutations( '[<и> a|b|c]' );
+		$this->assertStringContainsString( ' и ', $result );
+	}
+
+	public function test_perm_punct_separator_not_padded(): void {
+		$parser = $this->make_first();
+		$result = $parser->resolve_permutations( '[<,> a|b]' );
+		$this->assertStringNotContainsString( ' , ', $result );
+	}
+
+	public function test_perm_separator_already_spaced(): void {
+		$parser = $this->make_first();
+		$result = $parser->resolve_permutations( '[< and > a|b]' );
+		$this->assertStringContainsString( ' and ', $result );
+	}
+
+	public function test_perm_mixed_separator_not_padded(): void {
+		$parser = $this->make_first();
+		$result = $parser->resolve_permutations( '[<, and> a|b]' );
+		$this->assertStringNotContainsString( ' , and ', $result );
+	}
+
+	// =========================================================================
+
 	/**
 	 * Smoke test with the real production template.
 	 */

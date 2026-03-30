@@ -176,3 +176,9 @@ Then on WP.org for releases:
 - Template taxonomy
 - `#const` (correlated constants from GTW)
 - Rebrand demo template from Acme to 301.st promotional content
+- **Standalone API Worker** — after TS engine is battle-tested in casino-platform
+  - Native TS port lives in `W:\projects\casino-platform\packages\core\utils\spintax.ts` first
+  - Once stable, extract into this project as a standalone CF Worker with HTTP API
+  - API: `POST /resolve { template, variables, seed }` → resolved text
+  - Serves as public spintax-as-a-service for WP plugin REST API and third-party consumers
+  - See: `W:\projects\casino-platform\ROADMAP.md` Phase 5c

@@ -466,9 +466,8 @@ class Parser {
 		$config    = $extracted['config'];
 		$body      = $extracted['content'];
 
-		$elements = $this->split_top_level( $body );
-		$elements = array_map( 'trim', $elements );
-		$elements = array_values( array_filter( $elements, static fn( string $e ): bool => '' !== $e ) );
+		$raw_parts = $this->split_top_level( $body );
+		$elements  = $this->extract_per_element_separators( $raw_parts );
 
 		if ( empty( $elements ) ) {
 			return '';
@@ -615,9 +614,113 @@ class Parser {
 	}
 
 	/**
+	 * Extract per-element separators from raw split parts.
+	 *
+	 * A trailing `< sep >` in part[i] becomes the custom_sep of the element from part[i+1].
+	 *
+	 * @param array $raw_parts Raw string array from split_top_level.
+	 * @return array<array{text: string, custom_sep: string|null}> Elements with optional per-element separators.
+	 */
+	private function extract_per_element_separators( array $raw_parts ): array {
+		$elements    = array();
+		$pending_sep = null;
+
+		foreach ( $raw_parts as $i => $part ) {
+			$trailing_sep = null;
+
+			// Check for trailing <sep> (only on non-last parts).
+			if ( $i < count( $raw_parts ) - 1 ) {
+				$extracted = $this->extract_trailing_sep( $part );
+				if ( null !== $extracted ) {
+					$part         = $extracted['text'];
+					$trailing_sep = $extracted['sep'];
+				}
+			}
+
+			$text = trim( $part );
+			if ( '' !== $text ) {
+				$elements[] = array(
+					'text'       => $text,
+					'custom_sep' => $pending_sep,
+				);
+			}
+
+			$pending_sep = $trailing_sep;
+		}
+
+		return $elements;
+	}
+
+	/**
+	 * Detect a per-element separator `< sep >` at the end of a raw part string.
+	 *
+	 * @param string $part Raw part text.
+	 * @return array{text: string, sep: string}|null Extracted text and separator, or null.
+	 */
+	private function extract_trailing_sep( string $part ): ?array {
+		$trimmed = rtrim( $part );
+		$len     = strlen( $trimmed );
+
+		if ( 0 === $len || '>' !== $trimmed[ $len - 1 ] ) {
+			return null;
+		}
+
+		// Find the matching '<' scanning backward.
+		$open_pos = -1;
+		for ( $i = $len - 2; $i >= 0; $i-- ) {
+			if ( '<' === $trimmed[ $i ] ) {
+				$open_pos = $i;
+				break;
+			}
+			// Another '>' before finding '<' — nested/complex, bail.
+			if ( '>' === $trimmed[ $i ] ) {
+				return null;
+			}
+		}
+
+		if ( -1 === $open_pos ) {
+			return null;
+		}
+
+		$inner         = substr( $trimmed, $open_pos + 1, $len - $open_pos - 2 );
+		$inner_trimmed = trim( $inner );
+
+		// HTML tag detection: closing tag </x>, self-closing <x/>, or tag with attributes <x ...>.
+		if (
+			str_starts_with( $inner_trimmed, '/' )
+			|| str_ends_with( $inner_trimmed, '/' )
+			|| preg_match( '/^[a-zA-Z][a-zA-Z0-9]*\s/', $inner_trimmed )
+		) {
+			return null;
+		}
+
+		return array(
+			'text' => substr( $trimmed, 0, $open_pos ),
+			'sep'  => $inner,
+		);
+	}
+
+	/**
+	 * Auto-pad purely alphabetic separators with spaces.
+	 *
+	 * @param string $sep Separator string.
+	 * @return string Padded separator if purely alphabetic, otherwise unchanged.
+	 */
+	private function pad_separator_if_needed( string $sep ): string {
+		$trimmed = trim( $sep );
+		if ( '' === $trimmed ) {
+			return $sep;
+		}
+		if ( preg_match( '/^\p{L}+$/u', $trimmed ) ) {
+			return ' ' . $trimmed . ' ';
+		}
+		return $sep;
+	}
+
+	/**
 	 * Fisher-Yates shuffle using the custom RNG.
 	 *
-	 * @param array $arr Array to shuffle in place.
+	 * @param array $arr Array of element structs to shuffle in place.
 	 */
 	private function shuffle_array( array &$arr ): void {
 		$n = count( $arr );
@@ -630,25 +733,42 @@ class Parser {
 	}
 
 	/**
-	 * Join elements with sep between non-final items and lastsep before the last.
+	 * Join elements with separators. Per-element custom_sep overrides globals.
 	 *
-	 * @param array  $elements Array of string elements to join.
-	 * @param string $sep      Separator between non-final items.
-	 * @param string $lastsep  Separator before the last item.
+	 * @param array  $elements   Array of element structs with text and custom_sep.
+	 * @param string $global_sep Separator between non-final items.
+	 * @param string $global_lastsep Separator before the last item.
 	 * @return string Joined string.
 	 */
-	private function join_with_separators( array $elements, string $sep, string $lastsep ): string {
+	private function join_with_separators( array $elements, string $global_sep, string $global_lastsep ): string {
 		$count = count( $elements );
 
 		if ( 0 === $count ) {
 			return '';
 		}
 		if ( 1 === $count ) {
-			return $elements[0];
+			return $elements[0]['text'];
 		}
 
-		$last = array_pop( $elements );
-		return implode( $sep, $elements ) . $lastsep . $last;
+		$parts = array();
+
+		for ( $i = 0; $i < $count; $i++ ) {
+			if ( 0 === $i ) {
+				$parts[] = $elements[ $i ]['text'];
+			} else {
+				if ( null !== $elements[ $i ]['custom_sep'] ) {
+					$sep = $elements[ $i ]['custom_sep'];
+				} elseif ( $i === $count - 1 ) {
+					$sep = $global_lastsep;
+				} else {
+					$sep = $global_sep;
+				}
+				$parts[] = $this->pad_separator_if_needed( $sep );
+				$parts[] = $elements[ $i ]['text'];
+			}
+		}
+
+		return implode( '', $parts );
 	}
 
 	/**

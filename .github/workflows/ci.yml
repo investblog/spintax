@@ -62,9 +62,44 @@ jobs:
         run: composer install --no-progress --prefer-dist
 
       - name: Install WordPress test suite
+        env:
+          WP_VERSION: ${{ matrix.wp }}
         run: |
           sudo apt-get update -qq && sudo apt-get install -yqq subversion
-          bash <(curl -s https://raw.githubusercontent.com/wp-cli/scaffold-command/main/templates/install-wp-tests.sh) wordpress_tests root root 127.0.0.1 ${{ matrix.wp }} true
+
+          # Resolve version aliases to actual version numbers
+          if [ "$WP_VERSION" = "latest" ]; then
+            WP_VERSION=$(curl -fsSL https://api.wordpress.org/core/version-check/1.7/ | jq -r '.offers[0].version')
+            echo "Resolved latest WP to $WP_VERSION"
+          fi
+
+          # Ensure 3-part version (6.2 → 6.2.0) for SVN tag lookups
+          if [[ "$WP_VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            WP_VERSION="${WP_VERSION}.0"
+            echo "Expanded to $WP_VERSION"
+          fi
+
+          WP_TESTS_DIR=/tmp/wordpress-tests-lib
+          WP_CORE_DIR=/tmp/wordpress
+
+          # Download WP test suite via SVN
+          mkdir -p "$WP_TESTS_DIR"
+          svn export --quiet --force "https://develop.svn.wordpress.org/tags/${WP_VERSION}/tests/phpunit/includes/" "$WP_TESTS_DIR/includes"
+          svn export --quiet --force "https://develop.svn.wordpress.org/tags/${WP_VERSION}/tests/phpunit/data/" "$WP_TESTS_DIR/data"
+
+          # Download WP core
+          curl -fsSL "https://wordpress.org/wordpress-${WP_VERSION}.tar.gz" | tar xz -C /tmp/
+
+          # Create wp-tests-config.php
+          curl -fsSL "https://develop.svn.wordpress.org/tags/${WP_VERSION}/wp-tests-config-sample.php" -o "$WP_TESTS_DIR/wp-tests-config.php"
+          sed -i "s|dirname( __FILE__ ) . '/src/'|'${WP_CORE_DIR}/'|" "$WP_TESTS_DIR/wp-tests-config.php"
+          sed -i "s/youremptytestdbnamehere/wordpress_tests/" "$WP_TESTS_DIR/wp-tests-config.php"
+          sed -i "s/yourusernamehere/root/" "$WP_TESTS_DIR/wp-tests-config.php"
+          sed -i "s/yourpasswordhere/root/" "$WP_TESTS_DIR/wp-tests-config.php"
+          sed -i "s|localhost|127.0.0.1|" "$WP_TESTS_DIR/wp-tests-config.php"
+
+          # Verify installation
+          ls "$WP_TESTS_DIR/includes/functions.php"
 
       - name: Run PHPUnit
         run: composer run test

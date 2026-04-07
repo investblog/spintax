@@ -67,16 +67,10 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -yqq subversion
 
-          # Resolve version aliases to actual version numbers
+          # Resolve "latest" to actual version number
           if [ "$WP_VERSION" = "latest" ]; then
             WP_VERSION=$(curl -fsSL https://api.wordpress.org/core/version-check/1.7/ | jq -r '.offers[0].version')
             echo "Resolved latest WP to $WP_VERSION"
-          fi
-
-          # Ensure 3-part version (6.2 → 6.2.0) for SVN tag lookups
-          if [[ "$WP_VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
-            WP_VERSION="${WP_VERSION}.0"
-            echo "Expanded to $WP_VERSION"
           fi
 
           WP_TESTS_DIR=/tmp/wordpress-tests-lib

@@ -7,8 +7,8 @@ Free WordPress plugin for spintax-based content generation. Slug `spintax` on WP
 - **GitHub:** https://github.com/investblog/spintax
 - **Plugin URI:** https://spintax.net
 - **Author:** 301st (https://301.st)
-- **Current version:** 1.0.1
-- **Status:** All 7 implementation phases complete. WP.org review pending.
+- **Current version:** 1.1.0 (uploading to WP.org for review)
+- **Status:** WP.org manual review in progress. Reviewer requested sanitization fix (done). Re-uploading v1.1.0.
 
 ## Reference sources
 
@@ -67,6 +67,7 @@ plugin/
 - `[a|b|c]` — permutation: pick N, shuffle, join.
   - `[< and > a|b]` — single separator
   - `[<minsize=2;maxsize=3;sep=", ";lastsep=" and "> a|b|c]` — configured
+  - `[<, > a|b < and >|c]` — per-element separator: `< sep >` before `|` assigns custom separator to the next element; travels with element during shuffle
 - `%var%` — variable reference (case-insensitive)
 - `#set %var% = value` — local variable (value can contain spintax)
 - `/#...#/` — block comments (stripped)
@@ -80,6 +81,8 @@ plugin/
 - **Preview uses editor content** — AJAX sends textarea value, NOT saved DB content
 - **No wp_kses_post on input** — template source is raw spintax, sanitisation only on render OUTPUT
 - **minsize/maxsize defaults** — if only maxsize set, minsize=1 (not total). If only minsize set, maxsize=total.
+- **Auto-spacing for word separators** — purely alphabetic separators (`<и>`, `<and>`, `<до>`) are auto-padded with spaces in `join_with_separators`. Punctuation separators (`,`, `;`) are NOT padded (post-processing handles them).
+- **Per-element separator priority** — customSep > lastsep > sep. HTML tags distinguished from separators by checking for `/`, self-closing `/`, or attributes after tag name.
 
 ## Post-processing pipeline (Parser::post_process)
 
@@ -101,7 +104,7 @@ Entered as raw `#set` syntax in Settings → Spintax textarea (not key-value tab
 
 ## WP.org compliance checklist
 
-All met for v1.0.1:
+All met for v1.0.3:
 - PHPCS: 0 errors (5 acceptable warnings)
 - Plugin Check: passing (test files excluded from ZIP)
 - Nonces on all forms/AJAX
@@ -176,9 +179,11 @@ Then on WP.org for releases:
 - Template taxonomy
 - `#const` (correlated constants from GTW)
 - Rebrand demo template from Acme to 301.st promotional content
-- **Standalone API Worker** — after TS engine is battle-tested in casino-platform
-  - Native TS port lives in `W:\projects\casino-platform\packages\core\utils\spintax.ts` first
-  - Once stable, extract into this project as a standalone CF Worker with HTTP API
-  - API: `POST /resolve { template, variables, seed }` → resolved text
-  - Serves as public spintax-as-a-service for WP plugin REST API and third-party consumers
+- **TS engine port** (in progress) — lives in `W:\projects\casino-platform\packages\core\utils\spintax.ts`
+  - Full parity with PHP Parser.php including per-element separators and auto-spacing
+  - Mulberry32 PRNG with `hashCode(siteId)` seed for deterministic per-site variants
+  - 105 tests (`spintax.test.ts`), run via `npx tsx packages/core/utils/spintax.test.ts`
+  - **Phase 1** (done): port engine inline in casino-platform
+  - **Phase 2** (next): integrate into render pipeline — ui_strings, articles, anti-footprint
+  - **Phase 3** (later): extract to this project as standalone CF Worker API
   - See: `W:\projects\casino-platform\ROADMAP.md` Phase 5c

@@ -18,6 +18,7 @@ use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Core\Render\Renderer;
 use Spintax\Core\Settings\SettingsRepository;
 use Spintax\Support\Defaults;
+use Spintax\Support\Validators;
 use Spintax\Support\OptionKeys;
 
 /**
@@ -261,11 +262,9 @@ class MetaBoxes {
 		}
 
 		// Use editor content if sent, otherwise fall back to saved content.
-		// Do NOT sanitise input with wp_kses_post — it strips spintax config
-		// like <minsize=3;sep=", "> which looks like an HTML tag to kses.
 		// Output sanitisation happens inside Renderer::process_template().
-		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- raw spintax markup must be preserved; sanitize_text_field would destroy bracket expressions.
-		$content = isset( $_POST['content'] ) ? wp_unslash( $_POST['content'] ) : null;
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized via Validators::sanitize_spintax(); sanitize_textarea_field() would destroy angle-bracket spintax syntax.
+		$content = isset( $_POST['content'] ) ? Validators::sanitize_spintax( wp_unslash( $_POST['content'] ) ) : null;
 		if ( null === $content ) {
 			$post = get_post( $post_id );
 			if ( ! $post || TemplatePostType::POST_TYPE !== $post->post_type ) {

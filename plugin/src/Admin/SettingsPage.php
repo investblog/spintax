@@ -12,6 +12,7 @@ defined( 'ABSPATH' ) || exit;
 use Spintax\Core\Cache\CacheManager;
 use Spintax\Core\Settings\SettingsRepository;
 use Spintax\Support\Capabilities;
+use Spintax\Support\Validators;
 
 /**
  * Renders and handles the settings page.
@@ -204,9 +205,9 @@ class SettingsPage {
 	 */
 	private function save_global_variables(): void {
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- nonce verified in handle_actions().
-		// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- raw spintax syntax must be preserved; sanitize_text_field would strip bracket expressions.
+		// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized via Validators::sanitize_spintax(); sanitize_textarea_field() would destroy angle-bracket spintax syntax.
 		$raw = isset( $_POST['spintax_global_variables_raw'] )
-			? wp_unslash( $_POST['spintax_global_variables_raw'] )
+			? Validators::sanitize_spintax( wp_unslash( $_POST['spintax_global_variables_raw'] ) )
 			: '';
 		// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		// phpcs:enable WordPress.Security.NonceVerification.Missing

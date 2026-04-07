@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 6.9
-Stable tag: 1.0.3
+Stable tag: 1.1.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -83,6 +83,11 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 1.1.0 =
+* Add: per-element permutation separators — assign custom separator to each element via `< sep >` before `|`
+* Add: auto-spacing for purely alphabetic word separators (e.g. `<and>`, `<или>`)
+* Security: sanitize raw spintax input with custom sanitize_spintax() — strips invalid UTF-8, null bytes, and control characters while preserving angle-bracket syntax
+
 = 1.0.1 =
 * Fix: permutation minsize/maxsize logic when only one parameter is specified
 * Fix: preview rendering no longer strips spintax config from template input
@@ -106,6 +111,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 1.1.0 =
+Per-element permutation separators, auto-spacing for word separators, improved input sanitization.
 
 = 1.0.1 =
 Fixes permutation config handling, preview rendering, and scope isolation. Recommended update.

@@ -63,6 +63,33 @@ final class Validators {
 	}
 
 	/**
+	 * Sanitize raw spintax markup from user input.
+	 *
+	 * Standard sanitize_textarea_field() cannot be used because it calls
+	 * wp_strip_all_tags(), which destroys angle-bracket expressions that are
+	 * valid spintax permutation syntax (e.g. <minsize=2;sep=", ">).
+	 *
+	 * This method addresses the real security concerns — invalid UTF-8,
+	 * null bytes, and control characters — without breaking the markup.
+	 *
+	 * @param string $raw Raw spintax text from $_POST.
+	 * @return string Sanitized text safe for storage.
+	 */
+	public static function sanitize_spintax( string $raw ): string {
+		// Remove invalid UTF-8 sequences.
+		$raw = wp_check_invalid_utf8( $raw, true );
+
+		// Remove null bytes and other control characters except \n and \t.
+		$raw = preg_replace( '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $raw );
+
+		// Normalize line endings.
+		$raw = str_replace( "\r\n", "\n", $raw );
+		$raw = str_replace( "\r", "\n", $raw );
+
+		return $raw;
+	}
+
+	/**
 	 * Clamp an integer to a min/max range.
 	 *
 	 * @param int $value Value to clamp.

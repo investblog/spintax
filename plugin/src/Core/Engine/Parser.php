@@ -99,11 +99,15 @@ class Parser {
 	public function extract_set_directives( string $text ): array {
 		$variables = array();
 
+		// Whitespace classes are restricted to spaces/tabs. Using \s would
+		// allow the engine to consume newlines around `=` and capture the
+		// next directive as the value of an empty one — see the
+		// `test_extract_set_directives_empty_value_does_not_swallow_next` case.
 		$body = preg_replace_callback(
-			'/^[ \t]*#set\s+%(\w+)%\s*=\s*(.*?)$/mu',
+			'/^[ \t]*#set[ \t]+%(\w+)%[ \t]*=[ \t]*(.*?)[ \t]*$/mu',
 			static function ( array $m ) use ( &$variables ): string {
 				$name               = strtolower( $m[1] );
-				$variables[ $name ] = trim( $m[2] );
+				$variables[ $name ] = $m[2];
 				return '';
 			},
 			$text

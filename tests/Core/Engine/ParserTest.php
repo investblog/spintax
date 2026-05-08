@@ -98,6 +98,27 @@ class ParserTest extends \WP_UnitTestCase {
 		$this->assertStringContainsString( '#set', $result['body'] );
 	}
 
+	public function test_extract_set_empty_value_does_not_swallow_next_directive(): void {
+		$parser = $this->make_first();
+		$result = $parser->extract_set_directives( "#set %empty% =\n#set %next% = value" );
+		$this->assertSame( '', $result['variables']['empty'] );
+		$this->assertSame( 'value', $result['variables']['next'] );
+	}
+
+	public function test_extract_set_empty_value_with_trailing_whitespace(): void {
+		$parser = $this->make_first();
+		$result = $parser->extract_set_directives( "#set %empty% =   \n#set %next% = value" );
+		$this->assertSame( '', $result['variables']['empty'] );
+		$this->assertSame( 'value', $result['variables']['next'] );
+	}
+
+	public function test_extract_set_empty_value_before_plain_body(): void {
+		$parser = $this->make_first();
+		$result = $parser->extract_set_directives( "#set %empty% =\nHello body line" );
+		$this->assertSame( '', $result['variables']['empty'] );
+		$this->assertStringContainsString( 'Hello body line', $result['body'] );
+	}
+
 	// =========================================================================
 	// Variable expansion
 	// =========================================================================

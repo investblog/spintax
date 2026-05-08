@@ -93,7 +93,9 @@ class MetaBoxes {
 				value="<?php echo esc_attr( $ttl ); ?>"
 				min="0" step="1" class="widefat"
 				placeholder="<?php esc_attr_e( 'Use global default', 'spintax' ); ?>">
-			<span class="description"><?php esc_html_e( '0 = no caching. Empty = global default.', 'spintax' ); ?></span>
+			<span class="description">
+				<?php esc_html_e( '0 = no caching. Empty = global default. Cached output keeps one generated variant per runtime context until expiry or regeneration.', 'spintax' ); ?>
+			</span>
 		</p>
 
 		<p>

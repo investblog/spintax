@@ -25,6 +25,27 @@ class ParserTest extends \WP_UnitTestCase {
 		return new Parser( static fn( int $min, int $max ): int => $max );
 	}
 
+	/**
+	 * Create a parser that returns a predefined RNG sequence.
+	 *
+	 * The last value is reused when the sequence is exhausted.
+	 *
+	 * @param int[] $sequence Sequence of RNG return values.
+	 */
+	private function make_sequence( array $sequence ): Parser {
+		$index = 0;
+
+		return new Parser(
+			static function ( int $min, int $max ) use ( $sequence, &$index ): int {
+				$last_index = count( $sequence ) - 1;
+				$value      = $sequence[ min( $index, $last_index ) ] ?? $min;
+				++$index;
+
+				return max( $min, min( $max, $value ) );
+			}
+		);
+	}
+
 	// =========================================================================
 	// Comments
 	// =========================================================================
@@ -113,6 +134,24 @@ class ParserTest extends \WP_UnitTestCase {
 		);
 		$this->expectException( \RuntimeException::class );
 		$parser->expand_variables( '%a%', $vars );
+	}
+
+	public function test_process_randomises_variable_value_per_occurrence(): void {
+		$parser   = $this->make_sequence( array( 0, 1 ) );
+		$template = "#set %greeting% = {hello|hi}\n%greeting% %greeting%";
+
+		$this->assertSame( 'Hello hi', $parser->process( $template ) );
+	}
+
+	public function test_process_rerandomises_on_each_generation_call(): void {
+		$parser   = $this->make_sequence( array( 0, 1 ) );
+		$template = '{hello|hi}';
+
+		$first  = $parser->process( $template );
+		$second = $parser->process( $template );
+
+		$this->assertSame( 'Hello', $first );
+		$this->assertSame( 'Hi', $second );
 	}
 
 	// =========================================================================
@@ -532,9 +571,7 @@ class ParserTest extends \WP_UnitTestCase {
 	public function test_perm_per_element_sep_html_not_confused(): void {
 		$parser = $this->make_first();
 		$result = $parser->resolve_permutations( '[<li>item1</li>|<li>item2</li>]' );
-		$this->assertStringContainsString( '<li>', $result );
-		$this->assertStringContainsString( 'item1', $result );
-		$this->assertStringContainsString( 'item2', $result );
+		$this->assertSame( '<li>item2</li> <li>item1</li>', $result );
 	}
 
 	// =========================================================================

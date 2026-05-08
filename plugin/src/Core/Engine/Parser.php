@@ -535,6 +535,13 @@ class Parser {
 		$config_str = substr( $trimmed, 1, $end - 1 );
 		$remaining  = substr( $trimmed, $end + 1 );
 
+		if ( $this->looks_like_html_start_tag( $config_str, $remaining ) ) {
+			return array(
+				'config'  => $this->default_permutation_config(),
+				'content' => $content,
+			);
+		}
+
 		return array(
 			'config'  => $this->parse_config_string( $config_str ),
 			'content' => $remaining,
@@ -599,6 +606,38 @@ class Parser {
 		}
 
 		return $config;
+	}
+
+	/**
+	 * Detect whether a leading <...> block is actually an HTML start tag.
+	 *
+	 * This avoids mis-parsing permutations like [<li>item</li>|...] as if
+	 * `<li>` were the permutation config.
+	 *
+	 * @param string $tag_text  Inner contents of the leading <...> block.
+	 * @param string $remaining Text that follows the closing >.
+	 * @return bool True when the block should be treated as HTML, not config.
+	 */
+	private function looks_like_html_start_tag( string $tag_text, string $remaining ): bool {
+		$trimmed = trim( $tag_text );
+		if ( '' === $trimmed ) {
+			return false;
+		}
+
+		if ( ! preg_match( '/^([a-zA-Z][a-zA-Z0-9-]*)(?:\s+[^>]*)?\/?$/', $trimmed, $m ) ) {
+			return false;
+		}
+
+		$tag_name = strtolower( $m[1] );
+
+		if ( str_ends_with( $trimmed, '/' ) ) {
+			return true;
+		}
+
+		return 1 === preg_match(
+			'/<\/' . preg_quote( $tag_name, '/' ) . '\s*>/i',
+			$remaining
+		);
 	}
 
 	/**

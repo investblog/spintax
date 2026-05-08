@@ -119,7 +119,7 @@ class SettingsPage {
 								value="<?php echo esc_attr( $settings['default_ttl'] ); ?>"
 								min="0" step="1" class="regular-text">
 							<p class="description">
-								<?php esc_html_e( 'Seconds. 0 = no caching. Templates can override this value.', 'spintax' ); ?>
+								<?php esc_html_e( 'Seconds. 0 = no caching. Templates can override this value. When cache is enabled, visitors see the same generated variant for a given runtime context until expiry or regeneration.', 'spintax' ); ?>
 							</p>
 						</td>
 					</tr>

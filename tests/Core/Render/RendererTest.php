@@ -17,7 +17,9 @@ class RendererTest extends \WP_UnitTestCase {
 		// Use deterministic parser for predictable output.
 		$parser         = new Parser( static fn( int $min, int $max ): int => $min );
 		$this->renderer = new Renderer( $parser );
+		delete_option( OptionKeys::SETTINGS );
 		delete_option( OptionKeys::GLOBAL_VARIABLES );
+		wp_cache_flush();
 	}
 
 	/**
@@ -30,6 +32,31 @@ class RendererTest extends \WP_UnitTestCase {
 			'post_content' => $content,
 			'post_status'  => $status,
 		) );
+	}
+
+	/**
+	 * Create a parser with a predefined RNG sequence.
+	 *
+	 * The last value is reused when the sequence is exhausted.
+	 *
+	 * @param int[] $sequence RNG values to return in order.
+	 * @param int   $calls    Receives the number of RNG invocations.
+	 */
+	private function make_sequence_parser( array $sequence, int &$calls ): Parser {
+		$index = 0;
+		$calls = 0;
+
+		return new Parser(
+			static function ( int $min, int $max ) use ( $sequence, &$index, &$calls ): int {
+				++$calls;
+
+				$last_index = count( $sequence ) - 1;
+				$value      = $sequence[ min( $index, $last_index ) ] ?? $min;
+				++$index;
+
+				return max( $min, min( $max, $value ) );
+			}
+		);
 	}
 
 	// =========================================================================
@@ -92,6 +119,50 @@ class RendererTest extends \WP_UnitTestCase {
 		$id     = $this->make_template( 'Override', "#set %x% = local\n%x%" );
 		$result = $this->renderer->render( $id, array( 'x' => 'runtime' ) );
 		$this->assertSame( 'Runtime', $result );
+	}
+
+	public function test_default_context_cache_reuses_first_randomised_output(): void {
+		$calls    = 0;
+		$parser   = $this->make_sequence_parser( array( 0, 1 ), $calls );
+		$renderer = new Renderer( $parser );
+		$id       = $this->make_template( 'Cached Random', "#set %greeting% = {hello|hi}\n%greeting%" );
+
+		$first  = $renderer->render( $id );
+		$second = $renderer->render( $id );
+
+		$this->assertSame( 'Hello', $first );
+		$this->assertSame( $first, $second );
+		$this->assertSame( 1, $calls );
+	}
+
+	public function test_ttl_zero_rerenders_randomised_output_on_each_request(): void {
+		$calls    = 0;
+		$parser   = $this->make_sequence_parser( array( 0, 1 ), $calls );
+		$renderer = new Renderer( $parser );
+		$id       = $this->make_template( 'Uncached Random', "#set %greeting% = {hello|hi}\n%greeting%" );
+
+		update_post_meta( $id, OptionKeys::META_CACHE_TTL, 0 );
+
+		$first  = $renderer->render( $id );
+		$second = $renderer->render( $id );
+
+		$this->assertSame( 'Hello', $first );
+		$this->assertSame( 'Hi', $second );
+		$this->assertSame( 2, $calls );
+	}
+
+	public function test_process_template_rerandomises_on_each_generation_call(): void {
+		$calls    = 0;
+		$parser   = $this->make_sequence_parser( array( 0, 1 ), $calls );
+		$renderer = new Renderer( $parser );
+		$template = "#set %greeting% = {hello|hi}\n%greeting%";
+
+		$first  = $renderer->process_template( $template );
+		$second = $renderer->process_template( $template );
+
+		$this->assertSame( 'Hello', $first );
+		$this->assertSame( 'Hi', $second );
+		$this->assertSame( 2, $calls );
 	}
 
 	// =========================================================================

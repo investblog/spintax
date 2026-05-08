@@ -7,8 +7,8 @@ Free WordPress plugin for spintax-based content generation. Slug `spintax` on WP
 - **GitHub:** https://github.com/investblog/spintax
 - **Plugin URI:** https://spintax.net
 - **Author:** 301st (https://301.st)
-- **Current version:** 1.1.0 (uploading to WP.org for review)
-- **Status:** WP.org manual review in progress. Reviewer requested sanitization fix (done). Re-uploading v1.1.0.
+- **Current version:** 1.2.0
+- **Status:** v1.1.0 was sitting in the WP.org review queue (uploaded 2026-04-07). Re-cut as 1.2.0 on 2026-05-08 with a TS-port engine sync — adds `{?VAR?then|else}` conditionals, single-token abbreviation whitelist, and a `#set` empty-value fix. ZIP not yet rebuilt or re-uploaded.
 
 ## Reference sources
 
@@ -70,6 +70,7 @@ plugin/
   - `[<, > a|b < and >|c]` — per-element separator: `< sep >` before `|` assigns custom separator to the next element; travels with element during shuffle
 - `%var%` — variable reference (case-insensitive)
 - `#set %var% = value` — local variable (value can contain spintax)
+- `{?VAR?then|else}` — conditional: render `then` if `VAR` is truthy (set + non-whitespace), else `else` (else branch optional). Inverted form `{?!VAR?then|else}`. Resolved both before and after `%var%` expansion.
 - `/#...#/` — block comments (stripped)
 - `#include "slug-or-id"` — embed another template (GTW-compatible)
 
@@ -88,7 +89,7 @@ plugin/
 
 Order matters — incorrect sequencing causes domain/email corruption.
 
-1. **Shield** URLs, emails, bare domains (ASCII+punycode+IDN), decimals, abbreviations → placeholders
+1. **Shield** URLs, emails, bare domains (ASCII+punycode+IDN), decimals, multi-dotted abbreviations (`т.д.`), single-token abbreviations from a curated whitelist (`соц.`, `Mr.`, `Inc.`, …) → placeholders
 2. **Collapse** duplicate spaces/tabs
 3. **Remove** whitespace before punctuation
 4. **Add** space after `,;:` and `.!?` where missing
@@ -104,12 +105,13 @@ Entered as raw `#set` syntax in Settings → Spintax textarea (not key-value tab
 
 ## WP.org compliance checklist
 
-All met for v1.0.3:
-- PHPCS: 0 errors (5 acceptable warnings)
-- Plugin Check: passing (test files excluded from ZIP)
+All met for v1.2.0:
+- PHPCS: 0 errors, 0 warnings
+- Plugin Check: 0 errors, 0 warnings (test files excluded from ZIP via .distignore)
+- CI: fully green (lint PHP 8.0–8.3, tests PHP 8.0+8.2 × WP 6.2+latest, build ZIP)
 - Nonces on all forms/AJAX
 - Capability checks on all admin actions
-- Input sanitisation (raw spintax exempted with phpcs:disable + explanation)
+- Input sanitisation via Validators::sanitize_spintax() — wp_check_invalid_utf8, strip null bytes/control chars, normalize line endings
 - Output escaping (wp_kses_post on render output)
 - $wpdb->prepare() for direct queries
 - ABSPATH guard on all PHP files

@@ -11,6 +11,7 @@ defined( 'ABSPATH' ) || exit;
 
 use Spintax\Core\Cache\CacheManager;
 use Spintax\Core\Cache\DependencyInvalidator;
+use Spintax\Core\Engine\Conditionals;
 use Spintax\Core\Engine\Parser;
 use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Core\Settings\SettingsRepository;
@@ -25,7 +26,9 @@ use Spintax\Core\Settings\SettingsRepository;
  *   4.  Strip comments
  *   5.  Parse #set definitions, strip from body
  *   6.  Build variable context (global → local → runtime)
- *   7.  Expand %var% references
+ *   7a. Resolve {?VAR?then|else} conditionals (pre-expand pass)
+ *   7b. Expand %var% references
+ *   7c. Resolve {?VAR?then|else} conditionals (post-expand pass)
  *   8.  Resolve enumerations {…}
  *   9.  Resolve permutations [...]
  *   10. Resolve #include and nested [spintax] shortcodes
@@ -41,6 +44,13 @@ class Renderer {
 	 * @var Parser
 	 */
 	private Parser $parser;
+
+	/**
+	 * `{?VAR?then|else}` conditional resolver.
+	 *
+	 * @var Conditionals
+	 */
+	private Conditionals $conditionals;
 
 	/**
 	 * Settings repository for reading global variables and TTL.
@@ -91,10 +101,11 @@ class Renderer {
 		?CacheManager $cache = null,
 		?DependencyInvalidator $deps = null
 	) {
-		$this->parser   = $parser ?? new Parser();
-		$this->settings = $settings ?? new SettingsRepository();
-		$this->cache    = $cache ?? new CacheManager( $this->settings );
-		$this->deps     = $deps ?? new DependencyInvalidator( $this->cache );
+		$this->parser       = $parser ?? new Parser();
+		$this->conditionals = new Conditionals();
+		$this->settings     = $settings ?? new SettingsRepository();
+		$this->cache        = $cache ?? new CacheManager( $this->settings );
+		$this->deps         = $deps ?? new DependencyInvalidator( $this->cache );
 	}
 
 	/**
@@ -237,8 +248,18 @@ class Renderer {
 			$text
 		);
 
-		// Stage 6: Expand variables.
+		// Stage 6a: Resolve `{?VAR?then|else}` conditionals (pre-expand pass).
+		// Catches conditionals authored directly in the template body so
+		// only the surviving branch is fed into variable expansion.
+		$text = $this->conditionals->apply( $text, $all_vars );
+
+		// Stage 6b: Expand variables.
 		$text = $this->parser->expand_variables( $text, $all_vars );
+
+		// Stage 6c: Resolve `{?VAR?then|else}` conditionals (post-expand pass).
+		// Catches conditionals introduced via substituted variable values
+		// (e.g., %CTA% expanding to `{?HasBonus?Claim|Deposit}`).
+		$text = $this->conditionals->apply( $text, $all_vars );
 
 		// Stage 7: Resolve enumerations.
 		$text = $this->parser->resolve_enumerations( $text );

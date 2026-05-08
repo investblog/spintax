@@ -110,6 +110,48 @@ class ValidatorTest extends \WP_UnitTestCase {
 	}
 
 	// =========================================================================
+	// `{?VAR?then|else}` conditional references
+	// =========================================================================
+
+	public function test_conditional_with_known_global_var_no_warning(): void {
+		$result = $this->validator()->validate( '{?HasBonus?Claim|Skip}', array(), array( 'HasBonus' ) );
+		$this->assertEmpty( $result['errors'] );
+		$this->assertEmpty( $result['warnings'] );
+	}
+
+	public function test_conditional_with_local_var_no_warning(): void {
+		$result = $this->validator()->validate(
+			"#set %HasBonus% = 1\n{?HasBonus?Claim|Skip}"
+		);
+		$this->assertEmpty( $result['errors'] );
+		$this->assertEmpty( $result['warnings'] );
+	}
+
+	public function test_conditional_with_undefined_var_warns(): void {
+		$result = $this->validator()->validate( '{?Undeclared?Claim|Skip}' );
+		$this->assertEmpty( $result['errors'] );
+		$this->assertNotEmpty( $result['warnings'] );
+		$this->assertStringContainsString( 'Undeclared', $result['warnings'][0]['message'] );
+	}
+
+	public function test_inverted_conditional_extracts_var_name(): void {
+		$result = $this->validator()->validate( '{?!Undeclared?Hide me}' );
+		$this->assertNotEmpty( $result['warnings'] );
+		$this->assertStringContainsString( 'Undeclared', $result['warnings'][0]['message'] );
+	}
+
+	public function test_balanced_template_with_conditionals_no_bracket_errors(): void {
+		// Bracket balancing must not false-positive on the outer { } of a
+		// conditional, even when the body has nested {} or [].
+		$result = $this->validator()->validate(
+			'{?A?{a|b}|fallback} and {?B?[<sep=", "> x|y]|none}',
+			array(),
+			array( 'A', 'B' )
+		);
+		$this->assertEmpty( $result['errors'] );
+	}
+
+	// =========================================================================
 	// Permutation config validation
 	// =========================================================================
 

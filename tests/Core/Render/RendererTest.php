@@ -319,4 +319,109 @@ class RendererTest extends \WP_UnitTestCase {
 		);
 		$this->assertSame( 'Hello World!', $result );
 	}
+
+	// =========================================================================
+	// `{?VAR?then|else}` conditionals (integration with full pipeline)
+	// =========================================================================
+
+	public function test_conditional_truthy_runtime_variable(): void {
+		$result = $this->renderer->process_template(
+			'{?HasBonus?Claim bonus|Deposit}',
+			array( 'HasBonus' => '1' )
+		);
+		$this->assertSame( 'Claim bonus', $result );
+	}
+
+	public function test_conditional_falsy_runtime_variable(): void {
+		$result = $this->renderer->process_template(
+			'{?HasBonus?Claim bonus|Deposit}',
+			array( 'HasBonus' => '' )
+		);
+		$this->assertSame( 'Deposit', $result );
+	}
+
+	public function test_conditional_undefined_falls_to_else(): void {
+		$result = $this->renderer->process_template(
+			'{?HasBonus?Claim bonus|Deposit}',
+			array()
+		);
+		$this->assertSame( 'Deposit', $result );
+	}
+
+	/**
+	 * §9.5 — conditional inside variable value resolves on pass 2.
+	 */
+	public function test_conditional_inside_variable_value_resolves_truthy(): void {
+		$result = $this->renderer->process_template(
+			"#set %CTA% = {?HasBonus?Claim bonus|Deposit}\n#set %HasBonus% = 1\n%CTA%",
+			array()
+		);
+		$this->assertSame( 'Claim bonus', $result );
+	}
+
+	public function test_conditional_inside_variable_value_resolves_falsy(): void {
+		$result = $this->renderer->process_template(
+			"#set %CTA% = {?HasBonus?Claim bonus|Deposit}\n#set %HasBonus% =\n%CTA%",
+			array()
+		);
+		$this->assertSame( 'Deposit', $result );
+	}
+
+	/**
+	 * §9.6 — composition with permutations after the conditional pass.
+	 */
+	public function test_conditional_truthy_keeps_nested_permutation(): void {
+		$result = $this->renderer->process_template(
+			'{?A?[<sep=", ";minsize=3;maxsize=3>x|y|z]}',
+			array( 'A' => '1' )
+		);
+		// Deterministic parser picks indexes deterministically, but
+		// post_process upper-cases the first letter — compare case-
+		// insensitive. Just assert all elements surface and no
+		// `[`/`]` leaked from the permutation stage.
+		$lowered = strtolower( $result );
+		$this->assertStringContainsString( 'x', $lowered );
+		$this->assertStringContainsString( 'y', $lowered );
+		$this->assertStringContainsString( 'z', $lowered );
+		$this->assertStringNotContainsString( '[', $result );
+		$this->assertStringNotContainsString( ']', $result );
+	}
+
+	public function test_conditional_falsy_skips_permutation_entirely(): void {
+		$result = $this->renderer->process_template(
+			'{?A?[<sep=", ";minsize=3;maxsize=3>x|y|z]}',
+			array( 'A' => '' )
+		);
+		$this->assertSame( '', $result );
+	}
+
+	/**
+	 * §9.9 — known footgun: #set inside a conditional branch is extracted
+	 * unconditionally before the conditional pass runs, so all branches'
+	 * #sets are applied (last definition wins).
+	 */
+	public function test_set_inside_conditional_branch_extracted_unconditionally(): void {
+		$result = $this->renderer->process_template(
+			"{?A?\n#set %x% = first\n|}{?A?\n#set %x% = second\n|}%x%",
+			array( 'A' => '1' )
+		);
+		$this->assertSame( 'Second', $result );
+	}
+
+	public function test_inverted_conditional_runs_when_var_absent(): void {
+		$result = $this->renderer->process_template(
+			'{?!Bonus?Open free demo|Claim bonus}',
+			array()
+		);
+		$this->assertSame( 'Open free demo', $result );
+	}
+
+	public function test_malformed_conditional_does_not_throw(): void {
+		// Spec §7.2 — balanced malformed forms are guaranteed non-throwing.
+		// Don't pin output (post-processing may rearrange spaces); just
+		// assert we get a string back and key fragments survive.
+		$result = $this->renderer->process_template( '{?VAR}', array() );
+		$this->assertIsString( $result );
+		$this->assertStringContainsString( 'VAR', $result );
+	}
 }

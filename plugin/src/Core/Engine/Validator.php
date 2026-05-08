@@ -253,15 +253,20 @@ class Validator {
 		}
 
 		// Find all variable references in the body (outside #set lines).
+		// `%var%` references and `{?VAR?...}` / `{?!VAR?...}` conditional
+		// references are merged — both are warned about when the name is
+		// neither defined locally nor declared globally.
 		$body = preg_replace( '/^[ \t]*#set\s+%\w+%\s*=\s*.*?$/mu', '', $text );
-		preg_match_all( '/%(\w+)%/u', $body, $ref_matches );
+		preg_match_all( '/%(\w+)%/u', $body, $percent_matches );
+		preg_match_all( '/\{\?!?([A-Za-z_]\w*)\?/u', $body, $cond_matches );
+		$all_refs = array_merge( $percent_matches[1] ?? array(), $cond_matches[1] ?? array() );
 
-		if ( ! empty( $ref_matches[1] ) ) {
+		if ( ! empty( $all_refs ) ) {
 			$defined_names = array_keys( $definitions );
 			$global_lower  = array_map( 'strtolower', $global_var_names );
 			$all_known     = array_merge( $defined_names, $global_lower );
 
-			foreach ( array_unique( $ref_matches[1] ) as $ref ) {
+			foreach ( array_unique( $all_refs ) as $ref ) {
 				$ref_lower = strtolower( $ref );
 				if ( ! in_array( $ref_lower, $all_known, true ) ) {
 					$warnings[] = array(

@@ -443,6 +443,90 @@ class ParserTest extends \WP_UnitTestCase {
 		);
 	}
 
+	// =========================================================================
+	// post_process — single-token abbreviation whitelist
+	// =========================================================================
+
+	public function test_post_process_shields_soc_abbreviation(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Регистрация через соц. сети доступна',
+			$parser->post_process( 'регистрация через соц. сети доступна' )
+		);
+	}
+
+	public function test_post_process_shields_el_abbreviation(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Введите ваш эл. почту',
+			$parser->post_process( 'введите ваш эл. почту' )
+		);
+	}
+
+	public function test_post_process_shields_el_inside_sentence(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'После подтверждения эл. почты вы войдете',
+			$parser->post_process( 'после подтверждения эл. почты вы войдете' )
+		);
+	}
+
+	public function test_post_process_shields_ul_abbreviation(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Живёт по адресу ул. ленина, дом 5',
+			$parser->post_process( 'живёт по адресу ул. ленина, дом 5' )
+		);
+	}
+
+	public function test_post_process_shields_mr_title(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'See Mr. smith for details',
+			$parser->post_process( 'see Mr. smith for details' )
+		);
+	}
+
+	public function test_post_process_shields_dr_title(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Contact Dr. jones at clinic',
+			$parser->post_process( 'contact Dr. jones at clinic' )
+		);
+	}
+
+	public function test_post_process_shields_inc_business_suffix(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Apple Inc. announced today',
+			$parser->post_process( 'apple Inc. announced today' )
+		);
+	}
+
+	public function test_post_process_non_whitelisted_single_letter_still_ends_sentence(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Option B. Continue',
+			$parser->post_process( 'option B. continue' )
+		);
+	}
+
+	public function test_post_process_real_sentence_end_after_shielded_abbrev_capitalises(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Используйте соц. сети для входа. Это удобно',
+			$parser->post_process( 'используйте соц. сети для входа. это удобно' )
+		);
+	}
+
+	public function test_post_process_sentence_initial_abbreviation_stays_uncapitalised_after(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Соц. сети — это удобно',
+			$parser->post_process( 'Соц. сети — это удобно' )
+		);
+	}
+
 	public function test_post_process_capitalize_after_html_tag(): void {
 		$parser = $this->make_first();
 		$this->assertSame(

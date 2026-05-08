@@ -312,10 +312,78 @@ class Parser {
 			$text
 		);
 
-		// 5. Shield: abbreviations (e.g. etc.).
+		// 5a. Shield: abbreviations (e.g. etc.).
 		// Requires at least two dotted groups, so plain "A." still ends a sentence.
 		$text = preg_replace_callback(
 			'/\b(?:\p{L}{1,2}\.\s*){2,}/u',
+			static function ( array $m ) use ( $store_placeholder ): string {
+				return $store_placeholder( $m[0], 'ABBR' );
+			},
+			$text
+		);
+
+		// 5b. Shield: single-token abbreviations from a curated whitelist.
+		// Step 5a needs 2+ dotted groups, so single-word abbreviations like
+		// "соц.", "эл.", "г.", "Mr." look like sentence ends and step 9
+		// would capitalise the next word ("соц. Сети", "эл. Почты"). The
+		// whitelist below enumerates forms common enough in editorial copy
+		// to be worth shielding by name. Case-insensitive — covers both
+		// sentence-initial "Соц." and inline "соц.". A real sentence end
+		// (like "ОК.", "А.") is intentionally NOT in the list — the parser
+		// can't tell those from a real period.
+		$single_abbrevs = array(
+			// Russian — common editorial / address / unit shorthands.
+			'соц',
+			'эл',
+			'см',
+			'ср',
+			'ст',
+			'ул',
+			'пр',
+			'пер',
+			'г',
+			'р',
+			'руб',
+			'коп',
+			'тыс',
+			'млн',
+			'млрд',
+			'трлн',
+			'доп',
+			'напр',
+			'прим',
+			'изд',
+			'обл',
+			'респ',
+			'стр',
+			'табл',
+			'рис',
+			'мин',
+			'макс',
+			'тел',
+			'факс',
+			// English — titles, business suffixes, common editorial.
+			'etc',
+			'vs',
+			'Mr',
+			'Mrs',
+			'Ms',
+			'Dr',
+			'Prof',
+			'Sr',
+			'Jr',
+			'Inc',
+			'Ltd',
+			'Co',
+			'Corp',
+			'No',
+			'St',
+			'Ave',
+			'Blvd',
+		);
+		$single_abbr_re = '/(?<![\p{L}\p{N}])(?:' . implode( '|', $single_abbrevs ) . ')\.(?=\s|$|<)/iu';
+		$text           = preg_replace_callback(
+			$single_abbr_re,
 			static function ( array $m ) use ( $store_placeholder ): string {
 				return $store_placeholder( $m[0], 'ABBR' );
 			},

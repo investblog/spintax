@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 6.9
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -83,6 +83,14 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 1.2.0 =
+* Add: conditional syntax `{?VAR?then|else}` — render a branch based on whether a variable is set/non-empty (also `{?!VAR?then}` for inverted, optional else). Resolves both before and after `%var%` expansion, so conditionals inside variable values work too.
+* Add: single-token abbreviation whitelist in post-processing — known shorthands like `соц.`, `эл.`, `Mr.`, `Inc.` no longer trigger sentence-end capitalisation of the next word. Covers Russian editorial/address/unit shorthands plus English titles and business suffixes.
+* Fix: `#set` directive with an empty value (`#set %x% =`) no longer silently swallows the next directive on the following line.
+* Fix: HTML start tags inside permutation alternatives (e.g. `[<li>item</li>|<li>...]`) are no longer mis-parsed as a `<config>` block.
+* Improve: cache description in template meta box and global settings now explains that visitors see the same generated variant per runtime context until expiry or regeneration.
+* Internal: regression tests for IDN domains flanked by Cyrillic letters and for randomisation behaviour across renders.
+
 = 1.1.0 =
 * Add: per-element permutation separators — assign custom separator to each element via `< sep >` before `|`
 * Add: auto-spacing for purely alphabetic word separators (e.g. `<and>`, `<или>`)
@@ -111,6 +119,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 1.2.0 =
+New `{?VAR?then|else}` conditional syntax, smarter sentence-end capitalisation around abbreviations, and a fix for `#set` directives with empty values.
 
 = 1.1.0 =
 Per-element permutation separators, auto-spacing for word separators, improved input sanitization.

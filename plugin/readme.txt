@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 6.9
-Stable tag: 1.2.0
+Stable tag: 1.4.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -83,7 +83,7 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
-= 1.2.0 =
+= 1.4.0 =
 * Add: conditional syntax `{?VAR?then|else}` — render a branch based on whether a variable is set/non-empty (also `{?!VAR?then}` for inverted, optional else). Resolves both before and after `%var%` expansion, so conditionals inside variable values work too.
 * Add: single-token abbreviation whitelist in post-processing — known shorthands like `соц.`, `эл.`, `Mr.`, `Inc.` no longer trigger sentence-end capitalisation of the next word. Covers Russian editorial/address/unit shorthands plus English titles and business suffixes.
 * Fix: `#set` directive with an empty value (`#set %x% =`) no longer silently swallows the next directive on the following line.
@@ -120,7 +120,7 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Upgrade Notice ==
 
-= 1.2.0 =
+= 1.4.0 =
 New `{?VAR?then|else}` conditional syntax, smarter sentence-end capitalisation around abbreviations, and a fix for `#set` directives with empty values.
 
 = 1.1.0 =

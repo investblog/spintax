@@ -422,6 +422,27 @@ class ParserTest extends \WP_UnitTestCase {
 		);
 	}
 
+	public function test_post_process_preserves_idn_domain_between_cyrillic_words(): void {
+		$parser = $this->make_first();
+		// PHP's /u modifier enables PCRE2_UCP, so \b becomes Unicode-aware
+		// and the IDN domain stays shielded even when flanked by Cyrillic
+		// letters on both sides. The TS port had to spell out
+		// (?<![\p{L}\p{N}]) lookarounds; in PHP this regression test just
+		// pins the existing /u behaviour.
+		$this->assertSame(
+			'Зайдите на сайт домен.рф потом',
+			$parser->post_process( 'Зайдите на сайт домен.рф потом' )
+		);
+	}
+
+	public function test_post_process_preserves_idn_email_between_cyrillic_words(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Напишите на admin@домен.рф потом',
+			$parser->post_process( 'Напишите на admin@домен.рф потом' )
+		);
+	}
+
 	public function test_post_process_capitalize_after_html_tag(): void {
 		$parser = $this->make_first();
 		$this->assertSame(

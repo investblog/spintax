@@ -17,12 +17,13 @@ class Validator {
 	/**
 	 * Validate a template and return errors/warnings.
 	 *
-	 * @param string   $template       Raw template source.
-	 * @param string[] $known_slugs    Known template slugs for #include validation (optional).
+	 * @param string   $template         Raw template source.
+	 * @param string[] $known_slugs      Known template slugs for #include validation (optional).
 	 * @param string[] $global_var_names Global variable names (without %) for undefined-var warnings.
+	 * @param string   $locale           Render locale for plural arity check (raw, e.g. "ru" / "ru_RU"). Empty skips arity check (structural-only validation of `{plural ...}` blocks).
 	 * @return array{errors: array, warnings: array}
 	 */
-	public function validate( string $template, array $known_slugs = array(), array $global_var_names = array() ): array {
+	public function validate( string $template, array $known_slugs = array(), array $global_var_names = array(), string $locale = '' ): array {
 		$errors   = array();
 		$warnings = array();
 
@@ -33,6 +34,7 @@ class Validator {
 		$errors = array_merge( $errors, $this->check_brackets( $text ) );
 		$errors = array_merge( $errors, $this->check_set_directives( $text ) );
 		$errors = array_merge( $errors, $this->check_permutation_configs( $text ) );
+		$errors = array_merge( $errors, $this->check_plurals( $text, $locale ) );
 
 		$var_result = $this->check_variable_references( $text, $global_var_names );
 		$errors     = array_merge( $errors, $var_result['errors'] );
@@ -205,6 +207,67 @@ class Validator {
 				if ( preg_match( '/maxsize\s*=\s*([^;>\s]+)/i', $config_str, $m ) && ! ctype_digit( $m[1] ) ) {
 					$errors[] = array(
 						'message' => sprintf( 'maxsize must be a positive integer, got \'%s\'.', $m[1] ),
+						'line'    => $line,
+						'column'  => 1,
+					);
+				}
+			}
+		}
+
+		return $errors;
+	}
+
+	/**
+	 * Check `{plural <count>: form|…}` blocks for structural and arity issues.
+	 *
+	 * Structural check (always on): forms slot must not contain nested
+	 * spintax brackets `{` `}` `[` `]`.
+	 *
+	 * Arity check (only when locale provided): form count must match the
+	 * locale family (3 for ru/uk/be, 2 for en/es/pt/de/...). Empty locale
+	 * skips arity — useful when the validator runs without locale context
+	 * and wants to surface only structural issues.
+	 *
+	 * @param string $text   Template body (after comment stripping).
+	 * @param string $locale Render locale (raw); empty disables arity check.
+	 * @return array<array{message: string, line: int, column: int}>
+	 */
+	private function check_plurals( string $text, string $locale ): array {
+		$errors  = array();
+		$plurals = new Plurals();
+		$blocks  = $plurals->find_plural_blocks( $text );
+
+		if ( empty( $blocks ) ) {
+			return $errors;
+		}
+
+		$base_lang = '' !== $locale ? $plurals->normalize_base_lang( $locale ) : '';
+		$arity     = '' !== $base_lang ? $plurals->plural_arity( $base_lang ) : 0;
+
+		foreach ( $blocks as $block ) {
+			$line = substr_count( $text, "\n", 0, $block['start'] ) + 1;
+
+			// Structural: no nested spintax brackets in forms.
+			if ( 1 === preg_match( '/[{}\[\]]/', $block['forms_raw'] ) ) {
+				$errors[] = array(
+					'message' => '{plural ...}: forms must not contain nested spintax brackets ({}, []). Extract synonym / conditional / permutation via #set first.',
+					'line'    => $line,
+					'column'  => 1,
+				);
+				continue;
+			}
+
+			// Arity (only if locale provided).
+			if ( $arity > 0 ) {
+				$forms = explode( '|', $block['forms_raw'] );
+				if ( count( $forms ) !== $arity ) {
+					$errors[] = array(
+						'message' => sprintf(
+							'{plural ...}: expected %1$d forms for "%2$s", got %3$d.',
+							$arity,
+							$base_lang,
+							count( $forms )
+						),
 						'line'    => $line,
 						'column'  => 1,
 					);

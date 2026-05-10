@@ -13,6 +13,7 @@ use Spintax\Core\Cache\CacheManager;
 use Spintax\Core\Cache\DependencyInvalidator;
 use Spintax\Core\Engine\Conditionals;
 use Spintax\Core\Engine\Parser;
+use Spintax\Core\Engine\Plurals;
 use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Core\Settings\SettingsRepository;
 
@@ -29,6 +30,7 @@ use Spintax\Core\Settings\SettingsRepository;
  *   7a. Resolve {?VAR?then|else} conditionals (pre-expand pass)
  *   7b. Expand %var% references
  *   7c. Resolve {?VAR?then|else} conditionals (post-expand pass)
+ *   7d. Resolve {plural <count>: form|…} plural agreement (lenient)
  *   8.  Resolve enumerations {…}
  *   9.  Resolve permutations [...]
  *   10. Resolve #include and nested [spintax] shortcodes
@@ -51,6 +53,13 @@ class Renderer {
 	 * @var Conditionals
 	 */
 	private Conditionals $conditionals;
+
+	/**
+	 * `{plural <count>: forms}` plural-agreement resolver.
+	 *
+	 * @var Plurals
+	 */
+	private Plurals $plurals;
 
 	/**
 	 * Settings repository for reading global variables and TTL.
@@ -103,6 +112,7 @@ class Renderer {
 	) {
 		$this->parser       = $parser ?? new Parser();
 		$this->conditionals = new Conditionals();
+		$this->plurals      = new Plurals();
 		$this->settings     = $settings ?? new SettingsRepository();
 		$this->cache        = $cache ?? new CacheManager( $this->settings );
 		$this->deps         = $deps ?? new DependencyInvalidator( $this->cache );
@@ -180,6 +190,14 @@ class Renderer {
 			return '';
 		}
 
+		// Resolve plural locale: per-template post meta `_spintax_locale`
+		// (e.g. "ru", "en", "ru_RU") wins; fall back to the WP site locale.
+		// Plurals::normalize_base_lang strips region suffix downstream.
+		$locale = (string) get_post_meta( $template_id, '_spintax_locale', true );
+		if ( '' === $locale ) {
+			$locale = (string) get_locale();
+		}
+
 		// Track which template IDs are nested (for dependency graph).
 		$is_top_level = empty( $parent_ctx );
 		if ( $is_top_level ) {
@@ -187,7 +205,7 @@ class Renderer {
 		}
 
 		try {
-			$output = $this->process_template( $raw, $runtime_vars, $context );
+			$output = $this->process_template( $raw, $runtime_vars, $context, $locale );
 
 			// Cache store.
 			$this->cache->set( $template_id, $context_hash, $output );
@@ -212,9 +230,10 @@ class Renderer {
 	 * @param string                $raw          Raw spintax markup.
 	 * @param array<string, string> $runtime_vars Runtime variables.
 	 * @param RenderContext|null    $context      Render context (created if null).
+	 * @param string                $locale       Render locale for plural agreement (raw, e.g. "ru" / "ru_RU"). Defaults to WP site locale when empty.
 	 * @return string Processed and sanitised HTML.
 	 */
-	public function process_template( string $raw, array $runtime_vars = array(), ?RenderContext $context = null ): string {
+	public function process_template( string $raw, array $runtime_vars = array(), ?RenderContext $context = null, string $locale = '' ): string {
 		$context = $context ?? new RenderContext( $this->settings->get_global_variables() );
 
 		// Stage 3: Strip comments.
@@ -260,6 +279,17 @@ class Renderer {
 		// Catches conditionals introduced via substituted variable values
 		// (e.g., %CTA% expanding to `{?HasBonus?Claim|Deposit}`).
 		$text = $this->conditionals->apply( $text, $all_vars );
+
+		// Stage 6d: Resolve `{plural <count>: form|…}` plural agreement.
+		// Runs AFTER variable expansion so `%CasinoLanguagesCount%` inside
+		// the count slot is already a literal integer string. Lenient mode
+		// so a single broken construct (wrong arity, nested brackets in a
+		// form) renders verbatim with fullwidth braces instead of crashing
+		// the whole render.
+		if ( '' === $locale ) {
+			$locale = (string) get_locale();
+		}
+		$text = $this->plurals->apply( $text, $locale, array( 'lenient' => true ) );
 
 		// Stage 7: Resolve enumerations.
 		$text = $this->parser->resolve_enumerations( $text );

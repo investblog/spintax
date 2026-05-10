@@ -7,8 +7,8 @@ Free WordPress plugin for spintax-based content generation. Slug `spintax` on WP
 - **GitHub:** https://github.com/investblog/spintax
 - **Plugin URI:** https://spintax.net
 - **Author:** 301st (https://301.st)
-- **Current version:** 1.2.0
-- **Status:** v1.1.0 was sitting in the WP.org review queue (uploaded 2026-04-07). Re-cut as 1.2.0 on 2026-05-08 with a TS-port engine sync — adds `{?VAR?then|else}` conditionals, single-token abbreviation whitelist, and a `#set` empty-value fix. ZIP not yet rebuilt or re-uploaded.
+- **Current version:** 1.5.0
+- **Status:** v1.1.0 uploaded to the WP.org review queue 2026-04-07 (slug still under review — no SVN access yet, releases stay GH-only meanwhile). Two engine sync cuts since: 1.4.0 (2026-05-08) added `{?VAR?then|else}` conditionals, single-token abbreviation whitelist, and a `#set` empty-value fix; 1.5.0 (2026-05-10) adds the `{plural <count>: form1|form2|form3}` primitive ported from the casino-platform TS engine (`spintax-plurals.ts`).
 
 ## Reference sources
 
@@ -39,13 +39,17 @@ plugin/
       Cron/
         CronManager.php          # Per-template WP-Cron scheduling
       Engine/
+        Conditionals.php         # `{?VAR?then|else}` resolver (1.4.0)
         Parser.php               # GTW-compatible recursive-descent parser
+        PluralArityError.php     # Wrong-form-count exception (1.5.0)
+        PluralFormError.php      # Nested-bracket-in-form exception (1.5.0)
+        Plurals.php              # `{plural <count>: forms}` resolver (1.5.0)
         Validator.php            # Static syntax analysis with line/column errors
       PostType/
         TemplatePostType.php     # CPT registration, block editor disabled
       Render/
         RenderContext.php        # Immutable variable scopes + call stack
-        Renderer.php             # 12-stage pipeline with cache + dependency tracking
+        Renderer.php             # Multi-stage pipeline with cache + dependency tracking
         functions.php            # Global spintax_render() helper
       Settings/
         SettingsRepository.php   # CRUD for settings, global vars, cache salt
@@ -61,7 +65,9 @@ plugin/
   assets/js/admin.js             # Preview AJAX, copy shortcode, variables
 ```
 
-## Spintax syntax (GTW original)
+## Spintax syntax
+
+GTW-original primitives plus plugin extensions (`{?…?}` conditionals since 1.4.0, `{plural …}` since 1.5.0).
 
 - `{a|b|c}` — enumeration: pick one. Nesting: `{a|{b|c}}`. Empty options: `{|a|b}`.
 - `[a|b|c]` — permutation: pick N, shuffle, join.
@@ -70,7 +76,8 @@ plugin/
   - `[<, > a|b < and >|c]` — per-element separator: `< sep >` before `|` assigns custom separator to the next element; travels with element during shuffle
 - `%var%` — variable reference (case-insensitive)
 - `#set %var% = value` — local variable (value can contain spintax)
-- `{?VAR?then|else}` — conditional: render `then` if `VAR` is truthy (set + non-whitespace), else `else` (else branch optional). Inverted form `{?!VAR?then|else}`. Resolved both before and after `%var%` expansion.
+- `{?VAR?then|else}` — conditional (1.4.0): render `then` if `VAR` is truthy (set + non-whitespace), else `else` (else branch optional). Inverted form `{?!VAR?then|else}`. Resolved both before and after `%var%` expansion.
+- `{plural <count>: form1|form2|form3}` — plural agreement (1.5.0): pick form by count's grammatical bucket. RU/UK/BE = 3 forms (one\|few\|many); EN-style default = 2 forms (one\|many). Count is `%var%` or literal integer (post-`expand_variables`). Form slot REJECTS nested spintax brackets `{` `}` `[` `]` — extract via `#set` first. Lenient at runtime: malformed constructs render verbatim with fullwidth braces (U+FF5B / U+FF5D) so a single bad block doesn't crash the page. Locale from template post meta `_spintax_locale` or site WP locale.
 - `/#...#/` — block comments (stripped)
 - `#include "slug-or-id"` — embed another template (GTW-compatible)
 
@@ -105,7 +112,7 @@ Entered as raw `#set` syntax in Settings → Spintax textarea (not key-value tab
 
 ## WP.org compliance checklist
 
-All met for v1.2.0:
+All met for v1.5.0:
 - PHPCS: 0 errors, 0 warnings
 - Plugin Check: 0 errors, 0 warnings (test files excluded from ZIP via .distignore)
 - CI: fully green (lint PHP 8.0–8.3, tests PHP 8.0+8.2 × WP 6.2+latest, build ZIP)

@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 6.9
-Stable tag: 1.4.0
+Stable tag: 1.5.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -19,6 +19,8 @@ Spintax is a WordPress plugin for template-based content generation using spinta
 * **Enumerations** `{a|b|c}` — randomly pick one option, with nesting support
 * **Permutations** `[<config>a|b|c]` — pick N elements, shuffle, join with custom separators
 * **Variables** `%var%` — global, local (`#set`), and shortcode-level variable scopes
+* **Conditionals** `{?VAR?then|else}` — render a branch based on whether a variable is set (also `{?!VAR?then}` inverted)
+* **Plural agreement** `{plural <count>: form1|form2|form3}` — pick grammatically correct noun form by count. RU/UK/BE 3-form (one|few|many), EN-style 2-form (one|many). First spintax engine with first-class plurals.
 * **Nested templates** — embed templates within templates via `#include` or `[spintax]`
 * **Object cache** — rendered output cached via WP Object Cache API (Redis/Memcached ready)
 * **Cron regeneration** — optional scheduled cache refresh per template
@@ -47,8 +49,21 @@ Go to Spintax > Add New in the WordPress admin. Enter a title and your spintax m
 * `[<minsize=2;maxsize=3;sep=", ";lastsep=" and "> a|b|c|d]` — configured permutation
 * `%variable%` — variable reference
 * `#set %var% = value` — local variable definition
+* `{?VAR?then|else}` — conditional: render a branch by truthiness of `%VAR%` (also `{?!VAR?then}` inverted)
+* `{plural %Count%: form1|form2|form3}` — plural agreement: picks the correct grammatical form by count (RU 3-form, EN 2-form)
 * `/#comment#/` — block comment (stripped from output)
 * `#include "slug"` — embed another template
+
+Full syntax reference with examples and a live playground: https://spintax.net/docs/syntax
+
+= Where can I learn more? =
+
+* **Documentation hub:** https://spintax.net/docs/ — guides, reference, recipes
+* **Compact syntax reference:** https://spintax.net/docs/syntax — all primitives in one page (13 languages)
+* **Plural agreement guide:** https://spintax.net/docs/plural-spintax/ — `{plural N: form1|form2|form3}` in depth (EN/RU)
+* **Conditional spintax guide:** https://spintax.net/docs/conditional-spintax/ — `{?VAR?then|else}` value-driven branching (EN/RU)
+* **Authoring mindset:** https://spintax.net/docs/authoring-mindset/ — write the final text first, add markup last (EN/RU)
+* **Live playground:** https://spintax.net/play/ — write a template, set variables, render N variants in your browser (EN/RU)
 
 = Does caching require Redis or Memcached? =
 
@@ -82,6 +97,11 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Developed by [301st](https://301.st)
 
 == Changelog ==
+
+= 1.5.0 =
+* Add: plural agreement primitive `{plural <count>: form1|form2|form3}` — pick the correct grammatical form by count. RU/UK/BE = 3 forms (`one|few|many`); EN/ES/PT/DE etc. = 2 forms (`one|many`). Count is a `%var%` reference or literal integer (resolved after variable expansion, so helper-var patterns via `#set` work). Locale comes from per-template post meta `_spintax_locale` or the WordPress site locale. Lenient at runtime: malformed constructs render verbatim with fullwidth braces instead of crashing the page. First spintax engine to treat plural as a first-class primitive.
+* Add: validator surface for plural blocks — structural check (form slot rejects nested `{}`, `[]`) always on; arity check (RU expects 3, EN expects 2) when locale is known.
+* Internal: 74 PHPUnit cases mirroring the canonical TS implementation (`spintax-plurals.test.ts` in casino-platform). Engine classes `Plurals`, `PluralArityError`, `PluralFormError` ship alongside `Conditionals` from 1.4.0.
 
 = 1.4.0 =
 * Add: conditional syntax `{?VAR?then|else}` — render a branch based on whether a variable is set/non-empty (also `{?!VAR?then}` for inverted, optional else). Resolves both before and after `%var%` expansion, so conditionals inside variable values work too.

@@ -10,6 +10,7 @@ namespace Spintax\Admin;
 defined( 'ABSPATH' ) || exit;
 
 use Spintax\Core\PostType\TemplatePostType;
+use Spintax\Support\Links;
 use Spintax\Support\OptionKeys;
 
 /**
@@ -26,6 +27,42 @@ class TemplateEditor {
 		add_filter( "manage_{$cpt}_posts_columns", array( $this, 'register_columns' ) );
 		add_action( "manage_{$cpt}_posts_custom_column", array( $this, 'render_column' ), 10, 2 );
 		add_filter( 'wp_editor_settings', array( $this, 'force_text_editor' ), 10, 2 );
+		add_action( 'edit_form_after_title', array( $this, 'render_help_links' ) );
+	}
+
+	/**
+	 * Render a small toolbar of doc/playground links above the editor.
+	 *
+	 * Shown only on the template CPT edit screen. Locale-aware: WP sites
+	 * running in Russian get the `/ru/` mirror of long-form pages, others
+	 * get the EN root.
+	 *
+	 * @param \WP_Post $post Current post.
+	 */
+	public function render_help_links( \WP_Post $post ): void {
+		if ( TemplatePostType::POST_TYPE !== $post->post_type ) {
+			return;
+		}
+		?>
+		<div class="spintax-help-links" style="margin:1em 0;padding:.6em .9em;background:#f0f6fc;border-left:4px solid #2271b1;font-size:13px;">
+			<strong><?php esc_html_e( 'Spintax help:', 'spintax' ); ?></strong>
+			<a href="<?php echo esc_url( Links::docs_syntax() ); ?>" target="_blank" rel="noopener noreferrer">
+				<?php esc_html_e( 'Syntax reference', 'spintax' ); ?>
+			</a>
+			·
+			<a href="<?php echo esc_url( Links::docs_plural() ); ?>" target="_blank" rel="noopener noreferrer">
+				<?php esc_html_e( 'Plural guide', 'spintax' ); ?>
+			</a>
+			·
+			<a href="<?php echo esc_url( Links::docs_conditional() ); ?>" target="_blank" rel="noopener noreferrer">
+				<?php esc_html_e( 'Conditional guide', 'spintax' ); ?>
+			</a>
+			·
+			<a href="<?php echo esc_url( Links::playground() ); ?>" target="_blank" rel="noopener noreferrer">
+				<?php esc_html_e( 'Live playground', 'spintax' ); ?>
+			</a>
+		</div>
+		<?php
 	}
 
 	/**

@@ -12,6 +12,7 @@ defined( 'ABSPATH' ) || exit;
 use Spintax\Core\Cache\CacheManager;
 use Spintax\Core\Settings\SettingsRepository;
 use Spintax\Support\Capabilities;
+use Spintax\Support\Links;
 use Spintax\Support\Validators;
 
 /**
@@ -180,6 +181,51 @@ class SettingsPage {
 				<?php wp_nonce_field( 'spintax_settings_save' ); ?>
 				<?php submit_button( __( 'Purge All Template Caches', 'spintax' ), 'secondary', 'spintax_purge_cache' ); ?>
 			</form>
+
+			<hr>
+
+			<h2><?php esc_html_e( 'Resources', 'spintax' ); ?></h2>
+			<p class="description">
+				<?php esc_html_e( 'Documentation and tools on spintax.net. Links open in a new tab.', 'spintax' ); ?>
+			</p>
+			<ul style="margin-left:1.4em;list-style:disc;">
+				<li>
+					<a href="<?php echo esc_url( Links::docs_hub() ); ?>" target="_blank" rel="noopener noreferrer">
+						<?php esc_html_e( 'Documentation hub', 'spintax' ); ?>
+					</a>
+					— <?php esc_html_e( 'guides, reference, recipes', 'spintax' ); ?>
+				</li>
+				<li>
+					<a href="<?php echo esc_url( Links::docs_syntax() ); ?>" target="_blank" rel="noopener noreferrer">
+						<?php esc_html_e( 'Compact syntax reference', 'spintax' ); ?>
+					</a>
+					— <?php esc_html_e( 'every primitive in one page', 'spintax' ); ?>
+				</li>
+				<li>
+					<a href="<?php echo esc_url( Links::docs_plural() ); ?>" target="_blank" rel="noopener noreferrer">
+						<?php esc_html_e( 'Plural agreement', 'spintax' ); ?>
+					</a>
+					— <code>{plural %N%: form1|form2|form3}</code>
+				</li>
+				<li>
+					<a href="<?php echo esc_url( Links::docs_conditional() ); ?>" target="_blank" rel="noopener noreferrer">
+						<?php esc_html_e( 'Conditional spintax', 'spintax' ); ?>
+					</a>
+					— <code>{?VAR?then|else}</code>
+				</li>
+				<li>
+					<a href="<?php echo esc_url( Links::docs_authoring() ); ?>" target="_blank" rel="noopener noreferrer">
+						<?php esc_html_e( 'Authoring mindset', 'spintax' ); ?>
+					</a>
+					— <?php esc_html_e( 'write the final text first, add markup last', 'spintax' ); ?>
+				</li>
+				<li>
+					<a href="<?php echo esc_url( Links::playground() ); ?>" target="_blank" rel="noopener noreferrer">
+						<?php esc_html_e( 'Live playground', 'spintax' ); ?>
+					</a>
+					— <?php esc_html_e( 'try templates in your browser, no install required', 'spintax' ); ?>
+				</li>
+			</ul>
 		</div>
 		<?php
 	}

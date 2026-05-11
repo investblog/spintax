@@ -9,6 +9,7 @@ jobs:
   deploy:
     name: Deploy to WP.org SVN
     runs-on: ubuntu-latest
+    environment: svn
     steps:
       - uses: actions/checkout@v4
 

@@ -28,6 +28,7 @@ plugin/.phpunit.result.cache
 plugin/phpunit.xml.dist
 
 .env
-.env.local
+.env.*
+.svn-credentials
 
 .claude/

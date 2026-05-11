@@ -2,13 +2,14 @@
 
 ## Project overview
 
-Free WordPress plugin for spintax-based content generation. Slug `spintax` on WP.org (submitted, awaiting review). Target audience: content managers and SEO specialists. Rewrite of old plugin "nested-spintax-for-acf" with GTW engine syntax.
+Free WordPress plugin for spintax-based content generation. Target audience: content managers and SEO specialists. Rewrite of old plugin "nested-spintax-for-acf" with a GTW-derived engine extended with plugin-original conditionals and plural agreement.
 
 - **GitHub:** https://github.com/investblog/spintax
-- **Plugin URI:** https://spintax.net
+- **WP.org:** https://wordpress.org/plugins/spintax/
+- **Docs / playground:** https://spintax.net
 - **Author:** 301st (https://301.st)
 - **Current version:** 1.5.0
-- **Status:** v1.1.0 uploaded to the WP.org review queue 2026-04-07 (slug still under review — no SVN access yet, releases stay GH-only meanwhile). Two engine sync cuts since: 1.4.0 (2026-05-08) added `{?VAR?then|else}` conditionals, single-token abbreviation whitelist, and a `#set` empty-value fix; 1.5.0 (2026-05-10) adds the `{plural <count>: form1|form2|form3}` primitive ported from the casino-platform TS engine (`spintax-plurals.ts`).
+- **Status:** **Live on WordPress.org as of 2026-05-11** (SVN revision 3528366, tag `v1.5.0`). Deploy pipeline is automated: tag push → `wporg-deploy.yml` → 10up action → SVN trunk + tag + assets. Engine timeline: 1.0.0 (initial), 1.1.0 (per-element separators + sanitisation, uploaded to queue 2026-04-07), 1.4.0 (conditionals + abbreviation whitelist + `#set` empty-value fix, re-tag skipping 1.2/1.3 to keep queue unambiguous), 1.5.0 (`{plural <count>: form|...}` primitive + admin deep links to spintax.net + refreshed banner/icon/screenshots, 2026-05-10).
 
 ## Reference sources
 
@@ -158,14 +159,24 @@ npm run version:check          # Verify version sync
 Run ALL of these locally. Zero errors AND zero warnings required:
 
 ```bash
-npm run test:php           # PHPUnit — all tests must pass
+npm run test:php           # PHPUnit — all tests must pass (309 cases)
 npm run lint:php           # PHPCS — 0 errors, 0 warnings
 ```
 
-Then on WP.org for releases:
-1. Build ZIP: exclude tests/, phpunit.xml.dist, composer.*, .phpunit.result.cache
-2. Run Plugin Check in wp-admin — 0 errors, 0 warnings
-3. Bump version if uploading new ZIP: `npm run version:set -- X.Y.Z`
+For a release, also confirm in wp-admin (any local WP):
+- Plugin Check with `--include-experimental` — 0 errors, 0 warnings.
+
+Release flow (fully automated via SVN deploy):
+
+```bash
+npm run version:set -- X.Y.Z   # Sync plugin header + SPINTAX_VERSION + Stable tag
+git commit -am "Release X.Y.Z: <summary>"
+git push origin main           # ci.yml runs
+git tag vX.Y.Z
+git push origin vX.Y.Z         # → release.yml + wporg-deploy.yml fire in parallel
+```
+
+`release.yml` cuts a GitHub Release with the ZIP. `wporg-deploy.yml` pushes to `plugins.svn.wordpress.org/spintax/` (trunk + `tags/X.Y.Z` + `/assets/`) using the 10up action. No manual ZIP, no manual SVN.
 
 **Common traps:**
 - `wp_kses_post()` on template INPUT destroys spintax config — only sanitise OUTPUT
@@ -176,9 +187,9 @@ Then on WP.org for releases:
 
 ## CI/CD (GitHub Actions)
 
-- `ci.yml` — PHPCS on PHP 8.0-8.3, PHPUnit on PHP 8.0+8.2 × WP 6.2+latest, build ZIP
-- `release.yml` — version validation (all 3 sources), PHPCS, build, GitHub Release
-- `wporg-deploy.yml` — 10up action for WP.org SVN (needs SVN_USERNAME/SVN_PASSWORD secrets)
+- `ci.yml` — PHPCS on PHP 8.0-8.3, PHPUnit on PHP 8.0+8.2 × WP 6.2+latest, build ZIP. Runs on every push to main.
+- `release.yml` — version validation (all 3 sources match the tag), PHPCS, build, GitHub Release with ZIP attached. Triggered by tag `v*`.
+- `wporg-deploy.yml` — 10up action for WP.org SVN. Triggered by tag `v*`. Pushes `plugin/` → SVN trunk + `tags/<version>/` and `assets/` → SVN `/assets/`. Scoped to GitHub Environment `svn` (`environment: svn` in the workflow), which is where `SVN_USERNAME` (`301st`) and `SVN_PASSWORD` live. Repository-level secrets are NOT used — must be Environment-level. Manual SVN ops can use `.env.svn` (gitignored).
 
 ## Future work (not in v1)
 
@@ -188,11 +199,11 @@ Then on WP.org for releases:
 - Template taxonomy
 - `#const` (correlated constants from GTW)
 - Rebrand demo template from Acme to 301.st promotional content
-- **TS engine port** (in progress) — lives in `W:\projects\casino-platform\packages\core\utils\spintax.ts`
-  - Full parity with PHP Parser.php including per-element separators and auto-spacing
+- **TS engine port** (in progress) — lives in `W:\projects\casino-platform\packages\core\utils\spintax.ts` + `spintax-plurals.ts`
+  - Full parity with PHP Parser.php including per-element separators, auto-spacing, conditionals, and plural agreement
   - Mulberry32 PRNG with `hashCode(siteId)` seed for deterministic per-site variants
-  - 105 tests (`spintax.test.ts`), run via `npx tsx packages/core/utils/spintax.test.ts`
-  - **Phase 1** (done): port engine inline in casino-platform
+  - Tests: `spintax.test.ts` (~105) + `spintax-plurals.test.ts` (74), run via `npx tsx <file>`
+  - **Phase 1** (done): port engine inline in casino-platform; plural primitive vendored both sides 2026-05-10
   - **Phase 2** (next): integrate into render pipeline — ui_strings, articles, anti-footprint
   - **Phase 3** (later): extract to this project as standalone CF Worker API
   - See: `W:\projects\casino-platform\ROADMAP.md` Phase 5c

@@ -15,6 +15,7 @@ defined( 'ABSPATH' ) || exit;
 
 use Spintax\Bindings\BindingApplier;
 use Spintax\Bindings\BindingsRepo;
+use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Support\Capabilities;
 use Spintax\Support\Validators;
 
@@ -53,6 +54,184 @@ class BindingsAjax {
 	 */
 	public function init(): void {
 		add_action( 'wp_ajax_spintax_test_binding', array( $this, 'test_binding' ) );
+		add_action( 'wp_ajax_spintax_binding_meta_keys', array( $this, 'meta_keys' ) );
+		add_action( 'wp_ajax_spintax_binding_acf_fields', array( $this, 'acf_fields' ) );
+		add_action( 'wp_ajax_spintax_binding_template_list', array( $this, 'template_list' ) );
+	}
+
+	/**
+	 * Distinct postmeta keys for a given post type, filtered by the
+	 * reserved-key guard. Used by the form-side autocomplete on
+	 * target.kind = post_meta.
+	 */
+	public function meta_keys(): void {
+		$this->guard();
+
+		$post_type = $this->read_post_type();
+		if ( '' === $post_type ) {
+			wp_send_json_success( array() );
+		}
+
+		$cache_key = 'meta_keys_' . $post_type;
+		$cached    = wp_cache_get( $cache_key, 'spintax' );
+		if ( is_array( $cached ) ) {
+			wp_send_json_success( $cached );
+		}
+
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- admin AJAX lookup wrapped in wp_cache below; full-table scans are bounded by the LIMIT and run only on rare form-time suggestions.
+		$keys = $wpdb->get_col(
+			$wpdb->prepare(
+				'SELECT DISTINCT pm.meta_key
+				FROM %i pm
+				INNER JOIN %i p ON p.ID = pm.post_id
+				WHERE p.post_type = %s
+				ORDER BY pm.meta_key
+				LIMIT 200',
+				$wpdb->postmeta,
+				$wpdb->posts,
+				$post_type
+			)
+		);
+
+		$items = array();
+		foreach ( (array) $keys as $key ) {
+			$key = (string) $key;
+			if ( Validators::is_reserved_meta_key( $key ) ) {
+				continue;
+			}
+			if ( Validators::is_plugin_internal_meta_key( $key ) ) {
+				continue;
+			}
+			$items[] = array(
+				'name'  => $key,
+				'label' => $key,
+			);
+		}
+
+		wp_cache_set( $cache_key, $items, 'spintax', 5 * MINUTE_IN_SECONDS );
+		wp_send_json_success( $items );
+	}
+
+	/**
+	 * Top-level ACF text/textarea/wysiwyg fields for a given post type.
+	 *
+	 * Does NOT recurse into `sub_fields` (repeaters, groups) or
+	 * `flexible_content` layouts — V1 non-goal NG1 excludes nested
+	 * rendering, so exposing nested fields would invite users to
+	 * configure bindings the applier cannot write.
+	 *
+	 * Returns an empty list when ACF is not active (graceful degradation).
+	 */
+	public function acf_fields(): void {
+		$this->guard();
+
+		if ( ! function_exists( 'acf_get_field_groups' ) || ! function_exists( 'acf_get_fields' ) ) {
+			wp_send_json_success( array() );
+		}
+
+		$post_type = $this->read_post_type();
+		if ( '' === $post_type ) {
+			wp_send_json_success( array() );
+		}
+
+		$cache_key = 'acf_fields_' . $post_type;
+		$cached    = wp_cache_get( $cache_key, 'spintax' );
+		if ( is_array( $cached ) ) {
+			wp_send_json_success( $cached );
+		}
+
+		$groups = acf_get_field_groups( array( 'post_type' => $post_type ) );
+		$result = array();
+
+		foreach ( (array) $groups as $group ) {
+			$fields = acf_get_fields( $group['key'] );
+			if ( ! is_array( $fields ) ) {
+				continue;
+			}
+			$group_title = (string) ( $group['title'] ?? '' );
+			foreach ( $fields as $field ) {
+				$type = (string) ( $field['type'] ?? '' );
+				if ( ! in_array( $type, array( 'text', 'textarea', 'wysiwyg' ), true ) ) {
+					continue;
+				}
+				$name = (string) ( $field['name'] ?? '' );
+				if ( '' === $name ) {
+					continue;
+				}
+				$result[] = array(
+					'name'      => $name,
+					'label'     => '' !== ( $field['label'] ?? '' ) ? (string) $field['label'] : $name,
+					'group'     => $group_title,
+					'field_key' => (string) ( $field['key'] ?? '' ),
+				);
+			}
+		}
+
+		wp_cache_set( $cache_key, $result, 'spintax', 5 * MINUTE_IN_SECONDS );
+		wp_send_json_success( $result );
+	}
+
+	/**
+	 * List of published `spintax_template` CPT entries for the
+	 * source-template dropdown.
+	 */
+	public function template_list(): void {
+		$this->guard();
+
+		$ids = get_posts(
+			array(
+				'post_type'        => TemplatePostType::POST_TYPE,
+				'numberposts'      => -1,
+				'post_status'      => 'publish',
+				'orderby'          => 'title',
+				'order'            => 'ASC',
+				'fields'           => 'ids',
+				'no_found_rows'    => true,
+				'suppress_filters' => true,
+			)
+		);
+
+		$result = array();
+		foreach ( $ids as $id ) {
+			$post = get_post( (int) $id );
+			if ( ! $post ) {
+				continue;
+			}
+			$result[] = array(
+				'id'    => (int) $post->ID,
+				'title' => (string) $post->post_title,
+				'slug'  => (string) $post->post_name,
+			);
+		}
+
+		wp_send_json_success( $result );
+	}
+
+	/**
+	 * Capability + nonce check shared by all endpoints.
+	 *
+	 * Calls `wp_send_json_error()` (which exits) on failure.
+	 */
+	private function guard(): void {
+		check_ajax_referer( 'spintax_admin', 'nonce' );
+		if ( ! current_user_can( Capabilities::CAP ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unauthorized.', 'spintax' ) ), 403 );
+		}
+	}
+
+	/**
+	 * Read the `post_type` parameter, normalising and validating it
+	 * against registered post types.
+	 */
+	private function read_post_type(): string {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- nonce verified by guard() above.
+		$post_type = isset( $_REQUEST['post_type'] ) ? sanitize_key( wp_unslash( (string) $_REQUEST['post_type'] ) ) : '';
+		if ( '' === $post_type || ! post_type_exists( $post_type ) ) {
+			return '';
+		}
+		return $post_type;
 	}
 
 	/**

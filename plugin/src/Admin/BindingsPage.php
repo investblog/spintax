@@ -70,7 +70,54 @@ class BindingsPage {
 
 		if ( $hook ) {
 			add_action( 'load-' . $hook, array( $this, 'handle_actions' ) );
+			add_action(
+				'admin_print_scripts-' . $hook,
+				array( $this, 'enqueue_assets' )
+			);
 		}
+	}
+
+	/**
+	 * Enqueue the Bindings form JS + localized config.
+	 *
+	 * Hooked on the Bindings admin page only (via `admin_print_scripts-<hook>`).
+	 */
+	public function enqueue_assets(): void {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- read-only GET params used to scope the JS payload.
+		$action     = isset( $_GET['action'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['action'] ) ) : '';
+		$binding_id = isset( $_GET['binding_id'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['binding_id'] ) ) : '';
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		wp_enqueue_script(
+			'spintax-bindings',
+			SPINTAX_PLUGIN_URL . 'assets/js/bindings.js',
+			array( 'jquery' ),
+			SPINTAX_VERSION,
+			true
+		);
+
+		wp_localize_script(
+			'spintax-bindings',
+			'spintaxBindings',
+			array(
+				'ajaxUrl'   => admin_url( 'admin-ajax.php' ),
+				'nonce'     => wp_create_nonce( 'spintax_admin' ),
+				'action'    => $action,
+				'bindingId' => 'edit' === $action ? $binding_id : '',
+				'i18n'      => array(
+					'result'        => __( 'Result', 'spintax' ),
+					'wouldWrite'    => __( 'Would write', 'spintax' ),
+					'yes'           => __( 'yes', 'spintax' ),
+					'no'            => __( 'no', 'spintax' ),
+					'post'          => __( 'Post', 'spintax' ),
+					'rendered'      => __( 'Rendered output', 'spintax' ),
+					'currentTarget' => __( 'Current target value', 'spintax' ),
+					'testing'       => __( 'Testing…', 'spintax' ),
+					'enterPostId'   => __( 'Enter a post id to test against.', 'spintax' ),
+					'error'         => __( 'Error running test.', 'spintax' ),
+				),
+			)
+		);
 	}
 
 	/**
@@ -595,6 +642,23 @@ class BindingsPage {
 					</td>
 				</tr>
 			</table>
+
+			<?php if ( $binding && '' !== $id ) : ?>
+				<h3><?php esc_html_e( 'Test', 'spintax' ); ?></h3>
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><label for="spintax-binding-test-post-id"><?php esc_html_e( 'Post ID', 'spintax' ); ?></label></th>
+						<td>
+							<input type="number" id="spintax-binding-test-post-id" class="small-text" min="1" placeholder="123" />
+							<button type="button" id="spintax-binding-test-button" class="button"><?php esc_html_e( 'Test', 'spintax' ); ?></button>
+							<p class="description">
+								<?php esc_html_e( 'Dry-run this binding against a specific post. No writes happen.', 'spintax' ); ?>
+							</p>
+							<div id="spintax-binding-test-results" style="margin-top:12px;"></div>
+						</td>
+					</tr>
+				</table>
+			<?php endif; ?>
 
 			<p class="submit">
 				<input type="submit" name="spintax_save_binding" class="button-primary" value="<?php echo $binding ? esc_attr__( 'Update binding', 'spintax' ) : esc_attr__( 'Create binding', 'spintax' ); ?>" />

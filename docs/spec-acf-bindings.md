@@ -14,6 +14,7 @@
   - P2: §4.1 / §4.5 ACF targets now persist `target.field_key` (stable identity) alongside `target.key` (display name); applier uses `update_field( $field_key, ... )` per ACF docs.
   - P2: §4.5 `ajax_acf_fields` no longer recurses into sub_fields / flexible_content (matches NG1).
   - P2: §4.4 signature meta name consistency fixed in Phase 2 scope; §4.12 cache key formula now includes `variable_context_hash` in the headline.
+- 2026-05-12: cleanup pass aligned the remaining phased-plan text with the resolved design and replaced transient-based admin discovery cache notes with WP Object Cache fast paths to match `docs/spec-v1.md`.
 
 This document is the implementation contract for binding Spintax templates to ACF and post-meta fields. It supersedes the predecessor plugin `nested-spintax-for-acf` and inherits its outcome (render spintax → write to fields) while replacing its UX (per-post metabox) with a globally-scoped binding model patterned on `images-sync-for-cloudflare` (`W:\Projects\wpci`).
 
@@ -194,7 +195,7 @@ Bulk Apply uses the same decision tree.
 
 Three endpoints, all gated by `current_user_can('manage_spintax_templates')` and a nonce. The capability `manage_spintax_templates` is the plugin's existing content-manager role mapping (see `Spintax\Support\Capabilities`) — bindings are content-manager territory, not site-admin territory. All admin pages and form handlers use the same capability.
 
-**`ajax_acf_fields`** — for given `post_type`, walk `acf_get_field_groups( ['post_type' => $pt] )`, then `acf_get_fields( $group['key'] )` over **top-level fields only**. Filter `type IN (text, textarea, wysiwyg)`. Return `[{name, label, group, field_key}]` where `field_key` is the stable ACF identifier (e.g. `field_5f8a1234abcd`). Cache 5 minutes via transient `spintax_acf_fields_<post_type>`.
+**`ajax_acf_fields`** — for given `post_type`, walk `acf_get_field_groups( ['post_type' => $pt] )`, then `acf_get_fields( $group['key'] )` over **top-level fields only**. Filter `type IN (text, textarea, wysiwyg)`. Return `[{name, label, group, field_key}]` where `field_key` is the stable ACF identifier (e.g. `field_5f8a1234abcd`). Optional fast-path cache via `wp_cache_get()` / `wp_cache_set()` in group `spintax_admin` with TTL 300. **No transient fallback** — this project explicitly avoids transient-backed caches for discovery data.
 
 **Do NOT recurse** into `sub_fields` (repeaters, groups) or `flexible_content` layouts. Non-goal NG1 explicitly excludes those from V1; exposing them in the picker would invite users to configure bindings the applier can't safely write. Recursion lands in V2 alongside repeater-row rendering. The wpci `collect_image_fields` walker recurses because its V1 supports image fields nested in repeaters; ours doesn't.
 
@@ -202,7 +203,7 @@ The `field_key` is critical: ACF's `update_field( $key_or_name, $value, $post_id
 
 If a stored `field_key` no longer resolves (`acf_get_field( $stored_field_key )` returns null — field was deleted), the binding card surfaces "Field deleted" status and skips apply until the binding is reconfigured or deleted. Storing the name alongside lets the UI still show "was hero_subtitle (field_5f8a1234abcd)" for diagnostic clarity.
 
-**`ajax_meta_keys`** — for given `post_type`, `SELECT DISTINCT meta_key FROM {$wpdb->postmeta} pm JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE p.post_type = %s LIMIT 200`. Cache 5 minutes via transient `spintax_meta_keys_<post_type>`. Port wpci L294-344 verbatim, including the PHPCS suppression with justification comment. Internal-key filter applied client-side and server-side.
+**`ajax_meta_keys`** — for given `post_type`, `SELECT DISTINCT meta_key FROM {$wpdb->postmeta} pm JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE p.post_type = %s LIMIT 200`. Optional fast-path cache via `wp_cache_get()` / `wp_cache_set()` in group `spintax_admin` with TTL 300. **No transient fallback** — aligns with `spec-v1`'s object-cache policy. Port wpci L294-344 verbatim, including the PHPCS suppression with justification comment. Internal-key filter applied client-side and server-side.
 
 **`ajax_template_list`** — `get_posts( ['post_type' => 'spintax_template', 'numberposts' => -1, 'post_status' => 'publish'] )`. Return `[{id, title, slug}]`. No caching (small dataset, frequently changed).
 
@@ -318,7 +319,7 @@ No side effects. Same logic path as `BindingApplier::apply` but returns the plan
 
 ### 4.10 Bulk Apply
 
-"Apply to all matching posts" button on each binding card. Confirms (`confirm('Apply binding to N matching posts?')`), then enqueues Action Scheduler job `spintax_apply_binding` with `{binding_id, offset, chunk_size: 20}`. The handler processes chunk, re-enqueues with new offset until exhausted, logs progress. Falls back to a `wp spintax bindings apply --binding=X --all` WP-CLI command + admin notice if Action Scheduler isn't available (mirrors wpci L248-253).
+"Apply to all matching posts" button on each binding card. Confirms (`confirm('Apply binding to N matching posts?')`), then enqueues Action Scheduler job `spintax_apply_binding` with `{binding_id, offset, chunk_size}` where `chunk_size = binding.chunk_size ?? 20`. The handler processes a chunk, re-enqueues with the new offset until exhausted, and logs progress. Falls back to a `wp spintax bindings apply --binding=X --all` WP-CLI command + admin notice if Action Scheduler isn't available (mirrors wpci L248-253).
 
 ### 4.11 Migration helper
 
@@ -475,15 +476,15 @@ Pre-generation (the chosen approach) writes the rendered value into the field it
 | Migration helper misclassifies field type | medium | Always preview before applying; never auto-trigger. ACF detection uses `acf_get_field_object` (returns null for non-ACF); fall back to `post_meta` kind. User can adjust before commit. |
 | ACF Pro vs Free behavioral divergence | low | All binding config lives in our admin page, not in ACF's field settings UI. No `acf_register_field_setting` dep. |
 | Action Scheduler not installed | medium | Detect at form load; gray out Bulk Apply with explanatory notice; offer WP-CLI fallback. |
-| Plugin Check (PCP) flags direct DB query in `ajax_meta_keys` | low | Same query exists in wpci with phpcs:ignore + justification — proven pattern. Transient caching mitigates the actual concern (repeated full-table scan). |
+| Plugin Check (PCP) flags direct DB query in `ajax_meta_keys` | low | Same query exists in wpci with phpcs:ignore + justification — proven pattern. Query is bounded (`LIMIT 200`), admin-only, and can use a short-lived `wp_cache_*` fast path when a persistent object cache is present. |
 | Reserved-key guard misses an edge case | low | Form-time validation, not write-time. Add comprehensive test fixtures for all four tiers (§4.6) — internal meta, plugin meta, post columns, binding-uniqueness. |
 | Two bindings on the same `(post_type, target.kind, target.key)` race-overwrite each other | medium | Tier 4 uniqueness check at form save (§4.6). Test fixture verifies the second binding's save returns a field-level error. |
 | Signature-meta cache rot from theme/plugin direct `update_post_meta` writes outside the binding flow | medium | `preserve_manual_edits` correctly treats this as a manual edit (hash diverges). Documented behavior; admin notice on first detection per post: "Target was modified outside Spintax; binding is now in preserve-edits-passive mode." "Initialize from current value" button re-syncs. |
 | Cold-start false manual-edit positive on first run with `regenerate_on_save=ON, preserve_manual_edits=ON, non-empty target` | low | Documented as "Initialize from current value" button flow (§4.4 Cold-start). Form-save warns the editor about this state when both flags are checked and target already has content. |
 
-## 8. Open questions
+## 8. Decision log
 
-Resolved during 2026-05-12 review pass — kept here for traceability. Items marked **RESOLVED** are no longer open; **OPEN** items still need pre-Phase-1 decisions.
+Resolved during the 2026-05-12 review and cleanup passes — kept here for traceability. There are **no remaining pre-Phase-1 blockers** in this section; low-priority UX/testing prompts remain in §11.
 
 - **Q1 (RESOLVED).** Inline `per_post` source editor: metabox. Block-editor support deferred to V2; metabox is simpler, no ACF Pro / no block dep. Confirmed by review.
 - **Q2 (RESOLVED).** ACF sibling vars naming: prefixed `%acf_<field_name>%`. Confirmed by review. **Documented collision rule:** ACF siblings override global vars (resolution order §4.3); a global var named `acf_foo` is shadowed by an actual ACF sibling field `foo`.
@@ -492,10 +493,8 @@ Resolved during 2026-05-12 review pass — kept here for traceability. Items mar
 - **Q5 (RESOLVED).** Predecessor migration: opt-in only, plus a one-line banner ("Predecessor data detected — review in Tools → Spintax Migration") on activation. Banner is dismissible and non-destructive. Confirmed by review.
 - **Q6 (RESOLVED — lean reversed by review).** Signature storage: keyed by `binding_id`, not by `target.key`. Reason: two bindings on the same `(post_type, target.kind, target.key)` were originally allowed but are now rejected by Tier 4 of the reserved-key guard (§4.6); however, keying signature by `binding_id` still matters for the binding-deletion-and-recreation case and for postmeta-inspection clarity when multiple bindings exist on the same post. Stored as `_spintax_last_render_sig_<binding_id>`.
 - **Q7 (RESOLVED — lean adjusted).** Per-post-per-binding render cache: **add** in V1 (§4.12). Keyed by `(binding_id, post_id, binding_cache_version, variable_context_hash)`, TTL inherits from template's cache TTL. Cheap addition with significant Bulk Apply savings. The previous "skip caching for V1" lean is reversed.
-- **Q8 (OPEN — new).** Bulk Apply `chunk_size` configurability: site-wide default (current proposal: 20) vs per-binding override. Lean: **per-binding override, default 20**, exposed in binding form's "Advanced" section. Reviewer to confirm before Phase 4. Rationale: render cost varies 100× by template; one chunk size doesn't fit.
-- **Q9 (OPEN — new).** Template-edit cascade scope: cache-version bump only (§4.7a) vs cache-version bump *plus* an optional admin notice "X bindings depend on this template — run Bulk Apply to propagate" on the template's save screen. Lean: **add the notice**. Reviewer to confirm before Phase 4.
-
-The two new questions (Q8, Q9) are minor scoping decisions for later phases; they don't block Phase 1.
+- **Q8 (RESOLVED — cleanup pass).** Bulk Apply `chunk_size`: per-binding override, default 20, exposed in the binding form's Advanced section. Rationale: render cost varies 100× by template; one chunk size does not fit all.
+- **Q9 (RESOLVED — cleanup pass).** Template-edit cascade includes both cache-version bump and an inline template-edit notice with a Bulk Apply action. The notice stays on the template edit surface; no dashboard widget or email in V1.
 
 ## 9. Phased implementation plan
 
@@ -540,10 +539,10 @@ Five milestones. All land in 2.0.0 — bindings are too coupled to ship in piece
 - Manual edit (target's hash ≠ stored signature) → `preserve_manual_edits=ON` skips, `OFF` clobbers.
 - Template-edit cascade (§4.7a): editing a `spintax_template` bumps `_spintax_binding_cache_v_<binding_id>` for all bindings referencing it; no automatic post writes occur.
 - Per-post metabox saves source content with nonce + `manage_spintax_templates` check.
-- ACF-active vs ACF-inactive trigger routing (§4.7): only one of `save_post` / `acf/save_post` fires per binding per save, never both.
+- `save_post` priority 20 is the only V1 save dispatcher (§4.7); PHPUnit fixtures cover classic editor, Quick Edit, Gutenberg, ACF-backed saves, WP-CLI, REST POST/PUT, and importer-created posts to prevent future regressions back to `acf/save_post`-only routing.
 - `ajax_test_binding` returns the planned action without side effects (verified by postmeta snapshot before/after).
 
-**Exit test:** create a `per_post` binding on Posts → `acf_field:hero_text` with default flags. Author writes spintax in metabox, saves post → field populated. Hand-edit field → save post → preserved. Toggle `preserve_manual_edits=OFF` → save → clobbered. Switch binding to `template` mode → re-save the underlying template → next render of the target post shows the updated template (cache invalidated) without the target field being rewritten yet. Bulk Apply (manual via WP-CLI in this phase since no UI yet) rewrites the target field.
+**Exit test:** create a `per_post` binding on Posts → `acf_field:hero_text` with default flags. Author writes spintax in metabox, saves post → field populated. Hand-edit field → save post → preserved. Toggle `preserve_manual_edits=OFF` → save → clobbered. Switch binding to `template` mode → re-save the underlying template → binding is marked stale and the target field remains unchanged until an explicit rewrite path runs. Bulk Apply (manual via WP-CLI in this phase since no UI yet) rewrites the target field with the fresh template output.
 
 ### Phase 3 — AJAX field discovery + Test panel
 
@@ -556,7 +555,7 @@ Five milestones. All land in 2.0.0 — bindings are too coupled to ship in piece
 
 **Acceptance:**
 - AJAX endpoints all gated by `manage_spintax_templates` + nonce; PHPUnit covers unauth / wrong-nonce / wrong-post-type paths.
-- ACF active → field walker enumerates flat + nested (sub_fields, flexible_content); ACF inactive → endpoint returns empty array gracefully.
+- ACF active → field walker enumerates supported **top-level only** text/textarea/wysiwyg fields; ACF inactive → endpoint returns empty array gracefully.
 - Test panel: same path as `apply()` but returns plan instead of executing; no side effects (verified by snapshot of postmeta before/after).
 
 **Exit test:** form's "Target Key" input shows live suggestions as user types; "Test" with post ID shows accurate `would_write` flag matching what apply() would actually do.
@@ -596,9 +595,9 @@ Note: V1 uses `save_post` priority 20 only (§4.7). There is no separate `AcfSav
 - Detector: scans postmeta for `ns4acf_selected_spintax_fields`; groups by post type.
 - Activation banner: dismissible one-liner pointing to Tools → Spintax Migration when predecessor data detected.
 - Preview: shows planned bindings before commit (no DB writes until confirmed).
-- Importer: creates bindings + copies sibling meta + copies variables.
+- Importer: creates **deduped** bindings per §4.11, copies sibling meta, and merges/copies variables according to the migration conflict rules.
 - **i18n / RTL pass:** all admin strings wrapped with `__()` / `_n()` using existing text domain `spintax`; RTL CSS pass for `assets/css/admin.css` Bindings page section; verify with a `dir="rtl"` site (e.g. Arabic locale).
-- **`uninstall.php` updates:** delete option `spintax_bindings`; bulk-delete all sibling-meta keys across all posts via `$wpdb->prepare()`: `_spintax_source_*` (per-post template sources), `_spintax_last_render_sig_*` (manual-edit-detection signatures), `_spintax_binding_cache_v_*` (per-binding cache version stamps). Existing uninstall already handles plugin options and CPT — extend, don't replace.
+- **`uninstall.php` updates:** delete option `spintax_bindings`; bulk-delete postmeta keys across all posts via `$wpdb->prepare()`: `_spintax_source_*` (per-post template sources) and `_spintax_last_render_sig_*` (manual-edit-detection signatures). Separately delete per-binding cache-version **options** matching `_spintax_binding_cache_v_*` via direct options-table cleanup. Existing uninstall already handles plugin options and CPT — extend, don't replace.
 - **Multisite documentation:** readme.txt FAQ entry "On multisite, are bindings shared across the network?" — answer: no, per-site. Each subsite manages its own bindings independently. No network admin page in V1.
 - **REST API position:** readme.txt FAQ entry "Can I manage bindings via REST?" — answer: not in V1; admin-only. WP-CLI export/import (Phase 4) covers staging→prod workflows. REST API exposure tracked as V2.
 - **Hard cap documentation:** readme.txt FAQ entry mentions 200-binding cap with rationale (autoload option size).
@@ -612,7 +611,7 @@ Note: V1 uses `save_post` priority 20 only (§4.7). There is no separate `AcfSav
 - Predecessor plugin's data isn't touched (user uninstalls it manually after verifying).
 - Spec-v1 documents the binding model.
 - All Bindings admin UI strings translate cleanly via WP language files; RTL layout verified visually.
-- `uninstall.php` leaves no orphan meta after plugin removal (test: install + create binding on 10 posts + uninstall + verify postmeta is clean).
+- `uninstall.php` leaves no orphan meta or binding-cache-version options after plugin removal (test: install + create binding on 10 posts + uninstall + verify postmeta and options cleanup).
 - Plugin Check 0 errors / 0 warnings with `--include-experimental`.
 
 **Exit test:** full release rehearsal — version-set 2.0.0 → push → CI green → tag v2.0.0 → push tag → `wporg-deploy.yml` succeeds → wordpress.org/plugins/spintax/ shows 2.0.0 with the new feature in the changelog. Migration tested on a clean WP install with predecessor sample data.
@@ -646,10 +645,10 @@ Original fresh-eyes review (2026-05-12) resolved most prompts. Remaining items f
 - **Render caching.** Resolved: per-post-per-binding cache added (§4.12), keyed by `(binding_id, post_id, binding_cache_version, variable_context_hash)`.
 - **Phasing.** Resolved: minimal `ajax_test_binding` endpoint moved into Phase 2 (no JS yet); enables dogfooding before Phase 3 UI lands.
 
-### Open for second-pass review (Q8, Q9)
+### Closed by cleanup pass (Q8, Q9)
 
-- **Q8: Bulk Apply `chunk_size` defaults / configurability.** Confirm 20 default + per-binding override is right, or argue for a different default / scope.
-- **Q9: Template-edit cascade notice.** Confirm the inline admin notice on `spintax_template` edit screen ("N bindings depend on this template — Run Bulk Apply to propagate") is the right scope, or argue for a different surface (dashboard widget, email, action bar).
+- **Q8.** Bulk Apply `chunk_size` is now fixed as a per-binding override with default 20.
+- **Q9.** Template-edit cascade notice remains on the `spintax_template` edit screen with a Bulk Apply action; no broader notification surface in V1.
 
 ### Open for any-time review (low priority)
 

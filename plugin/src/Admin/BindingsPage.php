@@ -14,9 +14,11 @@ namespace Spintax\Admin;
 defined( 'ABSPATH' ) || exit;
 
 use Spintax\Bindings\BindingsRepo;
+use Spintax\Bindings\BulkApply;
 use Spintax\Bindings\Defaults;
 use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Support\Capabilities;
+use Spintax\Support\OptionKeys;
 use Spintax\Support\Validators;
 use WP_Error;
 
@@ -163,6 +165,24 @@ class BindingsPage {
 			$result = $this->handle_save();
 			$this->redirect_with_notice( $redirect_url, $result['message'], $result['type'] );
 		}
+
+		// Bulk Apply (POST).
+		if ( isset( $_POST['spintax_bulk_apply'], $_POST['binding_id'] ) ) {
+			$id = sanitize_text_field( wp_unslash( (string) $_POST['binding_id'] ) );
+			if ( ! Validators::is_valid_binding_id( $id ) ) {
+				$this->redirect_with_notice( $redirect_url, __( 'Invalid binding id.', 'spintax' ), 'error' );
+			}
+			check_admin_referer( 'spintax_bulk_apply_' . $id );
+
+			$result = ( new BulkApply( $this->repo ) )->enqueue( $id );
+			if ( is_wp_error( $result ) ) {
+				$this->redirect_with_notice( $redirect_url, $result->get_error_message(), 'error' );
+			}
+			$this->redirect_with_notice(
+				$redirect_url,
+				__( 'Bulk Apply enqueued. Check Logs for progress.', 'spintax' )
+			);
+		}
 	}
 
 	/**
@@ -258,6 +278,7 @@ class BindingsPage {
 				'regenerate_on_save'    => ! empty( $_POST['behavior_regenerate_on_save'] ),
 				'preserve_manual_edits' => ! empty( $_POST['behavior_preserve_manual_edits'] ),
 				'clear_on_empty'        => ! empty( $_POST['behavior_clear_on_empty'] ),
+				'chunk_size'            => isset( $_POST['behavior_chunk_size'] ) ? (int) $_POST['behavior_chunk_size'] : Defaults::DEFAULT_CHUNK_SIZE,
 			),
 		);
 		// phpcs:enable WordPress.Security.NonceVerification.Missing
@@ -398,11 +419,18 @@ class BindingsPage {
 				'spintax_delete_binding_' . $id
 			);
 
+			$stale = $this->is_stale( $id, $mode );
+
 			?>
 			<div class="spintax-binding-card" style="border:1px solid #c3c4c7;background:#fff;padding:12px 16px;margin:12px 0;border-radius:4px;">
-				<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+				<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;">
 					<strong><?php echo esc_html( $pt_label ); ?></strong>
-					<code style="background:#f0f0f1;padding:2px 6px;border-radius:3px;font-size:11px;"><?php echo esc_html( $id ); ?></code>
+					<?php if ( $stale ) : ?>
+						<span style="background:#fff7e0;border:1px solid #dba617;color:#3b2c00;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;">
+							<?php esc_html_e( 'Stale: source template edited', 'spintax' ); ?>
+						</span>
+					<?php endif; ?>
+					<code style="background:#f0f0f1;padding:2px 6px;border-radius:3px;font-size:11px;margin-left:auto;"><?php echo esc_html( $id ); ?></code>
 				</div>
 				<div style="display:flex;flex-wrap:wrap;gap:18px;margin-bottom:10px;font-size:13px;">
 					<div>
@@ -419,8 +447,15 @@ class BindingsPage {
 						<?php echo esc_html( $this->describe_triggers( $binding ) ); ?>
 					</div>
 				</div>
-				<div>
+				<div style="display:flex;gap:6px;align-items:center;">
 					<a href="<?php echo esc_url( $edit_url ); ?>" class="button button-small"><?php esc_html_e( 'Edit', 'spintax' ); ?></a>
+					<form method="post" style="display:inline;margin:0;">
+						<?php wp_nonce_field( 'spintax_bulk_apply_' . $id ); ?>
+						<input type="hidden" name="binding_id" value="<?php echo esc_attr( $id ); ?>" />
+						<button type="submit" name="spintax_bulk_apply" class="button button-small" onclick="return confirm('<?php echo esc_js( __( 'Apply binding to all matching posts? This may take a while.', 'spintax' ) ); ?>');">
+							<?php esc_html_e( 'Bulk Apply', 'spintax' ); ?>
+						</button>
+					</form>
 					<a href="<?php echo esc_url( $delete_url ); ?>" class="button button-small button-link-delete" onclick="return confirm('<?php echo esc_js( __( 'Delete this binding?', 'spintax' ) ); ?>');"><?php esc_html_e( 'Delete', 'spintax' ); ?></a>
 				</div>
 			</div>
@@ -643,6 +678,27 @@ class BindingsPage {
 				</tr>
 			</table>
 
+			<h3><?php esc_html_e( 'Advanced', 'spintax' ); ?></h3>
+			<table class="form-table" role="presentation">
+				<tr>
+					<th scope="row"><label for="spintax-behavior-chunk-size"><?php esc_html_e( 'Bulk apply / cron chunk size', 'spintax' ); ?></label></th>
+					<td>
+						<input type="number" name="behavior_chunk_size" id="spintax-behavior-chunk-size" class="small-text" min="1" max="200" value="<?php echo esc_attr( (string) ( $b['behavior']['chunk_size'] ?? Defaults::DEFAULT_CHUNK_SIZE ) ); ?>" />
+						<p class="description">
+							<?php
+							printf(
+								/* translators: 1: minimum chunk size, 2: maximum chunk size, 3: default chunk size */
+								esc_html__( 'How many posts to process per Action Scheduler job (range %1$d–%2$d, default %3$d). Lower this for heavy templates that take many seconds to render; raise it for trivial templates over large catalogs.', 'spintax' ),
+								(int) Defaults::MIN_CHUNK_SIZE,
+								(int) Defaults::MAX_CHUNK_SIZE,
+								(int) Defaults::DEFAULT_CHUNK_SIZE
+							);
+							?>
+						</p>
+					</td>
+				</tr>
+			</table>
+
 			<?php if ( $binding && '' !== $id ) : ?>
 				<h3><?php esc_html_e( 'Test', 'spintax' ); ?></h3>
 				<table class="form-table" role="presentation">
@@ -668,6 +724,22 @@ class BindingsPage {
 			</p>
 		</form>
 		<?php
+	}
+
+	/**
+	 * True when a template-mode binding's cache version is ahead of the
+	 * last successful Bulk Apply / cron walk for that binding.
+	 *
+	 * @param string $binding_id Binding id.
+	 * @param string $mode       Source mode.
+	 */
+	private function is_stale( string $binding_id, string $mode ): bool {
+		if ( 'template' !== $mode ) {
+			return false;
+		}
+		$current = (int) get_option( OptionKeys::OPTION_BINDING_CACHE_VERSION_PREFIX . $binding_id, 0 );
+		$applied = (int) get_option( OptionKeys::OPTION_BINDING_LAST_APPLIED_VERSION_PREFIX . $binding_id, 0 );
+		return $current > $applied;
 	}
 
 	/**

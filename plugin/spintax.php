@@ -160,6 +160,16 @@ add_action(
 		// save_post fires from REST / WP-CLI / importers too.
 		( new Bindings\Triggers\SavePostTrigger() )->init();
 		( new Bindings\Triggers\TemplateCascadeTrigger() )->init();
+		( new Bindings\Triggers\CronTrigger() )->init();
+
+		// Bulk Apply handler — Action Scheduler invokes this from cron-like
+		// background workers, no admin context guaranteed.
+		( new Bindings\BulkApply() )->init();
+
+		// WP-CLI subcommands.
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			\WP_CLI::add_command( 'spintax bindings', CLI\BindingsCommand::class );
+		}
 
 		// Admin UI.
 		if ( is_admin() ) {
@@ -168,6 +178,7 @@ add_action(
 
 			( new Admin\BindingsMetaBox() )->init();
 			( new Admin\BindingsAjax() )->init();
+			( new Admin\TemplateCascadeNotice() )->init();
 		}
 
 		// Invalidate cache when a template is saved.

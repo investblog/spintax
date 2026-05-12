@@ -104,6 +104,16 @@ class BindingsRepo {
 		$all[ $normalised['id'] ] = $normalised;
 		update_option( OptionKeys::BINDINGS, $all, true );
 
+		/**
+		 * Fires after a binding is created or updated.
+		 *
+		 * Receives the full normalised binding payload. `CronTrigger`
+		 * listens for this to sync the per-binding WP-Cron schedule.
+		 *
+		 * @param array<string, mixed> $binding Saved binding.
+		 */
+		do_action( 'spintax_binding_saved', $normalised );
+
 		return $normalised;
 	}
 
@@ -151,6 +161,9 @@ class BindingsRepo {
 		$all[ $id ] = $normalised;
 		update_option( OptionKeys::BINDINGS, $all, true );
 
+		/** This action is documented in src/Bindings/BindingsRepo.php */
+		do_action( 'spintax_binding_saved', $normalised );
+
 		return $normalised;
 	}
 
@@ -176,6 +189,17 @@ class BindingsRepo {
 		}
 		unset( $all[ $id ] );
 		update_option( OptionKeys::BINDINGS, $all, true );
+
+		/**
+		 * Fires after a binding is deleted.
+		 *
+		 * Receives the binding id. `CronTrigger` listens for this to
+		 * unschedule the per-binding WP-Cron event.
+		 *
+		 * @param string $binding_id Deleted binding id.
+		 */
+		do_action( 'spintax_binding_deleted', $id );
+
 		return true;
 	}
 
@@ -287,6 +311,11 @@ class BindingsRepo {
 		$merged['behavior']['regenerate_on_save']    = ! empty( $merged['behavior']['regenerate_on_save'] );
 		$merged['behavior']['preserve_manual_edits'] = ! empty( $merged['behavior']['preserve_manual_edits'] );
 		$merged['behavior']['clear_on_empty']        = ! empty( $merged['behavior']['clear_on_empty'] );
+		$merged['behavior']['chunk_size']            = Validators::clamp_int(
+			(int) ( $merged['behavior']['chunk_size'] ?? Defaults::DEFAULT_CHUNK_SIZE ),
+			Defaults::MIN_CHUNK_SIZE,
+			Defaults::MAX_CHUNK_SIZE
+		);
 
 		return $merged;
 	}

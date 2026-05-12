@@ -10,6 +10,7 @@ namespace Spintax\Bindings;
 defined( 'ABSPATH' ) || exit;
 
 use Spintax\Core\Render\Renderer;
+use Spintax\Core\Variables\AcfSiblingsSource;
 use Spintax\Core\Variables\PostContextSource;
 use Spintax\Support\OptionKeys;
 
@@ -55,6 +56,13 @@ class BindingApplier {
 	private PostContextSource $post_context;
 
 	/**
+	 * ACF sibling-field variable source.
+	 *
+	 * @var AcfSiblingsSource
+	 */
+	private AcfSiblingsSource $acf_siblings;
+
+	/**
 	 * Render pipeline.
 	 *
 	 * @var Renderer
@@ -67,15 +75,18 @@ class BindingApplier {
 	 * @param BindingResolver|null   $resolver     Source resolver.
 	 * @param PostContextSource|null $post_context Post-context variable source.
 	 * @param Renderer|null          $renderer     Render pipeline.
+	 * @param AcfSiblingsSource|null $acf_siblings ACF sibling-field variable source.
 	 */
 	public function __construct(
 		?BindingResolver $resolver = null,
 		?PostContextSource $post_context = null,
-		?Renderer $renderer = null
+		?Renderer $renderer = null,
+		?AcfSiblingsSource $acf_siblings = null
 	) {
 		$this->resolver     = $resolver ?? new BindingResolver();
 		$this->post_context = $post_context ?? new PostContextSource();
 		$this->renderer     = $renderer ?? new Renderer();
+		$this->acf_siblings = $acf_siblings ?? new AcfSiblingsSource();
 	}
 
 	/**
@@ -324,9 +335,15 @@ class BindingApplier {
 			$source = $overrides . "\n" . $source;
 		}
 
-		$runtime_vars = ! empty( $binding['variables']['expose_post_context'] )
-			? $this->post_context->build( $post_id )
-			: array();
+		$runtime_vars = array();
+		if ( ! empty( $binding['variables']['expose_post_context'] ) ) {
+			$runtime_vars = $this->post_context->build( $post_id );
+		}
+		if ( ! empty( $binding['variables']['expose_acf_siblings'] ) ) {
+			// ACF siblings layer over post-context vars: later layers win
+			// per the variable resolution order in spec §4.3.
+			$runtime_vars = array_merge( $runtime_vars, $this->acf_siblings->build( $binding, $post_id ) );
+		}
 
 		return $this->renderer->process_template( $source, $runtime_vars );
 	}

@@ -115,4 +115,13 @@ final class OptionKeys {
 	 * @var string
 	 */
 	public const OPTION_BINDING_CACHE_VERSION_PREFIX = '_spintax_binding_cache_v_';
+
+	/**
+	 * Option key prefix for the last cache-version a Bulk Apply / cron
+	 * walk finished with. When `CACHE_VERSION_PREFIX` > this, the binding
+	 * card surfaces a "Stale" badge until the next successful walk.
+	 *
+	 * @var string
+	 */
+	public const OPTION_BINDING_LAST_APPLIED_VERSION_PREFIX = '_spintax_binding_last_applied_v_';
 }

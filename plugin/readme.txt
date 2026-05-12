@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 6.9
-Stable tag: 2.0.1
+Stable tag: 2.0.2
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -37,6 +37,8 @@ Spintax is a WordPress plugin for template-based content generation using spinta
 2. Activate the plugin through the 'Plugins' menu in WordPress
 3. Create templates under the "Spintax" menu in the admin sidebar
 4. Embed templates using `[spintax slug="my-template"]` in posts/pages or `spintax_render('my-template')` in theme files
+
+**Recommended optional dependency:** install [Action Scheduler](https://wordpress.org/plugins/action-scheduler/) if you plan to use the "Bulk Apply" button on ACF / post-meta bindings, or schedule bindings via per-binding cron on a site with many matching posts. The plugin works without it — Bulk Apply falls back to a WP-CLI command and cron walks run synchronously — but Action Scheduler gives you one-click admin Bulk Apply and chunked async cron walks. If you already use WooCommerce or another plugin that bundles Action Scheduler, you're already set; the Bindings page only shows the install notice when AS isn't loaded.
 
 == Frequently Asked Questions ==
 
@@ -83,9 +85,83 @@ A binding pairs a Spintax template (or a per-post inline source) with one target
 
 Yes. Bindings support both ACF (text / textarea / wysiwyg, top-level fields) and plain post-meta keys. ACF Free and Pro are both supported; nested fields (repeater / flexible_content rows) are not supported in 2.0 — that lands in a later release. The form-side field picker auto-fills the stable ACF field key so writes work on the first save without ACF's reference-meta handshake.
 
+= Do I need Action Scheduler? =
+
+It's a recommended optional dependency for binding-heavy sites. The plugin works without it, but two features degrade:
+
+* The admin **Bulk Apply** button uses Action Scheduler to dispatch chunked async jobs. Without AS, the button returns an error pointing at the WP-CLI fallback (`wp spintax bindings apply --binding=<id> --all`).
+* Per-binding cron schedules still fire, but the cron callback runs the walk synchronously instead of enqueueing an async job. On large catalogues that risks PHP-FPM timeouts on the cron worker.
+
+Many WP shops already ship Action Scheduler bundled with WooCommerce or other plugins — check Plugins → Installed Plugins for "Action Scheduler" before installing it separately. If the Bindings admin page shows an "Action Scheduler is not installed" notice at the top, you don't have it loaded yet; install [Action Scheduler](https://wordpress.org/plugins/action-scheduler/) to make one-click admin Bulk Apply and async cron walks available.
+
+= What WP-CLI commands does the plugin add? =
+
+Five subcommands under `wp spintax bindings`:
+
+* `wp spintax bindings list [--format=table|json|csv]` — list all bindings on the site.
+* `wp spintax bindings apply --binding=<id> [--all|--post=<id>] [--dry-run]` — run a binding against all matching posts (or a single post), with optional dry-run. This is the no-Action-Scheduler fallback path for Bulk Apply.
+* `wp spintax bindings test --binding=<id> --post=<id>` — dry-run a binding against one post and report what `BindingApplier::plan()` would do (`would_write`, current value, rendered preview, skip reason). Same logic as the admin Test panel.
+* `wp spintax bindings export [--format=json] [> bindings.json]` — emit the full bindings store as JSON, deduped by `(post_type, target.key)`.
+* `wp spintax bindings import --file=bindings.json [--overwrite] [--dry-run]` — import bindings from JSON. `--overwrite` updates matches on the same target triple; without it, duplicates are skipped. Use `--dry-run` to preview the plan without writing.
+
+The export/import pair is the recommended staging→production sync path; bindings are not exposed over REST in 2.0.
+
+= What variables can I use inside a bound template? =
+
+A binding template renders with four layered variable sources (later layers override earlier ones — see spec §4.3):
+
+* **Global variables** — the `#set` block in Settings → Spintax → Global Variables. Site-wide.
+* **Per-binding overrides** — a `#set` block in the binding's Variables → "Per-binding #set overrides" textarea. Applies to that binding only.
+* **Post context** (opt-in via the binding's "Expose post context as %vars%" checkbox) — `%post_id%`, `%post_title%`, `%post_url%`, `%post_slug%`, `%post_date%`, `%post_modified%`, `%author_id%`, `%author_name%`.
+* **ACF sibling fields** (opt-in via "Expose ACF sibling fields as %acf_<name>%") — every top-level ACF text/textarea/wysiwyg field in the binding's post type group, available as `%acf_<field_name>%`. Reads happen after ACF persists its values (save_post priority 20 hook), so siblings are always fresh on save_post triggers. Only meaningful for ACF-target bindings.
+
+A binding's source can also use the rest of the Spintax syntax (`{a|b|c}`, `[a|b]`, `{?VAR?then|else}`, `{plural %N%: ...}`, `#include "slug"`, `/#comment#/`).
+
+= How do I schedule bindings to run automatically? =
+
+Two trigger paths, both configurable per binding under "Triggers":
+
+* **Fire on post save** (checkbox, default on) — hooks `save_post` priority 20. Runs after ACF persists its own field values, so sibling reads see fresh data. Skipped during autosave / bulk-edit / REST batch imports / revisions / trash flips.
+* **Cron schedule** (dropdown: disabled / hourly / twicedaily / daily) — each binding gets its own WP-Cron hook `spintax_binding_cron_<binding_id>`. On the scheduled tick, the callback enqueues an Action Scheduler walk (or runs synchronously if AS isn't installed — see the Action Scheduler FAQ above). Independent of save_post; use this to refresh content periodically without an editor touch.
+
+For one-off "apply now" operations, click **Bulk Apply** on the binding card. The button needs Action Scheduler; without it, the admin notice points at the WP-CLI fallback.
+
+= How does the plugin handle manual edits to bound fields? =
+
+Each binding tracks a SHA-1 signature of its last-rendered value in post-meta `_spintax_last_render_sig_<binding_id>`. On every subsequent run with `Preserve manual edits` enabled (default), it compares the current target value's hash to the stored signature:
+
+* If the hashes match, the value hasn't been touched outside the binding — safe to regenerate.
+* If they differ, treat it as a manual edit; skip with `SKIP_MANUAL_EDIT_DETECTED` and log the skip.
+
+Combined with `Regenerate on every save`, this gives a "refresh on save unless edited" workflow. With `Auto-seed empty fields` instead, the binding only writes when the target is empty — manual edits are preserved by definition because they're never overwritten.
+
+There is a "cold-start" exception: when a binding first sees a post with non-empty target content and no signature yet, it treats the existing value as an unwritten manual baseline and skips (`SKIP_COLD_START_MANUAL`) until the editor clicks the binding's "Initialize from current value" path (a later UI addition) or accepts the regeneration by clearing the field first.
+
+= I edited a template. Why aren't the changes showing up on the front end? =
+
+Bindings are a **pre-generation** system, not a render-on-read layer. The rendered string is stored in the target field; consumers (themes, blocks, REST readers) get that stored value directly. Editing the source template doesn't propagate to existing posts until a trigger writes a fresh value to each one.
+
+When you edit a template that has bindings pointing at it, the plugin:
+
+1. Bumps an internal render-cache version on each affected binding.
+2. Surfaces an admin notice on the template-edit screen ("N bindings depend on this template").
+3. Shows a "Stale: source template edited" badge on each affected binding's card.
+
+To push the new content to existing posts, click **Bulk Apply** on each affected binding (or run `wp spintax bindings apply --binding=<id> --all` from the CLI). The Stale badge only clears when the entire walk completes with zero failures — partial-failure walks keep the badge so you notice the divergence and retry.
+
 = Is there a hard cap on bindings? =
 
 200 bindings per site. The store is a single autoloaded option (~500 bytes per binding), and the cap keeps autoload memory bounded. If you genuinely need more, please open an issue with your use case.
+
+= Which fields can't I bind to? =
+
+The form rejects five tiers of reserved keys at save time:
+
+* **WordPress-internal meta** — keys starting with `_wp_`, `_edit_`, `_oembed_`, plus `_pingme`, `_encloseme`, `_thumbnail_id`.
+* **Plugin-internal meta** — `_spintax_*` prefixes (source, signature, cache-version slots used by other bindings).
+* **wp_posts columns** — `post_title`, `post_content`, `post_excerpt`, `post_name`, `post_status`, `post_date`, `post_modified`, `post_parent`, `post_author`, `post_type`, `post_password`, etc. These aren't post-meta and writing to them via `update_post_meta()` silently creates shadow rows.
+* **Cross-binding uniqueness** — only one binding per `(post type, target key)`, regardless of whether the kind is ACF or post_meta (they share the same database row).
+* **ACF field key validity** — when binding to an ACF field, the stable field key (e.g. `field_5f8a1234abcd`) is required, and verified against `acf_get_field()` when ACF is loaded.
 
 = On multisite, are bindings shared across the network? =
 
@@ -123,6 +199,12 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Developed by [301st](https://301.st)
 
 == Changelog ==
+
+= 2.0.2 =
+* Docs: new FAQ entries — Action Scheduler dependency, full `wp spintax bindings` WP-CLI surface, variable scopes (global / per-binding / post context / ACF siblings), trigger options (save_post + per-binding cron), manual edit detection, template-edit propagation, reserved-key tiers.
+* Docs: Installation section now flags Action Scheduler as a recommended optional dependency with the specific features it enables.
+* UX: Spintax → Bindings shows an info notice at the top of the page when Action Scheduler isn't loaded, explaining the two features that degrade (admin Bulk Apply, async cron walks) and linking to the install screen. Notice disappears when AS is loaded by any source (direct install, WooCommerce / Jetpack bundle, mu-plugin, etc.).
+* Internal: no functional changes to the bindings engine or core spintax engine — patch is documentation + a single admin-page notice.
 
 = 2.0.1 =
 * Fix: ACF and post-meta bindings on the same `(post_type, field name)` no longer coexist — they wrote to the same database row and silently raced. Tier 4 uniqueness now ignores `target.kind`. Existing pre-2.0.1 conflicts remain in the data store but the next save of either binding will reject.
@@ -189,6 +271,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 2.0.2 =
+Documentation refresh for the 2.0 binding surface (Action Scheduler as a recommended optional dependency, full WP-CLI command set, variable scopes, scheduling, manual edits) plus an admin notice on the Bindings page when Action Scheduler isn't loaded. No functional changes to the engine.
 
 = 2.0.1 =
 Hot-fix for 2.0.0: cross-kind binding collisions, missing ACF field_key validation, Test panel scope-filter parity, Bulk Apply Stale-badge gating, and form value preservation on validation errors. Highly recommended if you're on 2.0.0.

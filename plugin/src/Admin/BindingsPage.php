@@ -233,12 +233,63 @@ class BindingsPage {
 			</h1>
 
 			<?php $this->render_notice(); ?>
+			<?php $this->render_action_scheduler_notice(); ?>
 
 			<?php if ( $show_form ) : ?>
 				<?php $this->render_form( $editing ); ?>
 			<?php else : ?>
 				<?php $this->render_table( $bindings ); ?>
 			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Info notice on the Bindings page when Action Scheduler is missing.
+	 *
+	 * The plugin works without Action Scheduler, but two features degrade:
+	 *
+	 *  - **Admin "Bulk Apply" button** returns a `WP_Error 'no_action_scheduler'`
+	 *    and points the user at the WP-CLI fallback (`wp spintax bindings
+	 *    apply --binding=<id> --all`). Without AS there is no async
+	 *    chunked admin walk — the CLI is the only chunked path.
+	 *  - **Per-binding cron schedules** still fire, but the callback runs
+	 *    the walk synchronously on the cron tick (`BulkApply::run_synchronously`)
+	 *    instead of dispatching it as an Action Scheduler job. On large
+	 *    sites that risks PHP-FPM timeouts on the cron worker.
+	 *
+	 * Many WP shops already ship Action Scheduler bundled with WooCommerce
+	 * or other plugins; check before recommending a separate install. The
+	 * notice does not show when AS is loaded by anything — directly,
+	 * bundled by another plugin, or as a mu-plugin.
+	 *
+	 * Added in 2.0.2.
+	 */
+	private function render_action_scheduler_notice(): void {
+		if ( BulkApply::action_scheduler_available() ) {
+			return;
+		}
+
+		?>
+		<div class="notice notice-info">
+			<p>
+				<strong><?php esc_html_e( 'Action Scheduler is not installed.', 'spintax' ); ?></strong>
+				<?php
+				esc_html_e(
+					'Spintax Bindings work without it, but the admin "Bulk Apply" button needs Action Scheduler to dispatch chunked async jobs. Without AS, use the WP-CLI fallback "wp spintax bindings apply --binding=<id> --all" instead. Per-binding cron schedules still fire, but the walk runs synchronously on the cron tick — risk of PHP timeouts on large catalogues.',
+					'spintax'
+				);
+				?>
+			</p>
+			<p>
+				<a href="<?php echo esc_url( admin_url( 'plugin-install.php?s=action+scheduler&tab=search&type=term' ) ); ?>" class="button button-secondary">
+					<?php esc_html_e( 'Install Action Scheduler', 'spintax' ); ?>
+				</a>
+				<?php /* translators: external link to the Action Scheduler plugin on WordPress.org */ ?>
+				<a href="https://wordpress.org/plugins/action-scheduler/" target="_blank" rel="noopener noreferrer" style="margin-left:8px;">
+					<?php esc_html_e( 'About Action Scheduler →', 'spintax' ); ?>
+				</a>
+			</p>
 		</div>
 		<?php
 	}

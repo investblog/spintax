@@ -83,4 +83,36 @@ final class OptionKeys {
 	 * @var string
 	 */
 	public const META_LAST_REGENERATED = '_spintax_last_regenerated_at';
+
+	/**
+	 * Bindings store option key (single autoloaded option, see spec §4.1).
+	 *
+	 * @var string
+	 */
+	public const BINDINGS = 'spintax_bindings';
+
+	/**
+	 * Per-post sibling meta prefix that holds the spintax source for
+	 * `per_post`-mode bindings. Concatenated with `target.key`.
+	 *
+	 * @var string
+	 */
+	public const META_BINDING_SOURCE_PREFIX = '_spintax_source_';
+
+	/**
+	 * Per-post sibling meta prefix that holds the last-rendered signature
+	 * hash for manual-edit detection. Concatenated with the binding id.
+	 *
+	 * @var string
+	 */
+	public const META_BINDING_RENDER_SIG_PREFIX = '_spintax_last_render_sig_';
+
+	/**
+	 * Option key prefix for per-binding cache version stamps used by the
+	 * template-edit cascade (see spec §4.7a). Concatenated with the
+	 * binding id; stored as an option, not post-meta.
+	 *
+	 * @var string
+	 */
+	public const OPTION_BINDING_CACHE_VERSION_PREFIX = '_spintax_binding_cache_v_';
 }

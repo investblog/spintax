@@ -61,7 +61,7 @@ class BindingsPageTest extends \WP_UnitTestCase {
 		);
 		$_POST = array(
 			'binding_id'             => '',
-			'post_type'              => 'post',
+			'spintax_post_type'      => 'post',
 			'status'                 => 'any',
 			'target_kind'            => 'post_meta',
 			'target_key'             => 'my_field',
@@ -83,7 +83,7 @@ class BindingsPageTest extends \WP_UnitTestCase {
 
 	public function test_missing_post_type_flashes_form_state(): void {
 		$this->fill_post_with_valid_meta_binding();
-		$_POST['post_type'] = '';
+		$_POST['spintax_post_type'] = '';
 
 		$result = $this->call_handle_save();
 

@@ -18,6 +18,8 @@
 	var cfg = window.spintaxBindings;
 
 	function postTypeValue() {
+		// Field is `name="spintax_post_type"` (renamed in 2.0.1 to avoid
+		// clobbering `$_REQUEST['post_type']` which WP uses to set `$typenow`).
 		return ( $( '#spintax-post-type' ).val() || '' ).toString();
 	}
 

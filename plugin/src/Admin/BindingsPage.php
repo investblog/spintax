@@ -262,8 +262,14 @@ class BindingsPage {
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- nonce verified in handle_actions().
 		$existing_id = isset( $_POST['binding_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['binding_id'] ) ) : '';
 
+		// NB. The `post_type` form field is intentionally `spintax_post_type`
+		// (not `post_type`) so it doesn't clobber `$_REQUEST['post_type']` —
+		// WP's admin.php uses that to set `$typenow`, which in turn drives
+		// the parent-slug lookup for `get_plugin_page_hook()`. A
+		// `name="post_type"` form field would route the menu hook to the
+		// wrong parent on POST and produce "Cannot load spintax-bindings".
 		$data = array(
-			'post_type' => isset( $_POST['post_type'] ) ? sanitize_key( wp_unslash( (string) $_POST['post_type'] ) ) : '',
+			'post_type' => isset( $_POST['spintax_post_type'] ) ? sanitize_key( wp_unslash( (string) $_POST['spintax_post_type'] ) ) : '',
 			'status'    => isset( $_POST['status'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['status'] ) ) : 'any',
 			'target'    => array(
 				'kind'      => isset( $_POST['target_kind'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['target_kind'] ) ) : '',
@@ -646,7 +652,7 @@ class BindingsPage {
 				<tr>
 					<th scope="row"><label for="spintax-post-type"><?php esc_html_e( 'Post type', 'spintax' ); ?></label></th>
 					<td>
-						<select name="post_type" id="spintax-post-type" required>
+						<select name="spintax_post_type" id="spintax-post-type" required>
 							<option value=""><?php esc_html_e( '— Select —', 'spintax' ); ?></option>
 							<?php foreach ( $post_types as $pt ) : ?>
 								<option value="<?php echo esc_attr( $pt->name ); ?>" <?php selected( $b['post_type'], $pt->name ); ?>>

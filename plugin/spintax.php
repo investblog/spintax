@@ -156,10 +156,18 @@ add_action(
 		// Load global helper function.
 		require_once SPINTAX_PLUGIN_DIR . 'src/Core/Render/functions.php';
 
+		// Binding triggers — must run regardless of is_admin() because
+		// save_post fires from REST / WP-CLI / importers too.
+		( new Bindings\Triggers\SavePostTrigger() )->init();
+		( new Bindings\Triggers\TemplateCascadeTrigger() )->init();
+
 		// Admin UI.
 		if ( is_admin() ) {
 			$admin_menu = new Admin\AdminMenu();
 			$admin_menu->init();
+
+			( new Admin\BindingsMetaBox() )->init();
+			( new Admin\BindingsAjax() )->init();
 		}
 
 		// Invalidate cache when a template is saved.

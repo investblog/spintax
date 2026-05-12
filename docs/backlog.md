@@ -1,8 +1,12 @@
-# Engine Backlog
+# Backlog
 
-Post-v1 syntax and engine ideas. Each entry records locked decisions and the trigger conditions that promote it from "deferred" to "ready for implementation". Items live here until a real-world signal justifies the work — not preventively.
+Post-v1 design ideas — both engine primitives and plugin-level features. Each entry records locked decisions and the trigger conditions that promote it from "deferred" to "ready for implementation". Items live here until a real-world signal (or explicit user green-light) justifies the work — not preventively.
 
-This is engine-level only. Product/ecosystem items live in `product-roadmap-2026.md`. Released v1 behaviour lives in `spec-v1.md`.
+Product/ecosystem strategy (website, kits, API, bot, vertical packs) lives in `product-roadmap-2026.md` and references this file for individual feature designs. Released v1 behaviour lives in `spec-v1.md`.
+
+---
+
+# Engine primitives
 
 ---
 
@@ -153,3 +157,159 @@ These are deliberately not pre-decided. Once a community forms around `spintax.n
 - Version bump: 1.4.0 → 1.5.0 (3-place sync).
 
 Roughly 2× the weight of the conditionals primitive that shipped in 1.2.0. Bounded but not free — the real cost is keeping rule tables in sync with TS over time, not the initial port.
+
+---
+
+# Plugin features
+
+---
+
+## ACF / Post-meta Bindings
+
+**Status:** deferred — design locked 2026-05-12. Awaiting decision to start work. Primary driver is parity with predecessor `nested-spintax-for-acf` and migration pressure once approached by old-plugin users; secondary is the "highest priority migration item" note in `CLAUDE.md` future-work list.
+
+### Reference points
+
+- **Predecessor (do NOT replicate UX):** `C:\Users\Admin\Local Sites\testcom\app\public\wp-content\plugins\nested-spintax-for-acf`. Demonstrates the desired *outcome* (render spintax → write to ACF/meta field) but with per-post metabox UX that doesn't scale beyond a handful of fields.
+- **Architectural reference (UX to mirror):** `W:\Projects\wpci` (images-sync-for-cloudflare). Specifically `plugin/src/Admin/MappingsPage.php` for the Mapping form pattern, AJAX field discovery, dry-run, bulk-via-Action-Scheduler; `Core/SourceResolver.php` for the source-type switch pattern.
+
+### Problem
+
+Editors writing template-driven content want to populate ACF and post-meta fields with spintax-generated text — e.g. a "Hero subtitle" ACF text field across 200 post-type posts should render a variant from a single shared template, with per-post variable substitution. Current options:
+
+1. **Inline `[spintax slug="…"]` shortcode in content** — only works for `the_content`, not for arbitrary ACF/meta fields the theme reads directly.
+2. **`spintax_render()` calls in the theme** — requires theme editing for every field; binds template names into PHP; not usable by content managers without dev.
+3. **Pre-generation by hand** — author copies rendered output into the field; can't easily re-roll variants in bulk; defeats reusability.
+
+The predecessor plugin attempted on-save sibling-meta generation but exposed it through a per-post metabox where authors hand-picked fields one post at a time. That scales poorly: 200 posts × N fields each = 200 metabox clicks; no concept of "this template populates this field type-wide".
+
+### Locked design — "Spintax Binding" entity
+
+One binding = `(post type) × (target field) × (source template) × (triggers) × (behavior)`. Globally scoped: configure once for a post type, applies to every post of that type (subject to status filter). Multiple bindings can target different fields on the same post type. Storage: option-store via `BindingsRepo` (mirror wpci's `MappingsRepo` shape — bindings are admin configuration, not user content; CPT would be overkill).
+
+**Form sections (mirror wpci `MappingsPage::render_form`):**
+
+| Section | Fields | Notes |
+|---|---|---|
+| Scope | `post_type` (dropdown of public types), `status` (`any` \| `publish`) | wpci L640-732 pattern |
+| Target | `target.kind` (`acf_field` \| `post_meta`), `target.key` (AJAX-suggested) | reserved-key guard refuses `_wp_*`, `_edit_*`, `_oembed_*`, `_thumbnail_id` |
+| Source | `source.mode` (`template` \| `per_post`), `source.template_id` OR auto-derived sibling key `_spintax_source_<target.key>` | mutually exclusive per-binding; mixable across bindings |
+| Variables | `expose_post_context` (bool), `expose_acf_siblings` (bool), `overrides` (raw `#set` block, per-binding) | global Settings vars always inherited |
+| Triggers | `save_post` (bool), `acf_save_post` (bool), `cron.schedule` (off \| hourly \| twicedaily \| daily) | graceful disable of ACF triggers if ACF not active |
+| Behavior | `auto_seed_empty` (default ON), `regenerate_on_save` (default OFF), `preserve_manual_edits` (default ON), `clear_on_empty` (default OFF) | see "Auto-seed semantics" below |
+| Test | post ID input → dry-run preview (resolved source, would-overwrite flag, current target value, rendered preview) | no side effects, mirrors `ajax_test_mapping` L437-563 |
+| Bulk apply | "Apply to all matching posts" → Action Scheduler `spintax_apply_binding` chunks | chunk_size=20, mirror `enqueue_bulk_sync` L238-269 |
+
+### Source modes (the A+C parallel)
+
+- **`template` mode:** binding points to an existing `spintax_template` CPT entry by ID. DRY: same template across many bindings / post types. Best for reusable sniippets ("standard disclaimer", "category boilerplate").
+- **`per_post` mode:** spintax source lives in sibling post-meta `_spintax_source_<target.key>` on each individual post. Authored via inline metabox on the post edit screen. Best for one-off content where the template is genuinely per-post.
+
+Both modes coexist freely across bindings on the same site / post type. Selection happens per binding, not globally.
+
+### Variable scope inside source
+
+Resolved in this order (later sources override earlier):
+1. Global variables from Settings → Spintax (always available).
+2. Per-binding `#set` overrides.
+3. Post-context vars (if `expose_post_context`): `%post_id%`, `%post_title%`, `%post_url%`, `%post_slug%`, `%author_name%`, `%author_id%`, `%post_date%`, `%post_modified%`.
+4. ACF sibling vars (if `expose_acf_siblings` and `target.kind = acf_field`): every text/textarea/wysiwyg field in the same ACF group exposed as `%acf_<field_name>%`. Repeaters/groups/flexible_content excluded in V1.
+
+Cron-fired regenerations seed the PRNG from `post_id + binding_id` for deterministic same-day variants (avoid cron-storm of new variants on every cron cycle).
+
+### Auto-seed semantics
+
+The user-facing reason this entry exists — make initial population effortless without clobbering manual edits.
+
+- **`auto_seed_empty` (default ON):** on trigger, write to target ONLY if target is currently empty or missing. Never overwrites existing content. This is the "set up once, populates new posts as they're created" mode.
+- **`regenerate_on_save` (default OFF):** on every trigger, overwrite target with a fresh render. Use for "rotate variant on every edit" workflows.
+- **`preserve_manual_edits` (default ON):** plugin stores a hash of last-rendered value in `_spintax_last_render_sig_<target.key>`. On regenerate, compare current target value to last-rendered hash. If they differ, treat as manual edit and skip regeneration (with admin notice). Authors can opt-in to overwrite via per-post checkbox.
+- **`clear_on_empty` (default OFF):** if template renders to empty string, clear the target field. Useful for conditional content where the binding should "uninstall" if its inputs go away.
+
+Bulk Apply path uses the same flags — won't clobber manually-edited fields by default.
+
+### Field discovery (admin AJAX)
+
+- **`ajax_acf_fields`:** for given `post_type`, walk `acf_get_field_groups` → `acf_get_fields` recursively through `sub_fields` + `flexible_content` layouts, filter `type IN (text, textarea, wysiwyg)`, return `[{name, label, group}]`. 5-min transient cache. Direct port of wpci `MappingsPage::collect_image_fields` L397-427 with the image-type filter swapped for text-type.
+- **`ajax_meta_keys`:** `SELECT DISTINCT meta_key FROM postmeta JOIN posts WHERE post_type = ? LIMIT 200`, transient cache. Port wpci L294-344 verbatim.
+- **`ajax_template_list`:** simple WP_Query over `spintax_template` CPT, returns `[{id, title, slug}]` for the source dropdown.
+
+### Triggers pipeline
+
+- `save_post` (priority 20) → find matching bindings for `get_post_type($post_id)` → for each, check filters (status, manual-edit guard) → resolve + write.
+- `acf/save_post` (priority 20, after ACF saves all fields) → same path. Avoids race where ACF siblings haven't been written yet when `save_post` fires.
+- WP-Cron per-binding schedule → enqueue Action Scheduler walk over all matching posts in chunks. Reuse existing `CronManager` infrastructure with binding-id as schedule key.
+
+### Reserved-key guard
+
+Refuse as `target.key`: any key starting with `_wp_`, `_edit_`, `_oembed_`, plus exact-match list `_pingme`, `_encloseme`, `_thumbnail_id`. Mirrors wpci `MappingsPage::is_reserved_meta_key` L571-580. Block at save-form validation, not at write time.
+
+### Migration helper (optional but planned)
+
+Detect predecessor `nested-spintax-for-acf` data on activation:
+- `ns4acf_selected_spintax_fields` per post → suggest creating bindings.
+- `spintax_<field>` sibling meta → import as `per_post` source for the binding.
+- `spintax_variables` per post → import into per-binding `overrides`.
+
+One-shot conversion wizard accessible from Tools → Spintax Migration. Skipped if no old-plugin data found.
+
+### Out of scope (V1)
+
+- ACF repeater / flexible_content per-row binding. V1 binds to top-level fields only; repeater rows are V2.
+- Gutenberg block bindings — separate primitive, separate ship.
+- Per-binding cache TTL (inherit from `spintax_template` if `template` mode; default TTL otherwise).
+- Multilingual binding fan-out (WPML/Polylang) — bind one per locale manually.
+- Block-editor inline editing of `per_post` source (metabox-only in V1).
+
+### Deferred to V2 (separate triggers required)
+
+- Repeater / flexible_content with row-level variable scope.
+- Locale picker per-binding (currently inherits site locale or template `_spintax_locale`).
+- Visual diff in Test panel (current target vs rendered).
+- Binding-level cache versioning + invalidation cascade.
+- Inline source editor in Gutenberg.
+- Field-level conditional binding (apply only if other field matches predicate).
+
+### Out of scope permanently
+
+- Auto-detect "which fields should be spintax" — explicit binding is always required.
+- Generate templates from existing field content — separate authoring concern, not binding concern.
+- Real-time preview as user types in `per_post` source — defer to existing template-edit preview workflow.
+
+### Open questions
+
+- Inline `per_post` source editor: metabox, ACF-injected element, or Gutenberg block in V2? Lean metabox first (simplest, no ACF Pro dependency).
+- ACF sibling vars: stable naming convention. `%acf_<name>%` distinct from regular `%<name>%` to prevent global-var collisions; document explicitly.
+- Storage shape: single autoloaded option with all bindings (wpci pattern, fine to <100 bindings) or per-binding options? Lean single-autoloaded for V1.
+- Cron granularity: per-binding (proposed) vs reusing per-template cron schedules. Lean per-binding — a single template across multiple bindings may want different cadences per binding.
+- ACF Free vs Pro: V1 supports both. Pro's `acf_register_field_setting` is NOT used (would require Pro dep); all binding config stays in the admin Bindings page.
+
+### Implementation context
+
+- **PHP classes (planned):** `Spintax\Bindings\BindingsRepo`, `Spintax\Bindings\BindingResolver`, `Spintax\Bindings\BindingApplier`, `Spintax\Bindings\Triggers\SavePostTrigger`, `Spintax\Bindings\Triggers\AcfSavePostTrigger`, `Spintax\Bindings\Triggers\CronTrigger`, `Spintax\Admin\BindingsPage`, `Spintax\Admin\BindingsAjax`.
+- **Reuse:** existing `Renderer` (call with binding-supplied variable context), existing `CronManager` (extend `get_schedule()` to handle binding schedule keys), existing `Validators::sanitize_spintax()` for source content.
+- **New variable sources:** `Spintax\Core\Variables\PostContextSource`, `Spintax\Core\Variables\AcfSiblingsSource`, `Spintax\Core\Variables\BindingOverridesSource` plug into the renderer's variable pipeline alongside the existing global/local sources.
+- **WP-CLI:** `wp spintax bindings list|apply|test --binding=<id> [--post=<id>|--all]`.
+- **Action Scheduler:** hard requirement for Bulk Apply (graceful fallback to WP-CLI with admin notice if AS not available; mirrors wpci L248-253).
+
+### Estimated effort
+
+- Data layer (BindingsRepo, Defaults, validators): ~200 LOC.
+- Admin UI (BindingsPage + AJAX endpoints, mirror wpci sizing): ~600 LOC.
+- Resolver + applier (post-context vars, ACF siblings, preserve-manual-edits hash): ~250 LOC.
+- Triggers (save_post, acf_save_post, cron, Action Scheduler bulk): ~120 LOC.
+- Tests: ~150 PHPUnit cases (CRUD, resolver scenarios with mocked ACF, applier edge cases including auto-seed / preserve-edits / clear-on-empty).
+- WP-CLI: ~60 LOC.
+- Migration helper (predecessor plugin import): ~100 LOC, optional.
+- Docs: spec addendum + readme.txt FAQ + spintax.net guide (`/docs/acf-bindings/`).
+
+Total: ~1500 LOC plus tests/docs. **Largest single ship on the post-1.x backlog** — significantly heavier than plurals (~370 LOC) or conditionals (~150 LOC). Most cost is the admin UI (the wpci MappingsPage clone). Suggested version bump: 1.x → **2.0.0** (binding model is a substantial new surface, not an additive engine feature).
+
+### Trigger to start work
+
+Any one of:
+- A real user request from a migrating `nested-spintax-for-acf` user (existing user base is small but non-zero).
+- A clear ACF-using project at 301.st / casino-platform that needs this for production templating.
+- Explicit user green-light independent of demand signal (i.e. "we ship 2.0 now").
+
+Until then, this entry stays locked-design / not-yet-built.

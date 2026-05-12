@@ -143,7 +143,16 @@ In practical terms, the free plugin must close these pain points:
 - diagnostics must be understandable for non-developers
 - docs must make advanced syntax learnable even before official prompt kits exist
 
-### 5.3 What Must Not Go Into The Free Plugin
+### 5.3 Planned Plugin Extensions (post-v1.x)
+
+Individual feature designs for post-v1.x plugin work live in `backlog.md`. The roadmap defers to that file for locked decisions, effort estimates, and trigger conditions per feature. Current planned extensions:
+
+- **ACF / Post-meta Bindings** — render Spintax templates into ACF and post-meta fields with selective per-field binding, auto-seed, and bulk apply. See `backlog.md#acf--post-meta-bindings`. Likely 2.0 ship.
+- Engine primitives (plural agreement shipped in 1.5.0; conditionals shipped in 1.4.0) — further engine ideas in `backlog.md` under "Engine primitives".
+
+These extensions are admin/integration surfaces of the free plugin (Section 5.1 scope), not commercial layers (Section 6).
+
+### 5.4 What Must Not Go Into The Free Plugin
 
 To avoid bloat and protect the product ladder, the free plugin should not absorb:
 

@@ -174,4 +174,133 @@ class BulkApplyTest extends \WP_UnitTestCase {
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( 'spintax_bindings_not_found', $result->get_error_code() );
 	}
+
+	// ----- Multi-chunk cumulative failure tracking (added in 2.0.3) -----
+
+	public function test_handle_does_not_stamp_when_failures_in_earlier_chunk(): void {
+		$binding = $this->create_binding( array( 'behavior' => array( 'chunk_size' => 2 ) ) );
+
+		update_option( OptionKeys::OPTION_BINDING_CACHE_VERSION_PREFIX . $binding['id'], 7 );
+
+		// 3 posts so chunk 1 (size 2) fills, chunk 2 (size 1 < chunk_size)
+		// is recognised as final.
+		self::factory()->post->create_many( 3 );
+
+		// Applier throws for the first two posts (chunk 1), succeeds for the third (chunk 2).
+		$applier = new class() extends \Spintax\Bindings\BindingApplier {
+			public int $calls = 0;
+			public function apply( array $binding, int $post_id ): string {
+				++$this->calls;
+				if ( $this->calls <= 2 ) {
+					throw new \RuntimeException( 'chunk-1 failure' );
+				}
+				return \Spintax\Bindings\BindingApplier::WROTE_SEEDED;
+			}
+		};
+
+		$bulk = new BulkApply( $this->repo, $applier );
+
+		// Chunk 1 — 2 failures recorded in the cumulative flag.
+		$bulk->handle( $binding['id'], 0, 2 );
+		$this->assertSame(
+			1,
+			(int) get_option( OptionKeys::OPTION_BINDING_WALK_FAILED_PREFIX . $binding['id'], 0 ),
+			'chunk 1 failure must set the cumulative flag'
+		);
+
+		// Chunk 2 (final, only 1 post) — 0 failures locally, but cumulative flag still set.
+		$bulk->handle( $binding['id'], 2, 2 );
+
+		$stamp = (int) get_option( OptionKeys::OPTION_BINDING_LAST_APPLIED_VERSION_PREFIX . $binding['id'], 0 );
+		$this->assertSame(
+			0,
+			$stamp,
+			'last-applied stamp must NOT be set when an earlier chunk failed (spec §4.10, 2.0.3)'
+		);
+
+		// Final chunk cleans up: cumulative flag is gone.
+		$this->assertSame( '', (string) get_option( OptionKeys::OPTION_BINDING_WALK_FAILED_PREFIX . $binding['id'], '' ) );
+	}
+
+	public function test_handle_clean_walk_clears_failure_flag_and_stamps(): void {
+		$binding = $this->create_binding( array( 'behavior' => array( 'chunk_size' => 5 ) ) );
+
+		update_option( OptionKeys::OPTION_BINDING_CACHE_VERSION_PREFIX . $binding['id'], 4 );
+		// Pre-existing stale flag from a previous failed walk — must be cleared.
+		update_option( OptionKeys::OPTION_BINDING_WALK_FAILED_PREFIX . $binding['id'], 1 );
+
+		self::factory()->post->create_many( 3 );
+
+		( new BulkApply( $this->repo ) )->handle( $binding['id'], 0, 5 );
+
+		// Clean walk: stamps + clears the cumulative flag.
+		$this->assertSame( 4, (int) get_option( OptionKeys::OPTION_BINDING_LAST_APPLIED_VERSION_PREFIX . $binding['id'], 0 ) );
+		$this->assertSame( '', (string) get_option( OptionKeys::OPTION_BINDING_WALK_FAILED_PREFIX . $binding['id'], '' ) );
+	}
+
+	// ----- Walk lock (added in 2.0.3) -----
+
+	public function test_enqueue_returns_walk_in_progress_when_lock_held(): void {
+		$binding = $this->create_binding();
+
+		if ( ! BulkApply::action_scheduler_available() ) {
+			$this->markTestSkipped( 'Lock conflict only fires when AS is available; otherwise no_action_scheduler short-circuits earlier.' );
+		}
+
+		// Pretend a walk is in progress (recent lock).
+		update_option(
+			OptionKeys::OPTION_BINDING_WALK_LOCK_PREFIX . $binding['id'],
+			time(),
+			false
+		);
+
+		$result = ( new BulkApply( $this->repo ) )->enqueue( $binding['id'] );
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'walk_in_progress', $result->get_error_code() );
+	}
+
+	public function test_run_synchronously_returns_walk_in_progress_when_lock_held(): void {
+		$binding = $this->create_binding();
+
+		update_option(
+			OptionKeys::OPTION_BINDING_WALK_LOCK_PREFIX . $binding['id'],
+			time(),
+			false
+		);
+
+		$result = ( new BulkApply( $this->repo ) )->run_synchronously( $binding['id'] );
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'walk_in_progress', $result->get_error_code() );
+	}
+
+	public function test_stale_lock_is_overwritten_after_one_hour(): void {
+		$binding = $this->create_binding();
+
+		// Stale lock more than 1 hour old — should be ignored.
+		update_option(
+			OptionKeys::OPTION_BINDING_WALK_LOCK_PREFIX . $binding['id'],
+			time() - 7200,
+			false
+		);
+
+		self::factory()->post->create_many( 2 );
+
+		$result = ( new BulkApply( $this->repo ) )->run_synchronously( $binding['id'] );
+		$this->assertIsArray( $result, 'stale lock must be overwritten' );
+		$this->assertSame( 2, $result['wrote'] );
+	}
+
+	public function test_run_synchronously_releases_lock_after_completion(): void {
+		$binding = $this->create_binding();
+		self::factory()->post->create_many( 1 );
+
+		( new BulkApply( $this->repo ) )->run_synchronously( $binding['id'] );
+
+		// Lock cleared so a second walk can start.
+		$this->assertSame( '', (string) get_option( OptionKeys::OPTION_BINDING_WALK_LOCK_PREFIX . $binding['id'], '' ) );
+
+		// And actually start it to prove the option is gone, not just stale.
+		$second = ( new BulkApply( $this->repo ) )->run_synchronously( $binding['id'] );
+		$this->assertIsArray( $second );
+	}
 }

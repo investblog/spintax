@@ -124,4 +124,27 @@ final class OptionKeys {
 	 * @var string
 	 */
 	public const OPTION_BINDING_LAST_APPLIED_VERSION_PREFIX = '_spintax_binding_last_applied_v_';
+
+	/**
+	 * Option key prefix for the per-binding walk lock. Holds a unix
+	 * timestamp set on `BulkApply::enqueue()` / `::run_synchronously()`
+	 * and cleared on the final chunk. A new walk that finds a lock <1h
+	 * old refuses to start (spec §4.10 added 2.0.3); locks older than
+	 * that are treated as orphaned (crashed walk) and overwritten.
+	 *
+	 * @var string
+	 */
+	public const OPTION_BINDING_WALK_LOCK_PREFIX = '_spintax_binding_walk_lock_';
+
+	/**
+	 * Option key prefix for the per-binding cumulative-failure flag.
+	 * Set to 1 by any walk chunk that records a failed post; checked on
+	 * the final chunk to gate `OPTION_BINDING_LAST_APPLIED_VERSION_PREFIX`
+	 * (spec §4.10 added 2.0.3). Cleared by `BulkApply::enqueue` /
+	 * `run_synchronously` when a new walk starts and by the final chunk
+	 * when it completes (or aborts).
+	 *
+	 * @var string
+	 */
+	public const OPTION_BINDING_WALK_FAILED_PREFIX = '_spintax_binding_walk_failed_v_';
 }

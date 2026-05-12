@@ -28,10 +28,30 @@ use WP_Query;
  *    `_spintax_binding_cache_v_<id>` value on each successful chunk so
  *    the binding card can show a Stale badge when versions diverge.
  *  - progress lines logged to `Spintax\Support\Logging`.
+ *
+ * Walk lifecycle (added in 2.0.3, spec §4.10):
+ *  - `enqueue` and `run_synchronously` acquire a per-binding lock at
+ *    walk start. Concurrent walks (admin double-click, admin+cron
+ *    overlap) return `WP_Error 'walk_in_progress'` instead of racing.
+ *  - Any chunk that records a failed post sets a cumulative
+ *    "had failures" flag in option `_spintax_binding_walk_failed_v_<id>`.
+ *  - The final chunk gates `stamp_last_applied_version()` on the
+ *    cumulative flag, not just the current chunk's count.
+ *  - Both the lock and the cumulative flag are cleared when the walk
+ *    finishes (clean or otherwise). Stale locks older than 1h are
+ *    overwritten automatically by the next walk-start.
  */
 class BulkApply {
 
 	public const ACTION = 'spintax_bindings_bulk_apply';
+
+	/**
+	 * Stale-lock cutoff in seconds — older locks are treated as
+	 * orphaned (crashed walk / PHP timeout) and overwritten.
+	 *
+	 * @var int
+	 */
+	private const LOCK_TTL_SECONDS = 3600;
 
 	/**
 	 * Bindings repository.
@@ -75,9 +95,13 @@ class BulkApply {
 	/**
 	 * Enqueue a Bulk Apply walk for a binding.
 	 *
-	 * Returns WP_Error 'no_action_scheduler' if AS isn't installed —
-	 * callers should surface this as an admin notice pointing the user
-	 * at the WP-CLI fallback (`wp spintax bindings apply --binding=<id> --all`).
+	 * Returns WP_Error:
+	 *  - `spintax_bindings_not_found` — unknown binding id.
+	 *  - `no_action_scheduler` — AS unavailable; surface notice steering
+	 *    the user at the WP-CLI fallback.
+	 *  - `walk_in_progress` (2.0.3) — a walk is already running for this
+	 *    binding. The lock auto-clears after `LOCK_TTL_SECONDS` so the
+	 *    user only sees this for genuine overlap.
 	 *
 	 * @param string $binding_id Binding id.
 	 * @return true|WP_Error
@@ -93,6 +117,14 @@ class BulkApply {
 				__( 'Action Scheduler is not installed. Run `wp spintax bindings apply --binding=<id> --all` from the CLI instead.', 'spintax' )
 			);
 		}
+		if ( ! $this->acquire_lock( $binding_id ) ) {
+			return new WP_Error(
+				'walk_in_progress',
+				__( 'A Bulk Apply walk for this binding is already running. Wait for it to finish (or up to one hour for a stale lock to expire) before retrying.', 'spintax' )
+			);
+		}
+
+		$this->reset_walk_state( $binding_id );
 
 		$chunk_size = $this->chunk_size( $binding );
 		as_enqueue_async_action(
@@ -126,15 +158,25 @@ class BulkApply {
 		$binding = $this->repo->find( $binding_id );
 		if ( null === $binding ) {
 			( new Logging() )->push( 'warning', 'Bulk Apply: binding ' . $binding_id . ' missing — aborting.' );
+			$this->finalise_walk( $binding_id, /* stamp */ false );
 			return;
+		}
+
+		// First chunk of the walk → wipe any stale cumulative-failure flag
+		// left over from a crashed prior walk. `enqueue()` already does
+		// this when it acquires the lock, but `handle()` is also called
+		// directly (tests, custom dispatchers) so we duplicate the reset
+		// here to guarantee a clean slate at offset 0.
+		if ( 0 === $offset ) {
+			$this->reset_walk_state( $binding_id );
 		}
 
 		$post_ids = $this->query_chunk( $binding, $offset, $chunk_size );
 		if ( empty( $post_ids ) ) {
-			// Empty chunk on first call → nothing matched the scope. Stamp
-			// to clear any stale badge from a prior template edit (this
-			// counts as a successful walk with zero failures).
-			$this->stamp_last_applied_version( $binding_id );
+			// No more posts — either nothing matched at offset 0, or the
+			// walk drained between chunks. Treat as walk-end either way:
+			// stamp only when no chunk recorded a failure across the walk.
+			$this->finalise_walk( $binding_id, ! $this->walk_had_failures( $binding_id ) );
 			( new Logging() )->push( 'info', 'Bulk Apply completed for binding ' . $binding_id );
 			return;
 		}
@@ -165,6 +207,8 @@ class BulkApply {
 			}
 		}
 
+		$this->record_chunk_failures( $binding_id, $counts['failed'] );
+
 		( new Logging() )->push(
 			'info',
 			sprintf(
@@ -180,24 +224,21 @@ class BulkApply {
 		);
 
 		if ( count( $post_ids ) < $chunk_size ) {
-			// Final chunk. Only clear the Stale badge when the walk had
-			// zero failures across this chunk — partial successes leave
-			// the binding flagged stale so editors notice the divergence
-			// and retry. The walk's chunks are stateless (we don't track
-			// cumulative failures across chunks), so per-chunk gating is
-			// the practical surface; a failure in chunk N keeps the
-			// badge stale even if subsequent chunks succeed, until a
-			// full clean walk runs.
-			if ( 0 === $counts['failed'] ) {
-				$this->stamp_last_applied_version( $binding_id );
+			// Final chunk. Gate the stamp on the cumulative failure flag
+			// (spec §4.10 revised in 2.0.3) — any earlier chunk with a
+			// failed post leaves the Stale badge in place, even if this
+			// final chunk was clean.
+			$had_failures = $this->walk_had_failures( $binding_id );
+			if ( ! $had_failures ) {
+				$this->finalise_walk( $binding_id, /* stamp */ true );
 				( new Logging() )->push( 'info', 'Bulk Apply completed for binding ' . $binding_id );
 			} else {
+				$this->finalise_walk( $binding_id, /* stamp */ false );
 				( new Logging() )->push(
 					'warning',
 					sprintf(
-						'Bulk Apply completed for binding %s with %d failures — Stale badge NOT cleared, retry the binding.',
-						$binding_id,
-						$counts['failed']
+						'Bulk Apply completed for binding %s with failures somewhere in the walk — Stale badge NOT cleared, retry the binding.',
+						$binding_id
 					)
 				);
 			}
@@ -226,14 +267,27 @@ class BulkApply {
 	 * decision-tree flags but does not log per-chunk telemetry — the
 	 * caller is responsible for that surface.
 	 *
+	 * Like `enqueue()`, holds the walk-lock for the duration of the walk
+	 * and refuses to start if another walk is already in flight on the
+	 * same binding (spec §4.10, 2.0.3).
+	 *
 	 * @param string $binding_id Binding id.
 	 * @return array{wrote:int, skipped:int, failed:int, cleared:int}|WP_Error
+	 * @throws \Throwable Re-thrown from `BindingApplier::apply()` or `query_chunk()` after walk state is finalised so the lock does not dangle on an unexpected exception.
 	 */
 	public function run_synchronously( string $binding_id ) {
 		$binding = $this->repo->find( $binding_id );
 		if ( null === $binding ) {
 			return new WP_Error( 'spintax_bindings_not_found', __( 'Binding not found.', 'spintax' ) );
 		}
+		if ( ! $this->acquire_lock( $binding_id ) ) {
+			return new WP_Error(
+				'walk_in_progress',
+				__( 'A Bulk Apply walk for this binding is already running. Wait for it to finish (or up to one hour for a stale lock to expire) before retrying.', 'spintax' )
+			);
+		}
+
+		$this->reset_walk_state( $binding_id );
 
 		$totals = array(
 			'wrote'   => 0,
@@ -245,50 +299,145 @@ class BulkApply {
 		$chunk_size = $this->chunk_size( $binding );
 		$offset     = 0;
 
-		while ( true ) {
-			$post_ids = $this->query_chunk( $binding, $offset, $chunk_size );
-			if ( empty( $post_ids ) ) {
-				break;
-			}
-			foreach ( $post_ids as $post_id ) {
-				try {
-					$result = $this->applier->apply( $binding, (int) $post_id );
-				} catch ( \Throwable $e ) {
-					++$totals['failed'];
-					continue;
+		try {
+			while ( true ) {
+				$post_ids = $this->query_chunk( $binding, $offset, $chunk_size );
+				if ( empty( $post_ids ) ) {
+					break;
 				}
-				if ( 0 === strpos( $result, 'wrote_' ) ) {
-					++$totals['wrote'];
-					if ( BindingApplier::WROTE_EMPTY === $result ) {
-						++$totals['cleared'];
+				foreach ( $post_ids as $post_id ) {
+					try {
+						$result = $this->applier->apply( $binding, (int) $post_id );
+					} catch ( \Throwable $e ) {
+						++$totals['failed'];
+						continue;
 					}
-				} else {
-					++$totals['skipped'];
+					if ( 0 === strpos( $result, 'wrote_' ) ) {
+						++$totals['wrote'];
+						if ( BindingApplier::WROTE_EMPTY === $result ) {
+							++$totals['cleared'];
+						}
+					} else {
+						++$totals['skipped'];
+					}
 				}
+				if ( count( $post_ids ) < $chunk_size ) {
+					break;
+				}
+				$offset += $chunk_size;
 			}
-			if ( count( $post_ids ) < $chunk_size ) {
-				break;
-			}
-			$offset += $chunk_size;
-		}
 
-		// Same gating policy as `handle()` (spec §4.10): only clear the
-		// Stale badge when the entire walk was clean. Partial failures
-		// keep the binding flagged so editors can investigate.
-		if ( 0 === $totals['failed'] ) {
-			$this->stamp_last_applied_version( $binding_id );
-		} else {
-			( new Logging() )->push(
-				'warning',
-				sprintf(
-					'Bulk Apply run_synchronously: binding %s had %d failures — Stale badge NOT cleared.',
-					$binding_id,
-					$totals['failed']
-				)
-			);
+			// Same gating policy as `handle()` (spec §4.10): only clear
+			// the Stale badge when the entire walk was clean. The
+			// cumulative flag is unused here because `$totals` is
+			// in-process — but we set it anyway when failures occur so
+			// observers (test code, external monitors) reading the
+			// option see consistent state with the AS path.
+			if ( $totals['failed'] > 0 ) {
+				$this->record_chunk_failures( $binding_id, $totals['failed'] );
+				( new Logging() )->push(
+					'warning',
+					sprintf(
+						'Bulk Apply run_synchronously: binding %s had %d failures — Stale badge NOT cleared.',
+						$binding_id,
+						$totals['failed']
+					)
+				);
+				$this->finalise_walk( $binding_id, /* stamp */ false );
+			} else {
+				$this->finalise_walk( $binding_id, /* stamp */ true );
+			}
+		} catch ( \Throwable $e ) {
+			// Defensive: never leave a lock dangling on an unexpected
+			// throw from query_chunk or instrumentation. The walk is
+			// flagged as failed so the Stale badge persists.
+			$this->record_chunk_failures( $binding_id, 1 );
+			$this->finalise_walk( $binding_id, /* stamp */ false );
+			throw $e;
 		}
 
 		return $totals;
+	}
+
+	// --- Walk state helpers (added in 2.0.3, spec §4.10) ---
+
+	/**
+	 * Try to acquire the per-binding walk lock.
+	 *
+	 * Returns false if a lock newer than `LOCK_TTL_SECONDS` is in place;
+	 * stale locks (presumably orphaned from a crashed walk) get
+	 * overwritten and the call succeeds.
+	 *
+	 * @param string $binding_id Binding id.
+	 */
+	private function acquire_lock( string $binding_id ): bool {
+		$key  = OptionKeys::OPTION_BINDING_WALK_LOCK_PREFIX . $binding_id;
+		$prev = (int) get_option( $key, 0 );
+		if ( $prev > 0 && ( time() - $prev ) < self::LOCK_TTL_SECONDS ) {
+			return false;
+		}
+		update_option( $key, time(), false );
+		return true;
+	}
+
+	/**
+	 * Release the per-binding walk lock and clear the cumulative-failure
+	 * flag. Called from `finalise_walk`.
+	 *
+	 * @param string $binding_id Binding id.
+	 */
+	private function release_lock( string $binding_id ): void {
+		delete_option( OptionKeys::OPTION_BINDING_WALK_LOCK_PREFIX . $binding_id );
+	}
+
+	/**
+	 * Persist a cumulative-failure flag for the in-progress walk.
+	 *
+	 * @param string $binding_id Binding id.
+	 * @param int    $failed     Number of failed posts in this chunk.
+	 */
+	private function record_chunk_failures( string $binding_id, int $failed ): void {
+		if ( $failed > 0 ) {
+			update_option(
+				OptionKeys::OPTION_BINDING_WALK_FAILED_PREFIX . $binding_id,
+				1,
+				false
+			);
+		}
+	}
+
+	/**
+	 * Did any chunk in the current walk record a failure?
+	 *
+	 * @param string $binding_id Binding id.
+	 */
+	private function walk_had_failures( string $binding_id ): bool {
+		return 1 === (int) get_option( OptionKeys::OPTION_BINDING_WALK_FAILED_PREFIX . $binding_id, 0 );
+	}
+
+	/**
+	 * Wipe the cumulative-failure flag (called at walk start and end).
+	 *
+	 * @param string $binding_id Binding id.
+	 */
+	private function reset_walk_state( string $binding_id ): void {
+		delete_option( OptionKeys::OPTION_BINDING_WALK_FAILED_PREFIX . $binding_id );
+	}
+
+	/**
+	 * Close out a walk: optionally stamp the last-applied-version
+	 * (clears Stale badge), then release the lock and clear the
+	 * cumulative-failure flag.
+	 *
+	 * @param string $binding_id Binding id.
+	 * @param bool   $stamp      Stamp the last-applied-version option.
+	 */
+	private function finalise_walk( string $binding_id, bool $stamp ): void {
+		if ( $stamp ) {
+			$this->stamp_last_applied_version( $binding_id );
+		}
+		$this->release_lock( $binding_id );
+		$this->reset_walk_state( $binding_id );
 	}
 
 	/**

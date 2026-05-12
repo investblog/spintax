@@ -141,6 +141,23 @@ function apply(binding, post_id):
     if binding.status === 'publish' AND post.post_status !== 'publish':
         return SKIP_OUT_OF_SCOPE_STATUS
 
+    # Runtime ACF target validation (added in 2.0.3 — §4.4.1). Save-time
+    # Tier 5 isn't sufficient: form-save accepts ACF bindings while ACF
+    # is inactive (so they survive deactivation cycles), and CLI
+    # `bindings import` writes raw JSON through BindingsRepo without
+    # invoking the form-save validation. Plus the underlying ACF field
+    # might have been renamed or deleted since the binding was created.
+    # Validating here on every apply makes read_target/write_target
+    # never trust an unverified field_key.
+    if binding.target.kind === 'acf_field':
+        if not function_exists('acf_get_field'):
+            return SKIP_ACF_NOT_LOADED
+        if binding.target.field_key === '':
+            return SKIP_INVALID_ACF_FIELD
+        field = acf_get_field(binding.target.field_key)
+        if not field or field.name !== binding.target.key:
+            return SKIP_INVALID_ACF_FIELD
+
     rendered      = renderer.render(binding.source, build_var_context(binding, post_id))
     rendered_hash = sha1(rendered)
     stored_sig    = get_post_meta(post_id, '_spintax_last_render_sig_' + binding.id)
@@ -352,7 +369,11 @@ No side effects. Same logic path as `BindingApplier::apply` but returns the plan
 
 "Apply to all matching posts" button on each binding card. Confirms (`confirm('Apply binding to N matching posts?')`), then enqueues Action Scheduler job `spintax_apply_binding` with `{binding_id, offset, chunk_size}` where `chunk_size = binding.chunk_size ?? 20`. The handler processes a chunk, re-enqueues with the new offset until exhausted, and logs progress. Falls back to a `wp spintax bindings apply --binding=X --all` WP-CLI command + admin notice if Action Scheduler isn't available (mirrors wpci L248-253).
 
-**Stale-badge gating contract (added in 2.0.1):** `BulkApply` stamps `_spintax_binding_last_applied_v_<id>` to the current cache version (clearing the Stale badge) **only when the entire walk completed with zero failures**. If any post threw — applier exception, database error, ACF write rejection — the stamp is **not** updated and the Stale badge persists. The walk's log line includes the failure count and a hint: "Stale badge NOT cleared — retry the binding after addressing N failed posts." Without this gate, a single broken post can silently mask a partial replication state. The 2.0.0 implementation stamped unconditionally; the 2.0.1 hot-fix added the failure-zero gate to both `BulkApply::handle` (Action Scheduler chunk callback) and `BulkApply::run_synchronously` (WP-CLI fallback).
+**Stale-badge gating contract (added in 2.0.1, refined in 2.0.3):** `BulkApply` stamps `_spintax_binding_last_applied_v_<id>` to the current cache version (clearing the Stale badge) **only when the entire walk completed with zero failures across every chunk**. If any post threw at any point in the walk — applier exception, database error, ACF write rejection — the stamp is **not** updated and the Stale badge persists. The walk's log line includes the failure count and a hint: "Stale badge NOT cleared — retry the binding after addressing N failed posts." Without this gate, a single broken post can silently mask a partial replication state.
+
+The 2.0.0 implementation stamped unconditionally; 2.0.1 added a failure-zero gate but only checked the current chunk; 2.0.3 added a cumulative-failure flag in option `_spintax_binding_walk_failed_v_<id>` so failures in any earlier chunk also block the stamp on the final chunk. Per-chunk gating alone was insufficient: a 4-post walk with `chunk_size=2` where chunk 1 fails on 2 posts and chunk 2 is clean would clear the badge under the old gate, masking the failure.
+
+**Walk lock (added in 2.0.3):** `BulkApply::enqueue()` and `::run_synchronously()` acquire a per-binding lock at walk start, stored as a timestamp in option `_spintax_binding_walk_lock_<id>`. A second walk that finds a lock newer than one hour returns `WP_Error 'walk_in_progress'` (admin notice surfaces it; WP-CLI exits with non-zero). Stale locks older than one hour are treated as orphaned (PHP timeout, crashed worker) and overwritten on the next walk start. This prevents two concurrent walks from racing on the same cumulative-failure flag — a problem that, without the lock, would let a clean second walk silently clear the failure flag set by a still-in-flight first walk. `handle()` (the Action Scheduler chunk callback) does not acquire its own lock — it inherits the lock from `enqueue()` and releases it on the final chunk via the `finalise_walk()` helper.
 
 ### 4.11 Migration helper
 

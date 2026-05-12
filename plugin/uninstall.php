@@ -39,6 +39,8 @@ global $wpdb;
 $spintax_option_prefixes = array(
 	'_spintax_binding_cache_v_',
 	'_spintax_binding_last_applied_v_',
+	'_spintax_binding_walk_lock_',
+	'_spintax_binding_walk_failed_v_',
 );
 foreach ( $spintax_option_prefixes as $spintax_prefix ) {
 	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange -- bulk delete during uninstall is the documented WP pattern; caching is irrelevant on teardown.

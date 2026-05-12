@@ -21,9 +21,11 @@ use WP_Error;
  *  - Tiers 1-3 of the reserved-key guard live as pure functions on
  *    `Spintax\Support\Validators` and are expected to be called by
  *    `BindingsPage` before invoking `create()` / `update()`.
- *  - Tier 4 (uniqueness on `post_type + target.kind + target.key`) and
- *    the per-site cap live here, where the existing store is the
- *    authoritative source of truth.
+ *  - Tier 4 (uniqueness on `(post_type, target.key)` — regardless of
+ *    `target.kind`, see spec §4.6) and the per-site cap live here, where
+ *    the existing store is the authoritative source of truth.
+ *  - Tier 5 (ACF field_key validity, see spec §4.6) lives in
+ *    `BindingsPage::handle_save()` because it needs the ACF runtime.
  */
 class BindingsRepo {
 
@@ -63,7 +65,7 @@ class BindingsRepo {
 	 *
 	 * Stamps `id`, `created_at`, and `updated_at`. Enforces the
 	 * per-site cap (Defaults::MAX_BINDINGS) and Tier 4 uniqueness
-	 * on `(post_type, target.kind, target.key)`.
+	 * on `(post_type, target.key)`.
 	 *
 	 * @param array<string, mixed> $data Partial binding payload.
 	 * @return array<string, mixed>|WP_Error Created binding or error.
@@ -86,13 +88,12 @@ class BindingsRepo {
 
 		$dup = $this->find_by_target(
 			$normalised['post_type'],
-			$normalised['target']['kind'],
 			$normalised['target']['key']
 		);
 		if ( null !== $dup ) {
 			return new WP_Error(
 				'spintax_bindings_duplicate',
-				__( 'Another binding already targets this field on this post type.', 'spintax' )
+				__( 'Another binding already targets this field on this post type. ACF and post-meta bindings on the same field name collide because they write to the same database row.', 'spintax' )
 			);
 		}
 
@@ -121,8 +122,8 @@ class BindingsRepo {
 	 * Update an existing binding by id.
 	 *
 	 * Does NOT permit changing `id` or `created_at`. Enforces Tier 4
-	 * uniqueness against the new `(post_type, target.kind, target.key)`
-	 * triple — ignoring the binding being updated itself.
+	 * uniqueness against the new `(post_type, target.key)` pair —
+	 * ignoring the binding being updated itself.
 	 *
 	 * @param string               $id   Binding id to update.
 	 * @param array<string, mixed> $data Patch payload (full or partial).
@@ -144,13 +145,12 @@ class BindingsRepo {
 
 		$dup = $this->find_by_target(
 			$normalised['post_type'],
-			$normalised['target']['kind'],
 			$normalised['target']['key']
 		);
 		if ( null !== $dup && $dup['id'] !== $id ) {
 			return new WP_Error(
 				'spintax_bindings_duplicate',
-				__( 'Another binding already targets this field on this post type.', 'spintax' )
+				__( 'Another binding already targets this field on this post type. ACF and post-meta bindings on the same field name collide because they write to the same database row.', 'spintax' )
 			);
 		}
 
@@ -221,18 +221,23 @@ class BindingsRepo {
 
 	/**
 	 * Tier 4 uniqueness lookup: find the binding (if any) that targets
-	 * a specific `(post_type, target.kind, target.key)` triple.
+	 * a specific `(post_type, target.key)` pair, regardless of
+	 * `target.kind`.
+	 *
+	 * The 2.0.0 signature included `$kind` and erroneously allowed
+	 * `acf_field` + `post_meta` bindings on the same field name to
+	 * coexist — they write to the same underlying `wp_postmeta` row
+	 * because ACF stores ACF-field values as post-meta. Spec §4.6
+	 * Tier 4 (revised in 2.0.1) treats this as the same conflict.
 	 *
 	 * @param string $post_type Post type slug.
-	 * @param string $kind      'acf_field' | 'post_meta'.
 	 * @param string $key       Target field name or meta key.
 	 * @return array<string, mixed>|null
 	 */
-	public function find_by_target( string $post_type, string $kind, string $key ): ?array {
+	public function find_by_target( string $post_type, string $key ): ?array {
 		foreach ( $this->all() as $binding ) {
 			if (
 				( $binding['post_type'] ?? '' ) === $post_type
-				&& ( $binding['target']['kind'] ?? '' ) === $kind
 				&& ( $binding['target']['key'] ?? '' ) === $key
 			) {
 				return $binding;

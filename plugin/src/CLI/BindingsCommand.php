@@ -274,10 +274,9 @@ class BindingsCommand extends WP_CLI_Command {
 				continue;
 			}
 			$post_type = (string) ( $incoming['post_type'] ?? '' );
-			$kind      = (string) ( $incoming['target']['kind'] ?? '' );
 			$key       = (string) ( $incoming['target']['key'] ?? '' );
 
-			$existing = $repo->find_by_target( $post_type, $kind, $key );
+			$existing = $repo->find_by_target( $post_type, $key );
 
 			if ( $existing ) {
 				if ( ! $overwrite ) {

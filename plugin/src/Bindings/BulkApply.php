@@ -131,6 +131,9 @@ class BulkApply {
 
 		$post_ids = $this->query_chunk( $binding, $offset, $chunk_size );
 		if ( empty( $post_ids ) ) {
+			// Empty chunk on first call → nothing matched the scope. Stamp
+			// to clear any stale badge from a prior template edit (this
+			// counts as a successful walk with zero failures).
 			$this->stamp_last_applied_version( $binding_id );
 			( new Logging() )->push( 'info', 'Bulk Apply completed for binding ' . $binding_id );
 			return;
@@ -177,8 +180,27 @@ class BulkApply {
 		);
 
 		if ( count( $post_ids ) < $chunk_size ) {
-			$this->stamp_last_applied_version( $binding_id );
-			( new Logging() )->push( 'info', 'Bulk Apply completed for binding ' . $binding_id );
+			// Final chunk. Only clear the Stale badge when the walk had
+			// zero failures across this chunk — partial successes leave
+			// the binding flagged stale so editors notice the divergence
+			// and retry. The walk's chunks are stateless (we don't track
+			// cumulative failures across chunks), so per-chunk gating is
+			// the practical surface; a failure in chunk N keeps the
+			// badge stale even if subsequent chunks succeed, until a
+			// full clean walk runs.
+			if ( 0 === $counts['failed'] ) {
+				$this->stamp_last_applied_version( $binding_id );
+				( new Logging() )->push( 'info', 'Bulk Apply completed for binding ' . $binding_id );
+			} else {
+				( new Logging() )->push(
+					'warning',
+					sprintf(
+						'Bulk Apply completed for binding %s with %d failures — Stale badge NOT cleared, retry the binding.',
+						$binding_id,
+						$counts['failed']
+					)
+				);
+			}
 			return;
 		}
 
@@ -250,7 +272,21 @@ class BulkApply {
 			$offset += $chunk_size;
 		}
 
-		$this->stamp_last_applied_version( $binding_id );
+		// Same gating policy as `handle()` (spec §4.10): only clear the
+		// Stale badge when the entire walk was clean. Partial failures
+		// keep the binding flagged so editors can investigate.
+		if ( 0 === $totals['failed'] ) {
+			$this->stamp_last_applied_version( $binding_id );
+		} else {
+			( new Logging() )->push(
+				'warning',
+				sprintf(
+					'Bulk Apply run_synchronously: binding %s had %d failures — Stale badge NOT cleared.',
+					$binding_id,
+					$totals['failed']
+				)
+			);
+		}
 
 		return $totals;
 	}

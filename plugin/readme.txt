@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 6.9
-Stable tag: 2.0.2
+Stable tag: 2.0.3
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -200,6 +200,15 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 2.0.3 =
+* Fix: ACF target validation now runs on every apply, not just at form save. `BindingApplier::plan()` rejects bindings whose stored `target.field_key` no longer resolves to a field with the expected name (deleted, renamed, or re-assigned in ACF). Two new return codes: `skip_acf_not_loaded` (ACF deactivated since the binding was saved) and `skip_invalid_acf_field` (key + name disagreement). Closes a path where CLI-imported or imported-while-ACF-inactive bindings could write through `update_field()` to the wrong field.
+* Fix: `BindingApplier::read_target()` and `::write_target()` no longer fall back to plain `update_post_meta()` / `get_post_meta()` for `kind = acf_field` when ACF isn't loaded. The applier short-circuits at the runtime guard above, so the low-level methods are the sole writer for verified targets. Pre-2.0.3 the silent fallback could write the rendered value to a post-meta row ACF would never see again.
+* Fix: Bulk Apply now tracks failures cumulatively across chunks via a persistent `_spintax_binding_walk_failed_v_<id>` flag. The final chunk gates `stamp_last_applied_version()` on the cumulative flag. 2.0.1 only checked the current chunk, so a multi-chunk walk that failed in chunk 1 and succeeded in the final chunk would still clear the Stale badge.
+* Fix: Concurrent Bulk Apply walks on the same binding are now refused with `WP_Error 'walk_in_progress'`. Both `enqueue()` and `run_synchronously()` acquire a per-binding lock (option `_spintax_binding_walk_lock_<id>`) at walk start; stale locks older than one hour are auto-overwritten so a crashed walk doesn't permanently jam the binding.
+* Internal: 11 new PHPUnit cases — runtime ACF guard, multi-chunk failure tracking, walk-lock acquisition / release, stale-lock recovery. 441 tests total (was 430).
+* Tooling: `npm run lint:php` and `lint:php:fix` moved to `scripts/lint-php.sh` / `scripts/lint-php-fix.sh`. The inline command tripped over bash-c quoting on Windows. `.gitattributes` enforces LF endings on shipped text files.
+* Internal: CLI `wp spintax bindings import --overwrite` help text updated to reflect the 2.0.1 `(post_type, target.key)` uniqueness contract.
+
 = 2.0.2 =
 * Docs: new FAQ entries — Action Scheduler dependency, full `wp spintax bindings` WP-CLI surface, variable scopes (global / per-binding / post context / ACF siblings), trigger options (save_post + per-binding cron), manual edit detection, template-edit propagation, reserved-key tiers.
 * Docs: Installation section now flags Action Scheduler as a recommended optional dependency with the specific features it enables.
@@ -271,6 +280,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 2.0.3 =
+Adds runtime ACF target validation (closes a wrong-field-write path when ACF is reactivated or bindings are imported via WP-CLI), cumulative-failure tracking across Bulk Apply chunks (prevents the Stale badge clearing on multi-chunk walks that partially failed), and a per-binding walk lock that refuses concurrent Bulk Apply runs. Strongly recommended.
 
 = 2.0.2 =
 Documentation refresh for the 2.0 binding surface (Action Scheduler as a recommended optional dependency, full WP-CLI command set, variable scopes, scheduling, manual edits) plus an admin notice on the Bindings page when Action Scheduler isn't loaded. No functional changes to the engine.

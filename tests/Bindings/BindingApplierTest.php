@@ -389,6 +389,134 @@ class BindingApplierTest extends \WP_UnitTestCase {
 		$this->assertFalse( $plan['would_write'] );
 	}
 
+	// --- Runtime ACF target validation (added in 2.0.3) ---
+
+	public function test_plan_skips_acf_target_when_acf_not_loaded(): void {
+		if ( function_exists( 'acf_get_field' ) ) {
+			$this->markTestSkipped( 'ACF is loaded; cannot exercise the not-loaded branch.' );
+		}
+
+		$binding = $this->make_binding(
+			array(
+				'target' => array(
+					'kind'      => 'acf_field',
+					'key'       => 'hero_subtitle',
+					'field_key' => 'field_xxx',
+				),
+			)
+		);
+
+		$plan = $this->applier->plan( $binding, $this->post_id );
+		$this->assertSame( BindingApplier::SKIP_ACF_NOT_LOADED, $plan['result'] );
+		$this->assertFalse( $plan['would_write'] );
+	}
+
+	public function test_apply_does_not_fall_back_to_post_meta_for_acf_without_acf(): void {
+		if ( function_exists( 'update_field' ) ) {
+			$this->markTestSkipped( 'ACF is loaded; cannot exercise the fallback-removal branch.' );
+		}
+
+		$binding = $this->make_binding(
+			array(
+				'target' => array(
+					'kind'      => 'acf_field',
+					'key'       => 'hero_subtitle',
+					'field_key' => 'field_xxx',
+				),
+			)
+		);
+
+		$result = $this->applier->apply( $binding, $this->post_id );
+		$this->assertSame( BindingApplier::SKIP_ACF_NOT_LOADED, $result );
+
+		// Crucial: no fallback write to post_meta under the field name.
+		// Pre-2.0.3, write_target silently called update_post_meta() when
+		// ACF wasn't loaded, which masked the missing validation.
+		$this->assertSame( '', (string) get_post_meta( $this->post_id, 'hero_subtitle', true ) );
+	}
+
+	public function test_plan_skips_when_field_key_unknown_in_acf(): void {
+		if ( ! function_exists( 'acf_add_local_field_group' ) ) {
+			$this->markTestSkipped( 'Requires ACF runtime helpers.' );
+		}
+
+		$binding = $this->make_binding(
+			array(
+				'target' => array(
+					'kind'      => 'acf_field',
+					'key'       => 'hero_subtitle',
+					'field_key' => 'field_does_not_exist_xxx',
+				),
+			)
+		);
+
+		$plan = $this->applier->plan( $binding, $this->post_id );
+		$this->assertSame( BindingApplier::SKIP_INVALID_ACF_FIELD, $plan['result'] );
+		$this->assertFalse( $plan['would_write'] );
+	}
+
+	public function test_plan_skips_when_field_key_resolves_to_different_name(): void {
+		if ( ! function_exists( 'acf_add_local_field_group' ) ) {
+			$this->markTestSkipped( 'Requires ACF runtime helpers.' );
+		}
+
+		// Register a local field group named "other_field" with a stable
+		// key. The binding will claim that key but call the target "hero_subtitle".
+		acf_add_local_field_group(
+			array(
+				'key'      => 'group_smoke_runtime_guard',
+				'title'    => 'Smoke',
+				'fields'   => array(
+					array(
+						'key'   => 'field_smoke_runtime_guard',
+						'label' => 'Other field',
+						'name'  => 'other_field',
+						'type'  => 'text',
+					),
+				),
+				'location' => array(
+					array(
+						array( 'param' => 'post_type', 'operator' => '==', 'value' => 'post' ),
+					),
+				),
+			)
+		);
+
+		$binding = $this->make_binding(
+			array(
+				'target' => array(
+					'kind'      => 'acf_field',
+					'key'       => 'hero_subtitle',
+					'field_key' => 'field_smoke_runtime_guard',
+				),
+			)
+		);
+
+		$plan = $this->applier->plan( $binding, $this->post_id );
+		$this->assertSame( BindingApplier::SKIP_INVALID_ACF_FIELD, $plan['result'] );
+		$this->assertFalse( $plan['would_write'] );
+	}
+
+	public function test_plan_skips_when_field_key_blank_for_acf_kind(): void {
+		if ( ! function_exists( 'acf_get_field' ) ) {
+			$this->markTestSkipped( 'Requires ACF runtime helpers.' );
+		}
+
+		// Simulate CLI import payload that bypassed save-layer Tier 5.
+		$binding = $this->make_binding(
+			array(
+				'target' => array(
+					'kind'      => 'acf_field',
+					'key'       => 'hero_subtitle',
+					'field_key' => '',
+				),
+			)
+		);
+
+		$plan = $this->applier->plan( $binding, $this->post_id );
+		$this->assertSame( BindingApplier::SKIP_INVALID_ACF_FIELD, $plan['result'] );
+	}
+
 	// --- plan() dry-run ---
 
 	public function test_plan_returns_action_without_writing(): void {

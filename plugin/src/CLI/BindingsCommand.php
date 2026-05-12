@@ -228,7 +228,9 @@ class BindingsCommand extends WP_CLI_Command {
 	 * : Show what would happen without writing.
 	 *
 	 * [--overwrite]
-	 * : Replace bindings that collide on (post_type, target.kind, target.key).
+	 * : Replace bindings that collide on (post_type, target.key) — regardless
+	 *   of target.kind, since ACF and post-meta bindings on the same field
+	 *   share the same database row (spec §4.6 Tier 4, revised 2.0.1).
 	 *   Without this flag, colliding bindings are skipped.
 	 *
 	 * ## EXAMPLES

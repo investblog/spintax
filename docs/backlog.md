@@ -164,22 +164,22 @@ Roughly 2× the weight of the conditionals primitive that shipped in 1.2.0. Boun
 
 ---
 
-## ACF / Post-meta Bindings
+## ACF / Post-meta Bindings — SHIPPED 2.0.0 / 2.0.1 / 2.0.2
 
-**Status:** spec revised post-review 2026-05-12, Phase-1-ready. Fresh-eyes review pass on 2026-05-12 flagged 3 high-severity + 3 medium-severity issues + 8 gaps; all resolved in `docs/spec-acf-bindings.md`. Awaiting green-light to begin Phase 1.
+**Status:** shipped to WordPress.org on 2026-05-12. Spec at `docs/spec-acf-bindings.md` is the locked contract.
 
-One sentence: a `wpci`-style binding entity that maps `(post type × target field)` to either a Spintax CPT template or a per-post sibling source, with auto-seed-empty, preserve-manual-edits, bulk apply via Action Scheduler, AJAX field discovery for both ACF and post_meta, and a one-shot migration helper for `nested-spintax-for-acf` data.
+- **2.0.0** (15:54 UTC, SVN rev 3530118) — feature delivered across 5 phase PRs into main, ~2000 LOC + ~100 PHPUnit cases. Per-post-type bindings to ACF text/textarea/wysiwyg or post_meta keys; template or per_post source modes; save_post p20 + per-binding cron triggers; Bulk Apply via Action Scheduler with WP-CLI fallback; AJAX field discovery; admin Test panel; migration helper for `nested-spintax-for-acf`; full uninstall cleanup.
+- **2.0.1** (19:04 UTC, same-day hot-fix PR #6) — 5 reviewer findings + 1 bonus bug, all post-deploy. P1 cross-kind dedup (drop `target.kind` from Tier 4 — ACF + post_meta share `wp_postmeta` row); P1 Tier 5 ACF field_key validation (required + name match via `acf_get_field()`); P2 scope-filter codes (`SKIP_OUT_OF_SCOPE_TYPE` / `_STATUS`) added to `BindingApplier::plan()`; P2 BulkApply stamps `_spintax_binding_last_applied_v_*` only when zero failures; P2 form value preservation via transient flash + redirect-to-form. Bonus: form field renamed `post_type` → `spintax_post_type` to avoid clobbering `$_REQUEST['post_type']` which WP uses to set `$typenow` for menu-hook resolution.
+- **2.0.2** (19:30 UTC, docs+UX patch PR #7) — readme.txt FAQ +7 entries (AS dependency, full `wp spintax bindings` CLI reference, 4-layer variable scope, save_post+cron scheduling, manual edit signature semantics, template-edit pre-generation contract + Stale badge, 5-tier reserved-key guard). `BindingsPage::render_action_scheduler_notice()` shows an info notice when AS isn't loaded.
 
-**Driver:** parity with predecessor plugin + the "highest priority migration item" note in `CLAUDE.md` future-work list.
-**Likely ship:** 2.0.0.
-**Estimated effort:** ~1690 LOC + ~820 LOC tests, 5 phases, ~4-5 weeks wall-clock (post-review estimate; original was ~1500/700 / 3-4 weeks).
-**Architectural reference:** `W:\Projects\wpci\plugin\src\Admin\MappingsPage.php` — clone the form pattern, AJAX endpoints, test panel, card-style list.
+Tests at 430 (was 309 pre-2.0.0). Plugin Check `--include-experimental` clean for plugin-source files. The "we shipped without Plugin Check / ACF smoke" lesson from 2.0.0 → 2.0.1 is encoded as the four release gates in `docs/release-checklist.md`.
 
-Full design + alternatives considered + risks + phased plan + reviewer prompts: see **[docs/spec-acf-bindings.md](spec-acf-bindings.md)**.
+**V2 deferrals (still future work, no trigger yet):**
+- ACF repeater / flexible_content row-level rendering.
+- REST API surface (V1 is admin + WP-CLI only).
+- Block-editor inline editor for `per_post`-mode source (V1 is metabox-only).
+- Per-binding locale picker (inherits site locale today).
+- ACF Pro `acf_register_field_setting` checkbox in the ACF field UI.
+- Visual diff in Test panel (current target vs rendered).
 
-### Trigger to start work
-
-Any one of:
-- User green-light to begin Phase 1 (review feedback already applied to spec).
-- A real user request from a migrating `nested-spintax-for-acf` user.
-- A clear ACF-using project at 301.st / casino-platform that needs this for production templating.
+Trigger for any V2 item: a real user request, a project at 301.st / casino-platform that needs it, or the user's explicit green-light. Do not preemptively design.

@@ -318,6 +318,77 @@ class BindingApplierTest extends \WP_UnitTestCase {
 		$this->assertStringContainsString( 'My Demo', get_post_meta( $this->post_id, 'spintax_target', true ) );
 	}
 
+	// --- Scope filter (added in 2.0.1) ---
+
+	public function test_plan_skips_out_of_scope_when_post_type_mismatches(): void {
+		$page_id = self::factory()->post->create( array( 'post_type' => 'page' ) );
+
+		$binding = $this->make_binding(); // post_type=post by default.
+		$plan    = $this->applier->plan( $binding, $page_id );
+
+		$this->assertSame( BindingApplier::SKIP_OUT_OF_SCOPE_TYPE, $plan['result'] );
+		$this->assertFalse( $plan['would_write'] );
+	}
+
+	public function test_apply_skips_out_of_scope_post_type_without_writing(): void {
+		$page_id = self::factory()->post->create( array( 'post_type' => 'page' ) );
+		// Force a target value the test can introspect; if scope-skip
+		// didn't short-circuit, the seed path would overwrite this empty
+		// meta to 'Hello world'.
+		$binding = $this->make_binding();
+
+		$result = $this->applier->apply( $binding, $page_id );
+
+		$this->assertSame( BindingApplier::SKIP_OUT_OF_SCOPE_TYPE, $result );
+		$this->assertSame( '', get_post_meta( $page_id, 'spintax_target', true ) );
+	}
+
+	public function test_plan_skips_out_of_scope_when_status_filter_excludes(): void {
+		$draft_id = self::factory()->post->create(
+			array(
+				'post_type'   => 'post',
+				'post_status' => 'draft',
+			)
+		);
+
+		$binding = $this->make_binding( array( 'status' => 'publish' ) );
+		$plan    = $this->applier->plan( $binding, $draft_id );
+
+		$this->assertSame( BindingApplier::SKIP_OUT_OF_SCOPE_STATUS, $plan['result'] );
+		$this->assertFalse( $plan['would_write'] );
+	}
+
+	public function test_plan_allows_published_post_under_publish_filter(): void {
+		// $this->post_id is created by the factory in publish status by default.
+		$binding = $this->make_binding( array( 'status' => 'publish' ) );
+		$plan    = $this->applier->plan( $binding, $this->post_id );
+
+		$this->assertSame( BindingApplier::WROTE_SEEDED, $plan['result'] );
+		$this->assertTrue( $plan['would_write'] );
+	}
+
+	public function test_plan_status_any_allows_draft(): void {
+		$draft_id = self::factory()->post->create(
+			array(
+				'post_type'   => 'post',
+				'post_status' => 'draft',
+			)
+		);
+
+		$binding = $this->make_binding( array( 'status' => 'any' ) );
+		$plan    = $this->applier->plan( $binding, $draft_id );
+
+		$this->assertSame( BindingApplier::WROTE_SEEDED, $plan['result'] );
+	}
+
+	public function test_plan_returns_out_of_scope_for_unknown_post_id(): void {
+		$binding = $this->make_binding();
+		$plan    = $this->applier->plan( $binding, 99999999 );
+
+		$this->assertSame( BindingApplier::SKIP_OUT_OF_SCOPE_TYPE, $plan['result'] );
+		$this->assertFalse( $plan['would_write'] );
+	}
+
 	// --- plan() dry-run ---
 
 	public function test_plan_returns_action_without_writing(): void {

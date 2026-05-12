@@ -163,6 +163,18 @@ class BindingsPage {
 		if ( isset( $_POST['spintax_save_binding'] ) ) {
 			check_admin_referer( 'spintax_binding_save' );
 			$result = $this->handle_save();
+			// On validation error, redirect back to the form (not the
+			// list) so the user can fix the field without retyping every
+			// other input. `handle_save()` has stashed the submitted
+			// values in a transient — `render_form()` picks them up.
+			if ( 'error' === $result['type'] && ! empty( $result['form_redirect_action'] ) ) {
+				$args = array( 'action' => $result['form_redirect_action'] );
+				if ( ! empty( $result['existing_id'] ) ) {
+					$args['binding_id'] = $result['existing_id'];
+				}
+				$form_url = add_query_arg( $args, $this->page_url() );
+				$this->redirect_with_notice( $form_url, $result['message'], $result['type'] );
+			}
 			$this->redirect_with_notice( $redirect_url, $result['message'], $result['type'] );
 		}
 
@@ -234,30 +246,28 @@ class BindingsPage {
 	/**
 	 * Handle a save submission. Nonce already verified by handle_actions().
 	 *
-	 * @return array{message: string, type: string}
+	 * Returns a result array; the `form_redirect_action` key (added in
+	 * 2.0.1) tells `handle_actions()` to send the user back to the form
+	 * instead of the list view on validation error, preserving their
+	 * input via a short-lived transient (see spec §4.8.1).
+	 *
+	 * @return array{
+	 *   message: string,
+	 *   type: string,
+	 *   form_redirect_action?: string,
+	 *   existing_id?: string
+	 * }
 	 */
 	private function handle_save(): array {
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- nonce verified in handle_actions().
 		$existing_id = isset( $_POST['binding_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['binding_id'] ) ) : '';
 
-		$kind = isset( $_POST['target_kind'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['target_kind'] ) ) : '';
-		$key  = isset( $_POST['target_key'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['target_key'] ) ) : '';
-
-		// Tier 1/2/3 guard runs here so we can produce specific messages.
-		$guard_error = $this->run_target_guard( $kind, $key );
-		if ( null !== $guard_error ) {
-			return array(
-				'message' => $guard_error,
-				'type'    => 'error',
-			);
-		}
-
 		$data = array(
 			'post_type' => isset( $_POST['post_type'] ) ? sanitize_key( wp_unslash( (string) $_POST['post_type'] ) ) : '',
 			'status'    => isset( $_POST['status'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['status'] ) ) : 'any',
 			'target'    => array(
-				'kind'      => $kind,
-				'key'       => $key,
+				'kind'      => isset( $_POST['target_kind'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['target_kind'] ) ) : '',
+				'key'       => isset( $_POST['target_key'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['target_key'] ) ) : '',
 				'field_key' => isset( $_POST['target_field_key'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['target_field_key'] ) ) : '',
 			),
 			'source'    => array(
@@ -283,28 +293,37 @@ class BindingsPage {
 		);
 		// phpcs:enable WordPress.Security.NonceVerification.Missing
 
-		if ( '' === $data['post_type'] ) {
-			return array(
-				'message' => __( 'Select a post type.', 'spintax' ),
-				'type'    => 'error',
-			);
+		$kind = $data['target']['kind'];
+		$key  = $data['target']['key'];
+
+		// Tier 1/2/3 guard runs here so we can produce specific messages.
+		$guard_error = $this->run_target_guard( $kind, $key );
+		if ( null !== $guard_error ) {
+			return $this->form_error( $data, $existing_id, $guard_error );
 		}
-		if ( '' === $data['target']['key'] ) {
-			return array(
-				'message' => __( 'Target field key is required.', 'spintax' ),
-				'type'    => 'error',
-			);
+
+		if ( '' === $data['post_type'] ) {
+			return $this->form_error( $data, $existing_id, __( 'Select a post type.', 'spintax' ) );
+		}
+		if ( '' === $key ) {
+			return $this->form_error( $data, $existing_id, __( 'Target field key is required.', 'spintax' ) );
+		}
+		$acf_error = $this->validate_acf_field_key( $kind, $key, $data['target']['field_key'] );
+		if ( null !== $acf_error ) {
+			return $this->form_error( $data, $existing_id, $acf_error );
 		}
 		if ( 'template' === $data['source']['mode'] && $data['source']['template_id'] <= 0 ) {
-			return array(
-				'message' => __( 'Choose a template (or switch source mode to per-post).', 'spintax' ),
-				'type'    => 'error',
+			return $this->form_error(
+				$data,
+				$existing_id,
+				__( 'Choose a template (or switch source mode to per-post).', 'spintax' )
 			);
 		}
 		if ( ! $data['triggers']['save_post'] && 'disabled' === $data['triggers']['cron'] ) {
-			return array(
-				'message' => __( 'A binding with no triggers will never run. Enable "Fire on post save" or pick a cron schedule.', 'spintax' ),
-				'type'    => 'error',
+			return $this->form_error(
+				$data,
+				$existing_id,
+				__( 'A binding with no triggers will never run. Enable "Fire on post save" or pick a cron schedule.', 'spintax' )
 			);
 		}
 
@@ -315,10 +334,7 @@ class BindingsPage {
 		}
 
 		if ( $result instanceof WP_Error ) {
-			return array(
-				'message' => $result->get_error_message(),
-				'type'    => 'error',
-			);
+			return $this->form_error( $data, $existing_id, $result->get_error_message() );
 		}
 
 		return array(
@@ -327,6 +343,70 @@ class BindingsPage {
 				: __( 'Binding created.', 'spintax' ),
 			'type'    => 'success',
 		);
+	}
+
+	/**
+	 * Build a validation-error result, stashing the submitted form data
+	 * in a transient so `render_form()` can repopulate the form on the
+	 * next request (spec §4.8.1, added in 2.0.1).
+	 *
+	 * @param array<string, mixed> $data        Form payload as built by handle_save().
+	 * @param string               $existing_id Binding id when editing, '' when creating.
+	 * @param string               $message     Error message to surface.
+	 * @return array{message: string, type: string, form_redirect_action: string, existing_id: string}
+	 */
+	private function form_error( array $data, string $existing_id, string $message ): array {
+		$this->flash_form_state( $data, $existing_id );
+		return array(
+			'message'              => $message,
+			'type'                 => 'error',
+			'form_redirect_action' => '' !== $existing_id ? 'edit' : 'new',
+			'existing_id'          => $existing_id,
+		);
+	}
+
+	/**
+	 * Stash the in-progress form values in a per-user transient.
+	 *
+	 * TTL 60s — enough to survive the PRG redirect, short enough to
+	 * prevent stale state from leaking across sessions or browser tabs.
+	 *
+	 * @param array<string, mixed> $data        Form payload.
+	 * @param string               $existing_id Binding id when editing.
+	 */
+	private function flash_form_state( array $data, string $existing_id ): void {
+		set_transient(
+			$this->form_flash_key(),
+			array(
+				'data'        => $data,
+				'existing_id' => $existing_id,
+			),
+			60
+		);
+	}
+
+	/**
+	 * Read and clear the form-flash transient.
+	 *
+	 * @return array{data: array<string, mixed>, existing_id: string}|null
+	 */
+	private function consume_form_flash(): ?array {
+		$flash = get_transient( $this->form_flash_key() );
+		if ( ! is_array( $flash ) || ! isset( $flash['data'] ) || ! is_array( $flash['data'] ) ) {
+			return null;
+		}
+		delete_transient( $this->form_flash_key() );
+		return array(
+			'data'        => $flash['data'],
+			'existing_id' => (string) ( $flash['existing_id'] ?? '' ),
+		);
+	}
+
+	/**
+	 * Transient key for the form-flash payload (per-user).
+	 */
+	private function form_flash_key(): string {
+		return 'spintax_binding_form_flash_' . get_current_user_id();
 	}
 
 	/**
@@ -340,6 +420,57 @@ class BindingsPage {
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- nonce verified in handle_actions(); sanitized via Validators::sanitize_spintax() which is the spintax-aware sanitiser.
 		$raw = isset( $_POST['variables_overrides'] ) ? wp_unslash( $_POST['variables_overrides'] ) : '';
 		return Validators::sanitize_spintax( (string) $raw );
+	}
+
+	/**
+	 * Apply Tier 5 of the reserved-key guard: ACF field_key validation
+	 * (spec §4.6, added in 2.0.1).
+	 *
+	 * When `kind = acf_field`:
+	 *  - `field_key` must be non-empty (UI hint: "Required for ACF
+	 *    targets").
+	 *  - If ACF is loaded, `acf_get_field( $field_key )` must resolve
+	 *    to a field whose `name` matches `$key` exactly. A mismatched
+	 *    key/name pair would silently route `update_field()` writes to
+	 *    whatever field the key actually belongs to.
+	 *
+	 * @param string $kind      Target kind.
+	 * @param string $key       Target key (field name).
+	 * @param string $field_key Stable ACF field key (e.g. field_xxx).
+	 * @return string|null Error message, or null if the target is valid.
+	 */
+	private function validate_acf_field_key( string $kind, string $key, string $field_key ): ?string {
+		if ( 'acf_field' !== $kind ) {
+			return null;
+		}
+		if ( '' === $field_key ) {
+			return __( 'ACF field key is required for ACF targets. Pick a field from the dropdown or paste the field key (e.g. field_5f8a1234abcd).', 'spintax' );
+		}
+		if ( ! function_exists( 'acf_get_field' ) ) {
+			// ACF inactive at save time. Phase 2 applier re-checks at write
+			// time and skips if ACF can't find the field. Allow the save so
+			// the configuration survives an ACF deactivation/reactivation.
+			return null;
+		}
+		$field = acf_get_field( $field_key );
+		if ( ! is_array( $field ) || empty( $field['name'] ) ) {
+			return sprintf(
+				/* translators: %s: ACF field key entered by the user */
+				__( 'ACF field key "%s" was not found. Confirm the field exists in an ACF field group.', 'spintax' ),
+				$field_key
+			);
+		}
+		$resolved_name = (string) $field['name'];
+		if ( $resolved_name !== $key ) {
+			return sprintf(
+				/* translators: 1: ACF field key, 2: actual field name behind that key, 3: field name the user typed */
+				__( 'ACF field key "%1$s" points to field "%2$s", not "%3$s". The field name and field key must match.', 'spintax' ),
+				$field_key,
+				$resolved_name,
+				$key
+			);
+		}
+		return null;
 	}
 
 	/**
@@ -466,23 +597,38 @@ class BindingsPage {
 	/**
 	 * Render the form view.
 	 *
+	 * When the previous save attempt failed validation, the user's
+	 * submitted values live in a short-lived transient (see spec §4.8.1).
+	 * They take precedence over the saved binding so the editor can
+	 * correct the field that errored without retyping the rest.
+	 *
 	 * @param array<string, mixed>|null $binding Existing binding for edit, or null for create.
 	 */
 	private function render_form( ?array $binding ): void {
-		$defaults   = Defaults::binding();
-		$b          = is_array( $binding ) ? $binding : $defaults;
-		$id         = (string) ( $b['id'] ?? '' );
+		$defaults = Defaults::binding();
+		$flash    = $this->consume_form_flash();
+
+		if ( null !== $flash ) {
+			// Flash values supersede the saved binding so the editor can
+			// fix the error without losing context. Merge over defaults
+			// so any missing nested array keys (added in future versions)
+			// still render with safe values.
+			$b  = array_replace_recursive( $defaults, $flash['data'] );
+			$id = $flash['existing_id'];
+		} else {
+			$b  = is_array( $binding ) ? $binding : $defaults;
+			$id = (string) ( $b['id'] ?? '' );
+		}
 		$post_types = get_post_types( array( 'public' => true ), 'objects' );
 		$templates  = get_posts(
 			array(
-				'post_type'        => TemplatePostType::POST_TYPE,
-				'numberposts'      => -1,
-				'post_status'      => 'publish',
-				'orderby'          => 'title',
-				'order'            => 'ASC',
-				'fields'           => 'ids',
-				'no_found_rows'    => true,
-				'suppress_filters' => true,
+				'post_type'     => TemplatePostType::POST_TYPE,
+				'numberposts'   => -1,
+				'post_status'   => 'publish',
+				'orderby'       => 'title',
+				'order'         => 'ASC',
+				'fields'        => 'ids',
+				'no_found_rows' => true,
 			)
 		);
 

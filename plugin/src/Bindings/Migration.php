@@ -99,7 +99,7 @@ class Migration {
 			$resolved = $this->classify_field( $field_name, $entry['post_ids'] );
 			$vars     = $this->classify_variables( $entry['post_ids'] );
 
-			$existing = $this->repo->find_by_target( $post_type, $resolved['kind'], $field_name );
+			$existing = $this->repo->find_by_target( $post_type, $field_name );
 
 			$plan[] = array(
 				'post_type'           => $post_type,

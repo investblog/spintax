@@ -111,6 +111,52 @@ class BulkApplyTest extends \WP_UnitTestCase {
 		$this->assertSame( 3, $stamp );
 	}
 
+	public function test_run_synchronously_does_not_stamp_when_a_post_fails(): void {
+		$binding = $this->create_binding();
+
+		update_option( OptionKeys::OPTION_BINDING_CACHE_VERSION_PREFIX . $binding['id'], 5 );
+
+		self::factory()->post->create_many( 3 );
+
+		// Drop in an applier that throws for every post — simulates the
+		// "some posts failed" branch. The walk should NOT stamp the
+		// last-applied version (Stale badge stays on; spec §4.10).
+		$throwing_applier = new class extends \Spintax\Bindings\BindingApplier {
+			public function apply( array $binding, int $post_id ): string {
+				throw new \RuntimeException( 'simulated render failure' );
+			}
+		};
+
+		$totals = ( new BulkApply( $this->repo, $throwing_applier ) )->run_synchronously( $binding['id'] );
+
+		$this->assertSame( 3, $totals['failed'] );
+		$this->assertSame( 0, $totals['wrote'] );
+
+		$stamp = (int) get_option( OptionKeys::OPTION_BINDING_LAST_APPLIED_VERSION_PREFIX . $binding['id'], 0 );
+		$this->assertSame( 0, $stamp, 'last-applied stamp must stay at 0 when any post failed' );
+	}
+
+	public function test_handle_action_callback_does_not_stamp_when_failures_in_final_chunk(): void {
+		$binding = $this->create_binding( array( 'behavior' => array( 'chunk_size' => 50 ) ) );
+
+		update_option( OptionKeys::OPTION_BINDING_CACHE_VERSION_PREFIX . $binding['id'], 9 );
+
+		self::factory()->post->create_many( 2 );
+
+		$throwing_applier = new class extends \Spintax\Bindings\BindingApplier {
+			public function apply( array $binding, int $post_id ): string {
+				throw new \RuntimeException( 'boom' );
+			}
+		};
+
+		// chunk_size (50) > posts (2) → single chunk, hits the
+		// "final chunk" branch. Failures > 0 → must NOT stamp.
+		( new BulkApply( $this->repo, $throwing_applier ) )->handle( $binding['id'], 0, 50 );
+
+		$stamp = (int) get_option( OptionKeys::OPTION_BINDING_LAST_APPLIED_VERSION_PREFIX . $binding['id'], 0 );
+		$this->assertSame( 0, $stamp );
+	}
+
 	public function test_enqueue_returns_wp_error_when_action_scheduler_unavailable(): void {
 		$binding = $this->create_binding();
 

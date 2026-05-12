@@ -206,12 +206,77 @@ class BindingsRepoTest extends \WP_UnitTestCase {
 
 	public function test_find_by_target_uniqueness_lookup(): void {
 		$created = $this->repo->create( $this->sample() );
-		$found   = $this->repo->find_by_target( 'post', 'acf_field', 'hero_subtitle' );
+		$found   = $this->repo->find_by_target( 'post', 'hero_subtitle' );
 		$this->assertNotNull( $found );
 		$this->assertSame( $created['id'], $found['id'] );
 
-		$missing = $this->repo->find_by_target( 'post', 'post_meta', 'something_else' );
+		$missing = $this->repo->find_by_target( 'post', 'something_else' );
 		$this->assertNull( $missing );
+	}
+
+	public function test_find_by_target_ignores_kind_so_cross_kind_collides(): void {
+		$this->repo->create( $this->sample() ); // acf_field, hero_subtitle.
+
+		// Same key, different kind — must still resolve to the existing
+		// binding (see spec §4.6 Tier 4, revised in 2.0.1).
+		$found = $this->repo->find_by_target( 'post', 'hero_subtitle' );
+		$this->assertNotNull( $found );
+		$this->assertSame( 'acf_field', $found['target']['kind'] );
+	}
+
+	public function test_create_rejects_cross_kind_duplicate_on_same_key(): void {
+		$first = $this->repo->create( $this->sample() );
+		$this->assertIsArray( $first );
+
+		// Same (post_type, key) pair but different kind — must be
+		// rejected because ACF + post_meta on the same field name share
+		// the same underlying wp_postmeta row.
+		$second = $this->repo->create(
+			array(
+				'post_type' => 'post',
+				'target'    => array(
+					'kind'      => 'post_meta',
+					'key'       => 'hero_subtitle',
+					'field_key' => '',
+				),
+				'source'    => array( 'mode' => 'template', 'template_id' => 7 ),
+				'triggers'  => array( 'save_post' => true ),
+			)
+		);
+		$this->assertInstanceOf( \WP_Error::class, $second );
+		$this->assertSame( 'spintax_bindings_duplicate', $second->get_error_code() );
+		$this->assertSame( 1, $this->repo->count() );
+	}
+
+	public function test_update_rejects_cross_kind_collision(): void {
+		$acf = $this->repo->create( $this->sample() ); // acf_field hero_subtitle.
+		$meta = $this->repo->create(
+			array(
+				'post_type' => 'post',
+				'target'    => array(
+					'kind'      => 'post_meta',
+					'key'       => 'other_key',
+					'field_key' => '',
+				),
+				'source'   => array( 'mode' => 'template', 'template_id' => 7 ),
+				'triggers' => array( 'save_post' => true ),
+			)
+		);
+
+		// Try to retarget the post_meta binding onto the same key as the
+		// existing acf_field one — must be rejected even though kinds differ.
+		$attempt = $this->repo->update(
+			$meta['id'],
+			array(
+				'target' => array(
+					'kind'      => 'post_meta',
+					'key'       => 'hero_subtitle',
+					'field_key' => '',
+				),
+			)
+		);
+		$this->assertInstanceOf( \WP_Error::class, $attempt );
+		$this->assertSame( 'spintax_bindings_duplicate', $attempt->get_error_code() );
 	}
 
 	public function test_find_by_template_id_for_cascade(): void {

@@ -8,8 +8,8 @@ Free WordPress plugin for spintax-based content generation. Target audience: con
 - **WP.org:** https://wordpress.org/plugins/spintax/
 - **Docs / playground:** https://spintax.net
 - **Author:** 301st (https://301.st)
-- **Current version:** 2.0.0
-- **Status:** **Live on WordPress.org as of 2026-05-11** (v1.5.0 SVN revision 3528366). 2.0.0 adds the ACF / post-meta bindings feature in five phases per `docs/spec-acf-bindings.md`. Deploy pipeline is automated: tag push → `wporg-deploy.yml` → 10up action → SVN trunk + tag + assets. Engine timeline: 1.0.0 (initial), 1.1.0 (per-element separators + sanitisation, uploaded to queue 2026-04-07), 1.4.0 (conditionals + abbreviation whitelist + `#set` empty-value fix, re-tag skipping 1.2/1.3 to keep queue unambiguous), 1.5.0 (`{plural <count>: form|...}` primitive + admin deep links to spintax.net + refreshed banner/icon/screenshots, 2026-05-10), 2.0.0 (ACF / post-meta bindings — see "Bindings" section below).
+- **Current version:** 2.0.1
+- **Status:** **Live on WordPress.org as of 2026-05-12** (v2.0.0 SVN revision 3530118, with 2.0.1 hot-fix in flight). 2.0.0 shipped the ACF / post-meta bindings feature in five phases per `docs/spec-acf-bindings.md`. 2.0.1 is a same-day hot-fix addressing five reviewer-flagged bugs (2 P1, 3 P2): cross-kind dedup, ACF field_key validation, Test-panel scope parity, Bulk Apply Stale-badge gating, and form value preservation on validation errors. Deploy pipeline is automated: tag push → `wporg-deploy.yml` → 10up action → SVN trunk + tag + assets. Engine timeline: 1.0.0 (initial), 1.1.0 (per-element separators + sanitisation, uploaded to queue 2026-04-07), 1.4.0 (conditionals + abbreviation whitelist + `#set` empty-value fix, re-tag skipping 1.2/1.3 to keep queue unambiguous), 1.5.0 (`{plural <count>: form|...}` primitive + admin deep links to spintax.net + refreshed banner/icon/screenshots, 2026-05-10), 2.0.0 (ACF / post-meta bindings — see "Bindings" section below), 2.0.1 (hot-fix; same-day after 2.0.0).
 
 ## Reference sources
 
@@ -92,9 +92,12 @@ ACF / post-meta bindings let editors configure once-per-post-type "render this t
 - Source modes: `template` (binds to a `spintax_template` CPT entry) or `per_post` (binds to sibling meta `_spintax_source_<key>` authored inline on each post).
 - Triggers: V1 hooks `save_post` priority 20 ONLY (after ACF's own p10). `acf/save_post` is NOT used — it only fires on ACF payloads, would silently break Quick Edit / WP-CLI / non-ACF REST flows.
 - Template-edit cascade is **internal render-cache hygiene only**, NOT front-end visibility — bindings pre-generate into stored fields, consumers read those directly. Editing a template surfaces an admin notice telling the editor to run Bulk Apply.
-- ACF targets persist `target.field_key` (e.g. `field_5f8a1234abcd`) alongside `target.key` (the human field name). `update_field( $field_key, ... )` is required by ACF on first write to establish the reference meta.
+- ACF targets persist `target.field_key` (e.g. `field_5f8a1234abcd`) alongside `target.key` (the human field name). `update_field( $field_key, ... )` is required by ACF on first write to establish the reference meta. **`target.field_key` is required for `kind=acf_field` (Tier 5 guard, 2.0.1)** — verified against `acf_get_field( $key )` when ACF is loaded.
 - `ajax_acf_fields` does NOT recurse into `sub_fields` / `flexible_content` (V1 non-goal NG1).
-- Reserved-key guard has 4 tiers: WP internal meta (`_wp_*`), plugin-internal (`_spintax_*`), wp_posts columns (`post_title`, etc.), and uniqueness on `(post_type, target.kind, target.key)`.
+- Reserved-key guard has 5 tiers: WP internal meta (`_wp_*`), plugin-internal (`_spintax_*`), wp_posts columns (`post_title`, etc.), **uniqueness on `(post_type, target.key)` — regardless of `target.kind` (2.0.1; ACF and post_meta on same name collide because they share the wp_postmeta row)**, and ACF field_key validity for `kind=acf_field` (2.0.1).
+- BindingApplier.plan() runs **scope filter first** (2.0.1) — returns `SKIP_OUT_OF_SCOPE_TYPE` if `post.post_type != binding.post_type`, `SKIP_OUT_OF_SCOPE_STATUS` if `binding.status === 'publish'` and `post.post_status !== 'publish'`. Test panel inherits this transparently. 11 return codes total.
+- Bulk Apply Stale-badge gating (2.0.1): `stamp_last_applied_version()` only fires when the walk had zero failures. Partial-failure walks keep the binding flagged.
+- BindingsPage save-flow (2.0.1): validation errors flash form state into transient `spintax_binding_form_flash_<user_id>` (TTL 60s) and redirect back to the form, not the list — `render_form()` consumes the flash.
 - Capability: `manage_spintax_templates` (content-manager, not site-admin).
 - Bulk Apply: Action Scheduler when available, `WP_Error 'no_action_scheduler'` otherwise → admin notice points at `wp spintax bindings apply --binding=<id> --all`.
 - WP-CLI `export` / `import` for staging→prod sync (JSON, deduped by target triple, `--dry-run` and `--overwrite` supported).
@@ -193,12 +196,19 @@ npm run version:check          # Verify version sync
 Run ALL of these locally. Zero errors AND zero warnings required:
 
 ```bash
-npm run test:php           # PHPUnit — all tests must pass (309 cases)
+npm run test:php           # PHPUnit — all tests must pass (currently 430 cases)
 npm run lint:php           # PHPCS — 0 errors, 0 warnings
 ```
 
-For a release, also confirm in wp-admin (any local WP):
-- Plugin Check with `--include-experimental` — 0 errors, 0 warnings.
+## Release gates (MANDATORY before tagging `vX.Y.Z`)
+
+PHPUnit/PHPCS green is the bar for push-to-main; it is NOT the bar for a SVN release. **Every release** must additionally pass:
+
+1. **Plugin Check** with `--include-experimental` — 0 errors, 0 warnings. Run from wp-admin Tools → Plugin Check (or `wp plugin check spintax --include-experimental` via CLI). PHPUnit covers logic; Plugin Check covers WP.org guideline conformance the unit suite doesn't see.
+2. **Smoke-test the user-facing surface that this release actually changes.** For binding-touching releases, this means installing ACF Free in the dev WP, creating a `target_kind=acf_field` binding, and exercising the four behavior scenarios (save_post seed, regenerate, manual-edit detection, clear_on_empty). The full protocol lives in `docs/release-checklist.md` — follow it section-by-section, don't skim. PHPUnit cannot catch ACF integration bugs because the test suite runs without ACF loaded.
+3. **Independent reviewer pass** for X.Y.0 (major) releases — agent fresh-eyes review of the diff against `docs/spec-acf-bindings.md` and the surrounding contracts. Not optional for major surface changes; lessons from 2.0.0 → 2.0.1 hot-fix demonstrate.
+
+The 2.0.0 release skipped gates 1 and 2 and shipped two P1 bugs (cross-kind dedup, missing ACF field_key validation) plus three P2 bugs that required a same-day 2.0.1 hot-fix. **Don't make that mistake again.** Patch releases (X.Y.Z where Z > 0) may skip gate 2 if the diff doesn't touch the relevant surface, but gate 1 is non-negotiable.
 
 Release flow (fully automated via SVN deploy):
 
@@ -206,6 +216,7 @@ Release flow (fully automated via SVN deploy):
 npm run version:set -- X.Y.Z   # Sync plugin header + SPINTAX_VERSION + Stable tag
 git commit -am "Release X.Y.Z: <summary>"
 git push origin main           # ci.yml runs
+# DO NOT TAG YET — run docs/release-checklist.md first.
 git tag vX.Y.Z
 git push origin vX.Y.Z         # → release.yml + wporg-deploy.yml fire in parallel
 ```

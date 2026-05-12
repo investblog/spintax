@@ -182,14 +182,13 @@ class BindingsAjax {
 
 		$ids = get_posts(
 			array(
-				'post_type'        => TemplatePostType::POST_TYPE,
-				'numberposts'      => -1,
-				'post_status'      => 'publish',
-				'orderby'          => 'title',
-				'order'            => 'ASC',
-				'fields'           => 'ids',
-				'no_found_rows'    => true,
-				'suppress_filters' => true,
+				'post_type'     => TemplatePostType::POST_TYPE,
+				'numberposts'   => -1,
+				'post_status'   => 'publish',
+				'orderby'       => 'title',
+				'order'         => 'ASC',
+				'fields'        => 'ids',
+				'no_found_rows' => true,
 			)
 		);
 

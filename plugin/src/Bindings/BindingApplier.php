@@ -40,6 +40,9 @@ class BindingApplier {
 	public const SKIP_NO_WRITE_TRIGGER     = 'skip_no_write_trigger';
 	public const SKIP_SOURCE_NOT_FOUND     = 'skip_source_not_found';
 	public const SKIP_COLD_START_MANUAL    = 'skip_cold_start_manual';
+	// Scope-filter codes (added in 2.0.1, spec §4.4 scope filter).
+	public const SKIP_OUT_OF_SCOPE_TYPE   = 'skip_out_of_scope_type';
+	public const SKIP_OUT_OF_SCOPE_STATUS = 'skip_out_of_scope_status';
 
 	/**
 	 * Source resolver.
@@ -131,6 +134,25 @@ class BindingApplier {
 			'would_write'   => false,
 			'write_value'   => '',
 		);
+
+		// Scope filter (spec §4.4 — added in 2.0.1). Runs BEFORE source
+		// resolution and rendering so the Test panel and Bulk Apply
+		// surface the same skip reason live triggers would, without
+		// paying the render cost. Without this gate, test_binding could
+		// claim `would_write=true` for a post the real save_post path
+		// would never touch.
+		$post = get_post( $post_id );
+		if ( null === $post ) {
+			return array_merge( $blank, array( 'result' => self::SKIP_OUT_OF_SCOPE_TYPE ) );
+		}
+		$expected_type = (string) ( $binding['post_type'] ?? '' );
+		if ( '' !== $expected_type && $post->post_type !== $expected_type ) {
+			return array_merge( $blank, array( 'result' => self::SKIP_OUT_OF_SCOPE_TYPE ) );
+		}
+		$status_filter = (string) ( $binding['status'] ?? 'any' );
+		if ( 'publish' === $status_filter && 'publish' !== $post->post_status ) {
+			return array_merge( $blank, array( 'result' => self::SKIP_OUT_OF_SCOPE_STATUS ) );
+		}
 
 		$source = $this->resolver->resolve_source( $binding, $post_id );
 		if ( ! $source['found'] ) {

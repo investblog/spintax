@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 6.9
-Stable tag: 2.0.0
+Stable tag: 2.0.1
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -124,6 +124,14 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 2.0.1 =
+* Fix: ACF and post-meta bindings on the same `(post_type, field name)` no longer coexist — they wrote to the same database row and silently raced. Tier 4 uniqueness now ignores `target.kind`. Existing pre-2.0.1 conflicts remain in the data store but the next save of either binding will reject.
+* Fix: ACF bindings now require a non-empty `target.field_key` and validate it against the live ACF field when ACF is loaded. Previously a missing or mistyped field key could route `update_field()` writes to a different field.
+* Fix: Test panel and Bulk Apply now report `skip_out_of_scope_type` / `skip_out_of_scope_status` for posts that wouldn't match the binding's scope in live triggers. Two new applier return codes — total now 11 instead of 9.
+* Fix: Bulk Apply only clears the Stale badge when the walk had zero failures. Partial-failure walks keep the binding flagged so editors notice the divergence and retry.
+* Fix: Binding form validation errors no longer throw the editor back to the list view — the form re-renders with submitted values via a short-lived transient flash, with the specific error inline.
+* Internal: 21 new PHPUnit cases covering each fix path; bindings unit suite is now exhaustive on scope-filter, cross-kind dedup, ACF field_key validation, and Bulk Apply stamp gating.
+
 = 2.0.0 =
 * **ACF / post-meta bindings** — a Spintax template (or a per-post inline source) can now be bound to any ACF text/textarea/wysiwyg field or post-meta key on a post type. Configure once under Spintax → Bindings and the plugin populates the field on save, cron, or via Bulk Apply.
 * Decision-tree write behaviour with four flags: `auto_seed_empty` (default on; never clobbers existing content), `regenerate_on_save`, `preserve_manual_edits` (hash-tracks the last rendered value so external edits are detected), `clear_on_empty`. Cold-start behaviour documented to avoid false manual-edit positives.
@@ -181,6 +189,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 2.0.1 =
+Hot-fix for 2.0.0: cross-kind binding collisions, missing ACF field_key validation, Test panel scope-filter parity, Bulk Apply Stale-badge gating, and form value preservation on validation errors. Highly recommended if you're on 2.0.0.
 
 = 2.0.0 =
 Major release — adds ACF / post-meta bindings, per-binding cron, Bulk Apply with Action Scheduler, full WP-CLI surface, and a one-shot migration wizard for `nested-spintax-for-acf` users. No breaking changes to the existing template / shortcode / render API.

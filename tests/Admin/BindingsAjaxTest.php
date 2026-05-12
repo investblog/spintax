@@ -195,4 +195,99 @@ class BindingsAjaxTest extends \WP_Ajax_UnitTestCase {
 
 		$this->assertFalse( $resp['success'] );
 	}
+
+	// ----- test_binding scope-filter parity (added in 2.0.1) -----
+
+	private function create_test_binding(): array {
+		$tpl_id = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Tpl for test_binding',
+				'post_content' => 'Rendered output',
+			)
+		);
+		return ( new BindingsRepo() )->create(
+			array(
+				'post_type' => 'post',
+				'status'    => 'any',
+				'target'    => array( 'kind' => 'post_meta', 'key' => 'target_field', 'field_key' => '' ),
+				'source'    => array( 'mode' => 'template', 'template_id' => $tpl_id ),
+				'triggers'  => array( 'save_post' => true, 'cron' => 'disabled' ),
+				'variables' => array( 'expose_post_context' => false ),
+			)
+		);
+	}
+
+	public function test_test_binding_reports_out_of_scope_for_wrong_post_type(): void {
+		wp_set_current_user( $this->admin_id );
+
+		$binding = $this->create_test_binding();
+		$page_id = self::factory()->post->create( array( 'post_type' => 'page' ) );
+
+		$this->set_nonce();
+		$_REQUEST['binding_id'] = $binding['id'];
+		$_POST['binding_id']    = $binding['id'];
+		$_REQUEST['post_id']    = $page_id;
+		$_POST['post_id']       = $page_id;
+
+		$resp = $this->dispatch( 'spintax_test_binding' );
+
+		$this->assertTrue( $resp['success'] );
+		$this->assertSame( 'skip_out_of_scope_type', $resp['data']['result'] );
+		$this->assertFalse( $resp['data']['would_write'] );
+	}
+
+	public function test_test_binding_reports_out_of_scope_for_draft_under_publish_filter(): void {
+		wp_set_current_user( $this->admin_id );
+
+		$binding   = $this->create_test_binding();
+		$bindings  = new BindingsRepo();
+		$bindings->update( $binding['id'], array( 'status' => 'publish' ) );
+
+		$draft_id = self::factory()->post->create(
+			array(
+				'post_type'   => 'post',
+				'post_status' => 'draft',
+			)
+		);
+
+		$this->set_nonce();
+		$_REQUEST['binding_id'] = $binding['id'];
+		$_POST['binding_id']    = $binding['id'];
+		$_REQUEST['post_id']    = $draft_id;
+		$_POST['post_id']       = $draft_id;
+
+		$resp = $this->dispatch( 'spintax_test_binding' );
+
+		$this->assertTrue( $resp['success'] );
+		$this->assertSame( 'skip_out_of_scope_status', $resp['data']['result'] );
+		$this->assertFalse( $resp['data']['would_write'] );
+	}
+
+	public function test_test_binding_writes_plan_for_in_scope_post(): void {
+		wp_set_current_user( $this->admin_id );
+
+		// Create the post BEFORE the binding so the plugin's save_post
+		// trigger (registered globally by the bootstrapper) doesn't
+		// auto-seed the target meta as a side effect of creation. The
+		// Test panel is supposed to be a dry-run.
+		$post_id = self::factory()->post->create( array( 'post_type' => 'post' ) );
+		$binding = $this->create_test_binding();
+
+		$this->set_nonce();
+		$_REQUEST['binding_id'] = $binding['id'];
+		$_POST['binding_id']    = $binding['id'];
+		$_REQUEST['post_id']    = $post_id;
+		$_POST['post_id']       = $post_id;
+
+		$resp = $this->dispatch( 'spintax_test_binding' );
+
+		$this->assertTrue( $resp['success'] );
+		$this->assertSame( 'wrote_seeded', $resp['data']['result'] );
+		$this->assertTrue( $resp['data']['would_write'] );
+		$this->assertSame( 'Rendered output', $resp['data']['rendered_preview'] );
+		// Crucially — test panel is a dry-run; the target stays empty.
+		$this->assertSame( '', get_post_meta( $post_id, 'target_field', true ) );
+	}
 }

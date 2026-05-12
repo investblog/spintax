@@ -130,6 +130,17 @@ The four flags plus binding state yield a decision tree rather than a flat 16-ce
 
 ```
 function apply(binding, post_id):
+    # Scope filter (added in 2.0.1). These checks are cheap and must run
+    # BEFORE rendering so Test panel and Bulk Apply report the same skip
+    # reason real triggers would. Without these gates, test_binding could
+    # claim `would_write=true` for a post whose scope filters would never
+    # let it run live.
+    post = get_post(post_id)
+    if post.post_type !== binding.post_type:
+        return SKIP_OUT_OF_SCOPE_TYPE
+    if binding.status === 'publish' AND post.post_status !== 'publish':
+        return SKIP_OUT_OF_SCOPE_STATUS
+
     rendered      = renderer.render(binding.source, build_var_context(binding, post_id))
     rendered_hash = sha1(rendered)
     stored_sig    = get_post_meta(post_id, '_spintax_last_render_sig_' + binding.id)
@@ -225,9 +236,14 @@ Refuse as `target.key` at form save (not write time). Three tiers:
 - Rationale: post columns aren't meta — `update_post_meta()` would create a meta row that shadows nothing; writes are silently ineffective and confusing. The Tier 1 underscore-prefix check doesn't catch these.
 
 **Tier 4 — Binding uniqueness** (cross-binding):
-- Reject creating a binding when another active binding has the same `(post_type, target.kind, target.key)`. Two bindings on the same field would race-overwrite each other's signatures and produce non-deterministic output.
+- Reject creating a binding when another active binding has the same `(post_type, target.key)` — **regardless of `target.kind`**. Two bindings on the same field would race-overwrite each other's signatures and produce non-deterministic output. **Critically**, `acf_field` and `post_meta` bindings for the same `target.key` write to the **same underlying `wp_postmeta` row** (ACF stores ACF fields as postmeta under the field name), so cross-kind coexistence is the same race as same-kind coexistence — just less visible. Versions 2.0.0 included `target.kind` in the uniqueness key by mistake; the 2.0.1 hot-fix corrected this. Pre-2.0.1 sites that managed to create cross-kind conflicts get a one-shot admin notice on upgrade listing the conflicts (notice persists until they're manually resolved).
 
-All four tiers run before persisting the binding; failed tiers return field-level admin notice with the specific reason.
+**Tier 5 — ACF field_key validation** (added in 2.0.1, `target.kind = acf_field` only):
+- When `kind = acf_field`, `target.field_key` is required (non-empty).
+- If ACF is loaded (`function_exists( 'acf_get_field' )`), the stored `field_key` must resolve to a non-null field object whose `name` matches `target.key` exactly. Mismatched key/name pairs (e.g. user typed `field_xxx` from a different field group) are rejected at form save with a specific message identifying the actual field name behind the key. Without this guard, `update_field( $field_key, ... )` silently writes to whatever field that key belongs to — potentially clobbering a sibling field on every save.
+- If ACF is not loaded at save time, only the non-empty check applies (the resolve check is deferred; the binding still functions if/when ACF activates later — the applier double-checks at write time).
+
+All five tiers run before persisting the binding; failed tiers return field-level admin notice with the specific reason.
 
 ### 4.7 Triggers pipeline
 
@@ -295,6 +311,19 @@ Top-level admin menu entry "Spintax" already exists. Add submenu "Bindings" afte
 
 Per-post inline metabox (only when at least one `per_post`-mode binding matches the current post type): one textarea per matching binding, labeled with target field name. Saves to `_spintax_source_<target.key>`.
 
+#### 4.8.1 Save-flow validation feedback (added in 2.0.1)
+
+When `BindingsPage::handle_save()` returns a validation error (any tier of the reserved-key guard, missing `post_type`, missing `target.key`, missing `target.field_key` for ACF, missing template for template-mode, no triggers, or Tier 4 / Tier 5 violation), the editor is **not** thrown back to the list view. The behavior contract:
+
+1. The submitted POST values are stashed in a short-lived transient `spintax_binding_form_flash_<user_id>` (TTL 60 seconds).
+2. PRG redirects back to the same form view — `?action=new` for create, `?action=edit&binding_id=<id>` for update — with `?error=1`.
+3. `render_form()` checks for the flash transient on every render; if present, it uses the flashed values for every input instead of the saved binding or defaults, deletes the transient, and renders the admin notice with the error message.
+4. The user fixes the field that errored and re-submits; the form is now empty of flash state and behaves normally.
+
+Reason for the transient (rather than rendering the form directly from `handle_save()`): the WP admin's PRG pattern is non-negotiable in this codebase — every form handler in the plugin redirects, every render starts fresh. Bending the rule for one form would invite double-submit issues and break browser back-button semantics. Transient is per-user keyed and TTL-bounded, so concurrent edits across users don't collide and a stale tab can't poison a future submission.
+
+The 2.0.0 implementation redirected to the base list URL on every error, discarding all form values — a known reviewer-flagged regression from the wpci pattern.
+
 ### 4.9 Test / Dry-run
 
 Endpoint `ajax_test_binding`. Input: binding form state (or saved binding ID) + a post ID. Output:
@@ -317,9 +346,13 @@ Endpoint `ajax_test_binding`. Input: binding form state (or saved binding ID) + 
 
 No side effects. Same logic path as `BindingApplier::apply` but returns the planned action instead of executing.
 
+**Scope-filter parity (added in 2.0.1):** the Test panel surfaces `result = skip_out_of_scope_type` (with the actual `post.post_type` vs `binding.post_type`) or `result = skip_out_of_scope_status` (with the actual `post.post_status` vs the binding's status filter) when the test post would never be in scope for live triggers. 2.0.0 called `BindingApplier::plan()` directly without these checks, so the Test panel could report `would_write=true` for posts the real save_post / Bulk Apply paths would never touch. The fix moved the scope check into `plan()` itself so test_binding inherits it transparently.
+
 ### 4.10 Bulk Apply
 
 "Apply to all matching posts" button on each binding card. Confirms (`confirm('Apply binding to N matching posts?')`), then enqueues Action Scheduler job `spintax_apply_binding` with `{binding_id, offset, chunk_size}` where `chunk_size = binding.chunk_size ?? 20`. The handler processes a chunk, re-enqueues with the new offset until exhausted, and logs progress. Falls back to a `wp spintax bindings apply --binding=X --all` WP-CLI command + admin notice if Action Scheduler isn't available (mirrors wpci L248-253).
+
+**Stale-badge gating contract (added in 2.0.1):** `BulkApply` stamps `_spintax_binding_last_applied_v_<id>` to the current cache version (clearing the Stale badge) **only when the entire walk completed with zero failures**. If any post threw — applier exception, database error, ACF write rejection — the stamp is **not** updated and the Stale badge persists. The walk's log line includes the failure count and a hint: "Stale badge NOT cleared — retry the binding after addressing N failed posts." Without this gate, a single broken post can silently mask a partial replication state. The 2.0.0 implementation stamped unconditionally; the 2.0.1 hot-fix added the failure-zero gate to both `BulkApply::handle` (Action Scheduler chunk callback) and `BulkApply::run_synchronously` (WP-CLI fallback).
 
 ### 4.11 Migration helper
 

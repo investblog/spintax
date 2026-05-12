@@ -3,7 +3,7 @@
  * Plugin Name:       Spintax
  * Plugin URI:        https://spintax.net
  * Description:       Template-based dynamic content generation using spintax markup. Create reusable templates with randomised text variants, variable substitution, and permutation logic.
- * Version:           1.5.0
+ * Version:           2.0.0
  * Requires at least: 6.2
  * Requires PHP:      8.0
  * Author:            301st
@@ -20,7 +20,7 @@ namespace Spintax;
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'SPINTAX_VERSION', '1.5.0' );
+define( 'SPINTAX_VERSION', '2.0.0' );
 define( 'SPINTAX_PLUGIN_FILE', __FILE__ );
 define( 'SPINTAX_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPINTAX_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -179,6 +179,7 @@ add_action(
 			( new Admin\BindingsMetaBox() )->init();
 			( new Admin\BindingsAjax() )->init();
 			( new Admin\TemplateCascadeNotice() )->init();
+			( new Admin\MigrationPage() )->init();
 		}
 
 		// Invalidate cache when a template is saved.

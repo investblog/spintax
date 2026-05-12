@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 6.9
-Stable tag: 1.5.0
+Stable tag: 2.0.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -22,10 +22,12 @@ Spintax is a WordPress plugin for template-based content generation using spinta
 * **Conditionals** `{?VAR?then|else}` — render a branch based on whether a variable is set (also `{?!VAR?then}` inverted)
 * **Plural agreement** `{plural <count>: form1|form2|form3}` — pick grammatically correct noun form by count. RU/UK/BE 3-form (one|few|many), EN-style 2-form (one|many). First spintax engine with first-class plurals.
 * **Nested templates** — embed templates within templates via `#include` or `[spintax]`
+* **ACF / post-meta bindings (NEW in 2.0)** — configure once per post type, render Spintax templates into ACF text/textarea/wysiwyg fields or post-meta keys on every matching post. Auto-seed empty fields, preserve manual edits, Bulk Apply via Action Scheduler.
 * **Object cache** — rendered output cached via WP Object Cache API (Redis/Memcached ready)
-* **Cron regeneration** — optional scheduled cache refresh per template
+* **Cron regeneration** — optional scheduled cache refresh per template, plus per-binding cron walks
+* **WP-CLI** — `wp spintax bindings list|apply|test|export|import`
 * **Validation** — bracket matching, circular reference detection, syntax checking
-* **Admin UI** — code editor, live preview, shortcode copy, settings page
+* **Admin UI** — code editor, live preview, shortcode copy, settings page, bindings list
 
 **Syntax based on the GTW (Generating The Web) standard.**
 
@@ -73,6 +75,30 @@ The plugin uses the WordPress Object Cache API. With a persistent backend (Redis
 
 Yes: `[spintax slug="greeting" name="Alice" city="Moscow"]` makes `%name%` and `%city%` available inside the template.
 
+= What are ACF / post-meta bindings? =
+
+A binding pairs a Spintax template (or a per-post inline source) with one target field on one post type — for example "Posts → ACF: hero_subtitle". Configure it once under Spintax → Bindings and the plugin populates the field on every matching post on save, on a cron schedule, or on demand via Bulk Apply. Manual edits are preserved by default (hash-tracked); flags control whether the binding auto-seeds empty fields, regenerates on every save, or clears the field when the template renders to empty.
+
+= Can I bind to ACF fields? =
+
+Yes. Bindings support both ACF (text / textarea / wysiwyg, top-level fields) and plain post-meta keys. ACF Free and Pro are both supported; nested fields (repeater / flexible_content rows) are not supported in 2.0 — that lands in a later release. The form-side field picker auto-fills the stable ACF field key so writes work on the first save without ACF's reference-meta handshake.
+
+= Is there a hard cap on bindings? =
+
+200 bindings per site. The store is a single autoloaded option (~500 bytes per binding), and the cap keeps autoload memory bounded. If you genuinely need more, please open an issue with your use case.
+
+= On multisite, are bindings shared across the network? =
+
+No — bindings are per-site. Each subsite manages its own. Use `wp --url=site2 spintax bindings import --file=site1-bindings.json` to copy bindings between subsites via the WP-CLI export/import round-trip.
+
+= Can I manage bindings via REST? =
+
+Not in 2.0; bindings are admin-only. The `wp spintax bindings` WP-CLI surface covers staging→production sync scenarios. REST API exposure is tracked for a later release.
+
+= I'm coming from `nested-spintax-for-acf`. Is there a migration path? =
+
+Yes. After activating Spintax 2.0, a dismissible admin banner points to **Tools → Spintax Migration**. The wizard scans for predecessor data, shows a per-row preview, and creates bindings deduped by `(post type, target field)`. Per-post sources and variables are copied non-destructively — the old plugin's data stays in place until you delete it.
+
 == Screenshots ==
 
 1. Template editor with spintax markup and live preview.
@@ -97,6 +123,22 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Developed by [301st](https://301.st)
 
 == Changelog ==
+
+= 2.0.0 =
+* **ACF / post-meta bindings** — a Spintax template (or a per-post inline source) can now be bound to any ACF text/textarea/wysiwyg field or post-meta key on a post type. Configure once under Spintax → Bindings and the plugin populates the field on save, cron, or via Bulk Apply.
+* Decision-tree write behaviour with four flags: `auto_seed_empty` (default on; never clobbers existing content), `regenerate_on_save`, `preserve_manual_edits` (hash-tracks the last rendered value so external edits are detected), `clear_on_empty`. Cold-start behaviour documented to avoid false manual-edit positives.
+* Per-binding cron schedules (hourly / twicedaily / daily) registered as individual `wp_schedule_event` hooks per binding.
+* Bulk Apply via Action Scheduler with chunked processing; a clean WP-CLI fallback when Action Scheduler isn't installed.
+* New `%post_id%`, `%post_title%`, `%post_url%`, `%post_slug%`, `%post_date%`, `%post_modified%`, `%author_id%`, `%author_name%` post-context variables — opt-in per binding.
+* New `%acf_<field_name>%` variables — opt-in per binding, exposes ACF sibling fields in the same group.
+* Template-edit cascade — editing a Spintax template that is referenced by bindings bumps an internal cache version and surfaces a notice telling the editor that stored target fields will refresh on the next Bulk Apply / cron / save_post.
+* `wp spintax bindings list|apply|test|export|import` — full WP-CLI surface for staging→production workflows and Action-Scheduler-less environments.
+* One-shot migration helper at **Tools → Spintax Migration** for users coming from the predecessor plugin `nested-spintax-for-acf`. Detects, previews, and imports legacy data deduped by `(post_type, target.key)`. Original predecessor data is never deleted by the migration.
+* Reserved-key guard rejects WP-internal meta keys, plugin-internal `_spintax_*` prefixes, wp_posts column names, and duplicate `(post_type, target.kind, target.key)` triples at form save.
+* Hard cap of 200 bindings per site (single autoloaded option size budget).
+* Per-binding chunk size override in the Advanced form section.
+* Uninstall cleans every bindings option family and sibling post-meta — no orphan rows left behind.
+* Internal: 398+ PHPUnit tests, including exhaustive decision-tree coverage and migration import edge cases.
 
 = 1.5.0 =
 * Add: plural agreement primitive `{plural <count>: form1|form2|form3}` — pick the correct grammatical form by count. RU/UK/BE = 3 forms (`one|few|many`); EN/ES/PT/DE etc. = 2 forms (`one|many`). Count is a `%var%` reference or literal integer (resolved after variable expansion, so helper-var patterns via `#set` work). Locale comes from per-template post meta `_spintax_locale` or the WordPress site locale. Lenient at runtime: malformed constructs render verbatim with fullwidth braces instead of crashing the page. First spintax engine to treat plural as a first-class primitive.
@@ -139,6 +181,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 2.0.0 =
+Major release — adds ACF / post-meta bindings, per-binding cron, Bulk Apply with Action Scheduler, full WP-CLI surface, and a one-shot migration wizard for `nested-spintax-for-acf` users. No breaking changes to the existing template / shortcode / render API.
 
 = 1.4.0 =
 New `{?VAR?then|else}` conditional syntax, smarter sentence-end capitalisation around abbreviations, and a fix for `#set` directives with empty values.

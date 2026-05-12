@@ -26,6 +26,27 @@ final class Defaults {
 	public const MAX_BINDINGS = 200;
 
 	/**
+	 * Default chunk size for Bulk Apply / cron walks.
+	 *
+	 * @var int
+	 */
+	public const DEFAULT_CHUNK_SIZE = 20;
+
+	/**
+	 * Allowed chunk size range — per-binding override clamps to this.
+	 *
+	 * @var int
+	 */
+	public const MIN_CHUNK_SIZE = 1;
+
+	/**
+	 * Maximum allowed chunk size (per-binding override clamps to this).
+	 *
+	 * @var int
+	 */
+	public const MAX_CHUNK_SIZE = 200;
+
+	/**
 	 * Default binding shape (see spec §4.1).
 	 *
 	 * `id`, `created_at` and `updated_at` are stamped by `BindingsRepo`
@@ -62,6 +83,7 @@ final class Defaults {
 				'regenerate_on_save'    => false,
 				'preserve_manual_edits' => true,
 				'clear_on_empty'        => false,
+				'chunk_size'            => self::DEFAULT_CHUNK_SIZE,
 			),
 		);
 	}

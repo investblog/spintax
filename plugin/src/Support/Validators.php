@@ -100,4 +100,113 @@ final class Validators {
 	public static function clamp_int( int $value, int $min, int $max ): int {
 		return max( $min, min( $max, $value ) );
 	}
+
+	// --- Bindings: id helpers + reserved-key guard (spec §4.6) ---
+
+	/**
+	 * Check whether a string is a syntactically-valid binding id.
+	 *
+	 * @param mixed $id Candidate id.
+	 * @return bool
+	 */
+	public static function is_valid_binding_id( $id ): bool {
+		return is_string( $id ) && (bool) preg_match( '/^bind_[a-z0-9]{6}$/', $id );
+	}
+
+	/**
+	 * Generate a fresh binding id.
+	 *
+	 * @return string
+	 */
+	public static function generate_binding_id(): string {
+		// 6 hex chars (24 bits) is plenty for collision avoidance up to the
+		// 200-binding hard cap; `bin2hex(random_bytes(3))` is cryptographically
+		// sound where available, otherwise wp_generate_password() (without
+		// special chars) gives an equivalent alphanumeric.
+		if ( function_exists( 'random_bytes' ) ) {
+			return 'bind_' . bin2hex( random_bytes( 3 ) );
+		}
+		return 'bind_' . strtolower( wp_generate_password( 6, false, false ) );
+	}
+
+	/**
+	 * Tier 1: WordPress-internal post-meta keys.
+	 *
+	 * Mirrors `wpci\MappingsPage::is_reserved_meta_key`.
+	 *
+	 * @param string $key Candidate meta key.
+	 * @return bool
+	 */
+	public static function is_reserved_meta_key( string $key ): bool {
+		$prefixes = array( '_wp_', '_edit_', '_oembed_' );
+		foreach ( $prefixes as $prefix ) {
+			if ( 0 === strpos( $key, $prefix ) ) {
+				return true;
+			}
+		}
+		return in_array( $key, array( '_pingme', '_encloseme', '_thumbnail_id' ), true );
+	}
+
+	/**
+	 * Tier 2: plugin-internal meta keys.
+	 *
+	 * Prevents a binding from writing to another binding's source,
+	 * signature, or cache-version stamp.
+	 *
+	 * @param string $key Candidate meta key.
+	 * @return bool
+	 */
+	public static function is_plugin_internal_meta_key( string $key ): bool {
+		$prefixes = array(
+			'_spintax_source_',
+			'_spintax_last_render_sig_',
+			'_spintax_binding_cache_v_',
+			'_spintax_',
+		);
+		foreach ( $prefixes as $prefix ) {
+			if ( 0 === strpos( $key, $prefix ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Tier 3: wp_posts column names.
+	 *
+	 * `update_post_meta()` against a post-column key creates a shadow
+	 * meta row that the column does not read — silently confusing.
+	 * Reject at form time.
+	 *
+	 * @param string $key Candidate meta key.
+	 * @return bool
+	 */
+	public static function is_post_column( string $key ): bool {
+		$columns = array(
+			'ID',
+			'post_author',
+			'post_date',
+			'post_date_gmt',
+			'post_content',
+			'post_content_filtered',
+			'post_title',
+			'post_excerpt',
+			'post_status',
+			'comment_status',
+			'ping_status',
+			'post_password',
+			'post_name',
+			'to_ping',
+			'pinged',
+			'post_modified',
+			'post_modified_gmt',
+			'post_parent',
+			'guid',
+			'menu_order',
+			'post_type',
+			'post_mime_type',
+			'comment_count',
+		);
+		return in_array( $key, $columns, true );
+	}
 }

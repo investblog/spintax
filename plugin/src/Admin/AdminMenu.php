@@ -30,6 +30,9 @@ class AdminMenu {
 		$meta_boxes = new MetaBoxes();
 		$meta_boxes->init();
 
+		$bindings = new BindingsPage();
+		$bindings->init();
+
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 	}
 

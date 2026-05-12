@@ -27,9 +27,59 @@ $spintax_options = array(
 	'spintax_global_variables_raw',
 	'spintax_cache_salt',
 	'spintax_logs',
+	'spintax_bindings',
+	'spintax_migration_banner_dismissed',
 );
 foreach ( $spintax_options as $spintax_option ) {
 	delete_option( $spintax_option );
+}
+
+// 2a. Delete per-binding option families with prefix matches.
+global $wpdb;
+$spintax_option_prefixes = array(
+	'_spintax_binding_cache_v_',
+	'_spintax_binding_last_applied_v_',
+);
+foreach ( $spintax_option_prefixes as $spintax_prefix ) {
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange -- bulk delete during uninstall is the documented WP pattern; caching is irrelevant on teardown.
+	$wpdb->query(
+		$wpdb->prepare(
+			"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
+			$wpdb->esc_like( $spintax_prefix ) . '%'
+		)
+	);
+}
+
+// 2b. Delete per-post sibling meta written by the bindings feature.
+$spintax_meta_prefixes = array(
+	'_spintax_source_',
+	'_spintax_last_render_sig_',
+);
+foreach ( $spintax_meta_prefixes as $spintax_meta_prefix ) {
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- bulk delete during uninstall.
+	$wpdb->query(
+		$wpdb->prepare(
+			"DELETE FROM {$wpdb->postmeta} WHERE meta_key LIKE %s",
+			$wpdb->esc_like( $spintax_meta_prefix ) . '%'
+		)
+	);
+}
+
+// 2c. Clear scheduled binding-cron events. The hooks are named
+// `spintax_binding_cron_<binding_id>` — they live in wp-options as
+// part of the `cron` array, so we walk and clear by prefix.
+$spintax_cron_array = _get_cron_array();
+if ( is_array( $spintax_cron_array ) ) {
+	foreach ( $spintax_cron_array as $spintax_ts => $spintax_hooks ) {
+		if ( ! is_array( $spintax_hooks ) ) {
+			continue;
+		}
+		foreach ( array_keys( $spintax_hooks ) as $spintax_hook ) {
+			if ( 0 === strpos( (string) $spintax_hook, 'spintax_binding_cron_' ) ) {
+				wp_clear_scheduled_hook( (string) $spintax_hook );
+			}
+		}
+	}
 }
 
 // 3. Remove custom capabilities from all roles.

@@ -8,8 +8,8 @@ Free WordPress plugin for spintax-based content generation. Target audience: con
 - **WP.org:** https://wordpress.org/plugins/spintax/
 - **Docs / playground:** https://spintax.net
 - **Author:** 301st (https://301.st)
-- **Current version:** 1.5.0
-- **Status:** **Live on WordPress.org as of 2026-05-11** (SVN revision 3528366, tag `v1.5.0`). Deploy pipeline is automated: tag push → `wporg-deploy.yml` → 10up action → SVN trunk + tag + assets. Engine timeline: 1.0.0 (initial), 1.1.0 (per-element separators + sanitisation, uploaded to queue 2026-04-07), 1.4.0 (conditionals + abbreviation whitelist + `#set` empty-value fix, re-tag skipping 1.2/1.3 to keep queue unambiguous), 1.5.0 (`{plural <count>: form|...}` primitive + admin deep links to spintax.net + refreshed banner/icon/screenshots, 2026-05-10).
+- **Current version:** 2.0.0
+- **Status:** **Live on WordPress.org as of 2026-05-11** (v1.5.0 SVN revision 3528366). 2.0.0 adds the ACF / post-meta bindings feature in five phases per `docs/spec-acf-bindings.md`. Deploy pipeline is automated: tag push → `wporg-deploy.yml` → 10up action → SVN trunk + tag + assets. Engine timeline: 1.0.0 (initial), 1.1.0 (per-element separators + sanitisation, uploaded to queue 2026-04-07), 1.4.0 (conditionals + abbreviation whitelist + `#set` empty-value fix, re-tag skipping 1.2/1.3 to keep queue unambiguous), 1.5.0 (`{plural <count>: form|...}` primitive + admin deep links to spintax.net + refreshed banner/icon/screenshots, 2026-05-10), 2.0.0 (ACF / post-meta bindings — see "Bindings" section below).
 
 ## Reference sources
 
@@ -61,10 +61,44 @@ plugin/
       Defaults.php               # Factory methods for default config
       Logging.php                # Ring-buffer debug logger
       OptionKeys.php             # Centralised option/meta key constants
-      Validators.php             # Data normalisation helpers
+      Validators.php             # Data normalisation helpers + 4-tier binding-key guard
+    Bindings/                    # ACF / post-meta bindings (2.0.0)
+      BindingApplier.php         # §4.4 decision tree (9 return codes) + ACF write helpers
+      BindingResolver.php        # template-mode / per_post-mode source lookup
+      BindingsRepo.php           # CRUD over single autoloaded option, fires saved/deleted actions
+      BulkApply.php              # Action Scheduler walker + WP-CLI fallback path
+      Defaults.php               # Default binding shape + MAX_BINDINGS=200, chunk_size constants
+      Migration.php              # one-shot import from nested-spintax-for-acf
+      Triggers/
+        SavePostTrigger.php      # save_post priority 20 — after ACF p10
+        TemplateCascadeTrigger.php # bumps per-binding cache version on template edit
+        CronTrigger.php          # per-binding wp_schedule_event hooks
+    CLI/
+      BindingsCommand.php        # wp spintax bindings list|apply|test|export|import
+    Core/Variables/              # Variable sources consumed by BindingApplier
+      PostContextSource.php      # %post_id%, %post_title%, etc.
+      AcfSiblingsSource.php      # %acf_<name>% for same-group siblings (top-level only)
   assets/css/admin.css           # Native WP styles augmentation
   assets/js/admin.js             # Preview AJAX, copy shortcode, variables
+  assets/js/bindings.js          # Bindings form: field discovery datalist + Test panel
 ```
+
+## Bindings (2.0.0)
+
+ACF / post-meta bindings let editors configure once-per-post-type "render this template into that field on every matching post", with auto-seed, preserve-manual-edits, Bulk Apply, and per-binding cron. Full design + phase-by-phase plan lives in `docs/spec-acf-bindings.md`.
+
+**Key contracts** (read the spec for full detail):
+- One binding = `(post_type × target_kind × target_key × source × triggers × behavior)`. Single autoloaded option `spintax_bindings`, capped at 200 bindings/site.
+- Source modes: `template` (binds to a `spintax_template` CPT entry) or `per_post` (binds to sibling meta `_spintax_source_<key>` authored inline on each post).
+- Triggers: V1 hooks `save_post` priority 20 ONLY (after ACF's own p10). `acf/save_post` is NOT used — it only fires on ACF payloads, would silently break Quick Edit / WP-CLI / non-ACF REST flows.
+- Template-edit cascade is **internal render-cache hygiene only**, NOT front-end visibility — bindings pre-generate into stored fields, consumers read those directly. Editing a template surfaces an admin notice telling the editor to run Bulk Apply.
+- ACF targets persist `target.field_key` (e.g. `field_5f8a1234abcd`) alongside `target.key` (the human field name). `update_field( $field_key, ... )` is required by ACF on first write to establish the reference meta.
+- `ajax_acf_fields` does NOT recurse into `sub_fields` / `flexible_content` (V1 non-goal NG1).
+- Reserved-key guard has 4 tiers: WP internal meta (`_wp_*`), plugin-internal (`_spintax_*`), wp_posts columns (`post_title`, etc.), and uniqueness on `(post_type, target.kind, target.key)`.
+- Capability: `manage_spintax_templates` (content-manager, not site-admin).
+- Bulk Apply: Action Scheduler when available, `WP_Error 'no_action_scheduler'` otherwise → admin notice points at `wp spintax bindings apply --binding=<id> --all`.
+- WP-CLI `export` / `import` for staging→prod sync (JSON, deduped by target triple, `--dry-run` and `--overwrite` supported).
+- Migration helper at Tools → Spintax Migration imports from predecessor `nested-spintax-for-acf` non-destructively (original data never deleted).
 
 ## Spintax syntax
 
@@ -191,9 +225,14 @@ git push origin vX.Y.Z         # → release.yml + wporg-deploy.yml fire in para
 - `release.yml` — version validation (all 3 sources match the tag), PHPCS, build, GitHub Release with ZIP attached. Triggered by tag `v*`.
 - `wporg-deploy.yml` — 10up action for WP.org SVN. Triggered by tag `v*`. Pushes `plugin/` → SVN trunk + `tags/<version>/` and `assets/` → SVN `/assets/`. Scoped to GitHub Environment `svn` (`environment: svn` in the workflow), which is where `SVN_USERNAME` (`301st`) and `SVN_PASSWORD` live. Repository-level secrets are NOT used — must be Environment-level. Manual SVN ops can use `.env.svn` (gitignored).
 
-## Future work (not in v1)
+## Future work (post-2.0)
 
-- ACF / post meta mapping (wpci-style) — highest priority for migration
+- ACF / post-meta bindings ✅ **DELIVERED in 2.0.0** (see Bindings section).
+- ACF repeater / flexible_content row-level binding rendering (V2)
+- Block-editor inline editing of `per_post` source (V1 is metabox-only)
+- REST API surface for bindings (V1 admin-only)
+- Per-binding locale picker (currently inherits site locale)
+- Visual diff in Test panel (current vs rendered)
 - Gutenberg block
 - REST API, WP-CLI, Import/Export
 - Template taxonomy

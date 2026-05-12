@@ -1,0 +1,201 @@
+/**
+ * Spintax Bindings — admin form behaviors.
+ *
+ * Phase 3:
+ *  - Field discovery autocomplete (#spintax-target-key)
+ *    - post_meta targets: distinct postmeta keys for the chosen post type
+ *    - acf_field targets: top-level ACF text/textarea/wysiwyg fields
+ *    - Selecting an ACF suggestion autofills #spintax-target-field-key
+ *  - Test panel: post_id input + button → ajax_test_binding → results
+ */
+( function ( $ ) {
+	'use strict';
+
+	if ( typeof window.spintaxBindings === 'undefined' ) {
+		return;
+	}
+
+	var cfg = window.spintaxBindings;
+
+	function postTypeValue() {
+		return ( $( '#spintax-post-type' ).val() || '' ).toString();
+	}
+
+	function kindValue() {
+		return ( $( 'input[name="target_kind"]:checked' ).val() || '' ).toString();
+	}
+
+	function ensureDatalist() {
+		var $list = $( '#spintax-target-key-suggestions' );
+		if ( $list.length === 0 ) {
+			$list = $( '<datalist id="spintax-target-key-suggestions"></datalist>' );
+			$( 'body' ).append( $list );
+			$( '#spintax-target-key' ).attr( 'list', 'spintax-target-key-suggestions' );
+		}
+		return $list;
+	}
+
+	function clearSuggestions() {
+		ensureDatalist().empty();
+	}
+
+	function setAcfFieldKey( hint ) {
+		var $hint = $( '#spintax-target-field-key' );
+		if ( $hint.length && hint ) {
+			$hint.val( hint );
+		}
+	}
+
+	function loadMetaKeys() {
+		var post_type = postTypeValue();
+		if ( ! post_type ) {
+			clearSuggestions();
+			return;
+		}
+		$.get(
+			cfg.ajaxUrl,
+			{
+				action: 'spintax_binding_meta_keys',
+				nonce: cfg.nonce,
+				post_type: post_type
+			}
+		).done( function ( resp ) {
+			if ( ! resp || ! resp.success ) {
+				return;
+			}
+			var $list = ensureDatalist().empty();
+			$.each( resp.data, function ( _, item ) {
+				$list.append(
+					$( '<option>' ).val( item.name ).text( item.label || item.name )
+				);
+			} );
+		} );
+	}
+
+	function loadAcfFields() {
+		var post_type = postTypeValue();
+		if ( ! post_type ) {
+			clearSuggestions();
+			return;
+		}
+		$.get(
+			cfg.ajaxUrl,
+			{
+				action: 'spintax_binding_acf_fields',
+				nonce: cfg.nonce,
+				post_type: post_type
+			}
+		).done( function ( resp ) {
+			if ( ! resp || ! resp.success ) {
+				return;
+			}
+			var $list = ensureDatalist().empty();
+			var keyByName = {};
+			$.each( resp.data, function ( _, item ) {
+				$list.append(
+					$( '<option>' )
+						.val( item.name )
+						.text( ( item.group ? item.group + ' — ' : '' ) + ( item.label || item.name ) )
+				);
+				if ( item.field_key ) {
+					keyByName[ item.name ] = item.field_key;
+				}
+			} );
+			// Wire input → field_key autofill on exact name match.
+			$( '#spintax-target-key' )
+				.off( 'input.spintaxAcfFieldKey change.spintaxAcfFieldKey' )
+				.on( 'input.spintaxAcfFieldKey change.spintaxAcfFieldKey', function () {
+					var name = ( $( this ).val() || '' ).toString();
+					if ( keyByName[ name ] ) {
+						setAcfFieldKey( keyByName[ name ] );
+					}
+				} );
+		} );
+	}
+
+	function refreshSuggestions() {
+		clearSuggestions();
+		var kind = kindValue();
+		if ( kind === 'acf_field' ) {
+			$( '#spintax-target-field-key' ).closest( 'tr' ).show();
+			loadAcfFields();
+		} else if ( kind === 'post_meta' ) {
+			// post_meta has no field_key concept; clear and hide that row.
+			setAcfFieldKey( '' );
+			$( '#spintax-target-field-key' ).closest( 'tr' ).hide();
+			loadMetaKeys();
+		}
+	}
+
+	function bindForm() {
+		$( '#spintax-post-type' ).on( 'change', refreshSuggestions );
+		$( 'input[name="target_kind"]' ).on( 'change', refreshSuggestions );
+
+		// Fire once on load to reflect the current state on edit screens.
+		refreshSuggestions();
+	}
+
+	function renderTestResult( data ) {
+		var $panel = $( '#spintax-binding-test-results' );
+		if ( $panel.length === 0 ) {
+			return;
+		}
+
+		var lines = [];
+		lines.push( '<p><strong>' + cfg.i18n.result + ':</strong> <code>' + data.result + '</code></p>' );
+		lines.push( '<p><strong>' + cfg.i18n.wouldWrite + ':</strong> ' + ( data.would_write ? cfg.i18n.yes : cfg.i18n.no ) + '</p>' );
+		if ( data.post_title ) {
+			lines.push( '<p><strong>' + cfg.i18n.post + ':</strong> ' + $( '<div>' ).text( data.post_title ).html() + ' (' + data.post_type + ' #' + data.post_id + ')</p>' );
+		}
+		lines.push( '<p><strong>' + cfg.i18n.rendered + ':</strong></p>' );
+		lines.push( '<pre style="background:#f6f7f7;padding:8px;border-radius:4px;max-height:200px;overflow:auto;">' + $( '<div>' ).text( data.rendered_preview || '' ).html() + '</pre>' );
+		lines.push( '<p><strong>' + cfg.i18n.currentTarget + ':</strong></p>' );
+		lines.push( '<pre style="background:#f6f7f7;padding:8px;border-radius:4px;max-height:200px;overflow:auto;">' + $( '<div>' ).text( data.current_target || '' ).html() + '</pre>' );
+
+		$panel.html( lines.join( '' ) );
+	}
+
+	function bindTestPanel() {
+		var $btn = $( '#spintax-binding-test-button' );
+		if ( $btn.length === 0 ) {
+			return;
+		}
+
+		$btn.on( 'click', function ( e ) {
+			e.preventDefault();
+			var $panel = $( '#spintax-binding-test-results' ).text( cfg.i18n.testing );
+			var postId = parseInt( $( '#spintax-binding-test-post-id' ).val() || '0', 10 );
+			if ( ! postId ) {
+				$panel.text( cfg.i18n.enterPostId );
+				return;
+			}
+			$.post(
+				cfg.ajaxUrl,
+				{
+					action: 'spintax_test_binding',
+					nonce: cfg.nonce,
+					binding_id: cfg.bindingId,
+					post_id: postId
+				}
+			)
+				.done( function ( resp ) {
+					if ( resp && resp.success && resp.data ) {
+						renderTestResult( resp.data );
+					} else {
+						$panel.text(
+							( resp && resp.data && resp.data.message ) ? resp.data.message : cfg.i18n.error
+						);
+					}
+				} )
+				.fail( function () {
+					$panel.text( cfg.i18n.error );
+				} );
+		} );
+	}
+
+	$( function () {
+		bindForm();
+		bindTestPanel();
+	} );
+
+}( window.jQuery ) );

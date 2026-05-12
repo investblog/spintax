@@ -166,13 +166,13 @@ Roughly 2× the weight of the conditionals primitive that shipped in 1.2.0. Boun
 
 ## ACF / Post-meta Bindings
 
-**Status:** draft spec under review — design promoted to `docs/spec-acf-bindings.md` 2026-05-12 for fresh-eyes review pass before implementation starts. Awaiting reviewer feedback + green-light to begin Phase 1.
+**Status:** spec revised post-review 2026-05-12, Phase-1-ready. Fresh-eyes review pass on 2026-05-12 flagged 3 high-severity + 3 medium-severity issues + 8 gaps; all resolved in `docs/spec-acf-bindings.md`. Awaiting green-light to begin Phase 1.
 
 One sentence: a `wpci`-style binding entity that maps `(post type × target field)` to either a Spintax CPT template or a per-post sibling source, with auto-seed-empty, preserve-manual-edits, bulk apply via Action Scheduler, AJAX field discovery for both ACF and post_meta, and a one-shot migration helper for `nested-spintax-for-acf` data.
 
 **Driver:** parity with predecessor plugin + the "highest priority migration item" note in `CLAUDE.md` future-work list.
 **Likely ship:** 2.0.0.
-**Estimated effort:** ~1500 LOC + ~700 LOC tests, 5 phases, ~3-4 weeks wall-clock.
+**Estimated effort:** ~1690 LOC + ~820 LOC tests, 5 phases, ~4-5 weeks wall-clock (post-review estimate; original was ~1500/700 / 3-4 weeks).
 **Architectural reference:** `W:\Projects\wpci\plugin\src\Admin\MappingsPage.php` — clone the form pattern, AJAX endpoints, test panel, card-style list.
 
 Full design + alternatives considered + risks + phased plan + reviewer prompts: see **[docs/spec-acf-bindings.md](spec-acf-bindings.md)**.
@@ -180,6 +180,6 @@ Full design + alternatives considered + risks + phased plan + reviewer prompts: 
 ### Trigger to start work
 
 Any one of:
-- Reviewer feedback addressed and user green-light to begin Phase 1.
+- User green-light to begin Phase 1 (review feedback already applied to spec).
 - A real user request from a migrating `nested-spintax-for-acf` user.
 - A clear ACF-using project at 301.st / casino-platform that needs this for production templating.

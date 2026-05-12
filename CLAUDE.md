@@ -8,8 +8,8 @@ Free WordPress plugin for spintax-based content generation. Target audience: con
 - **WP.org:** https://wordpress.org/plugins/spintax/
 - **Docs / playground:** https://spintax.net
 - **Author:** 301st (https://301.st)
-- **Current version:** 2.0.1
-- **Status:** **Live on WordPress.org as of 2026-05-12** (v2.0.0 SVN revision 3530118, with 2.0.1 hot-fix in flight). 2.0.0 shipped the ACF / post-meta bindings feature in five phases per `docs/spec-acf-bindings.md`. 2.0.1 is a same-day hot-fix addressing five reviewer-flagged bugs (2 P1, 3 P2): cross-kind dedup, ACF field_key validation, Test-panel scope parity, Bulk Apply Stale-badge gating, and form value preservation on validation errors. Deploy pipeline is automated: tag push → `wporg-deploy.yml` → 10up action → SVN trunk + tag + assets. Engine timeline: 1.0.0 (initial), 1.1.0 (per-element separators + sanitisation, uploaded to queue 2026-04-07), 1.4.0 (conditionals + abbreviation whitelist + `#set` empty-value fix, re-tag skipping 1.2/1.3 to keep queue unambiguous), 1.5.0 (`{plural <count>: form|...}` primitive + admin deep links to spintax.net + refreshed banner/icon/screenshots, 2026-05-10), 2.0.0 (ACF / post-meta bindings — see "Bindings" section below), 2.0.1 (hot-fix; same-day after 2.0.0).
+- **Current version:** 2.0.2
+- **Status:** **Live on WordPress.org as of 2026-05-12** (v2.0.0 SVN revision 3530118, v2.0.1 same-day hot-fix, v2.0.2 docs + UX patch). 2.0.0 shipped the ACF / post-meta bindings feature in five phases per `docs/spec-acf-bindings.md`. 2.0.1 is a same-day hot-fix addressing five reviewer-flagged bugs (2 P1, 3 P2): cross-kind dedup, ACF field_key validation, Test-panel scope parity, Bulk Apply Stale-badge gating, and form value preservation on validation errors. 2.0.2 documents Action Scheduler as an optional recommended dependency, expands the readme.txt FAQ for new 2.0 surfaces (AS, WP-CLI commands, variable scopes, cron scheduling, manual edit detection, stale templates, reserved keys), and adds an admin notice on the Bindings page when AS isn't loaded. Deploy pipeline is automated: tag push → `wporg-deploy.yml` → 10up action → SVN trunk + tag + assets. Engine timeline: 1.0.0 (initial), 1.1.0 (per-element separators + sanitisation, uploaded to queue 2026-04-07), 1.4.0 (conditionals + abbreviation whitelist + `#set` empty-value fix, re-tag skipping 1.2/1.3 to keep queue unambiguous), 1.5.0 (`{plural <count>: form|...}` primitive + admin deep links to spintax.net + refreshed banner/icon/screenshots, 2026-05-10), 2.0.0 (ACF / post-meta bindings — see "Bindings" section below), 2.0.1 (hot-fix; same-day after 2.0.0), 2.0.2 (docs + Action Scheduler admin notice).
 
 ## Reference sources
 
@@ -102,6 +102,11 @@ ACF / post-meta bindings let editors configure once-per-post-type "render this t
 - Bulk Apply: Action Scheduler when available, `WP_Error 'no_action_scheduler'` otherwise → admin notice points at `wp spintax bindings apply --binding=<id> --all`.
 - WP-CLI `export` / `import` for staging→prod sync (JSON, deduped by target triple, `--dry-run` and `--overwrite` supported).
 - Migration helper at Tools → Spintax Migration imports from predecessor `nested-spintax-for-acf` non-destructively (original data never deleted).
+
+**Action Scheduler dependency (documented as optional in readme.txt 2.0.2):** Recommended for binding-heavy sites, NOT required. Two features degrade without it:
+1. Admin "Bulk Apply" button — `BulkApply::enqueue` returns `WP_Error 'no_action_scheduler'` instead of dispatching async chunks. The notice points editors at `wp spintax bindings apply --binding=<id> --all` instead.
+2. Per-binding cron schedules — `CronTrigger::fire()` falls back to `BulkApply::run_synchronously()`, running the entire walk on the cron tick. Risk of PHP-FPM timeouts on large catalogues.
+Detection via `BulkApply::action_scheduler_available()` (checks `function_exists('as_enqueue_async_action')`). Bindings admin page renders an info notice via `BindingsPage::render_action_scheduler_notice()` when AS is missing — links to `plugin-install.php?s=action+scheduler` and the wp.org listing. Many WP shops ship AS bundled with WooCommerce / Jetpack / etc., so check before adding it as a separate install.
 
 ## Spintax syntax
 

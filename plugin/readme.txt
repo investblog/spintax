@@ -291,7 +291,7 @@ Templates and their rendered output are stored entirely within your WordPress da
 UX polish: Spintax Settings is now also reachable from the Spintax submenu (next to Bindings), the Default Cache TTL field offers human presets instead of a bare seconds input, and the Purge Cache button is inline with the TTL row. No functional changes to the engine or bindings.
 
 = 2.0.3 =
-Adds runtime ACF target validation (closes a wrong-field-write path when ACF is reactivated or bindings are imported via WP-CLI), cumulative-failure tracking across Bulk Apply chunks (prevents the Stale badge clearing on multi-chunk walks that partially failed), and a per-binding walk lock that refuses concurrent Bulk Apply runs. Strongly recommended.
+Adds runtime ACF target validation (closes a wrong-field-write path under ACF reactivation / WP-CLI imports), cumulative-failure tracking across Bulk Apply chunks (Stale badge no longer clears on partial failures), and a per-binding walk lock that refuses concurrent walks. Strongly recommended.
 
 = 2.0.2 =
 Documentation refresh for the 2.0 binding surface (Action Scheduler as a recommended optional dependency, full WP-CLI command set, variable scopes, scheduling, manual edits) plus an admin notice on the Bindings page when Action Scheduler isn't loaded. No functional changes to the engine.

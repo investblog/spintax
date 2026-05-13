@@ -70,3 +70,20 @@
 	background: #f0f0f1;
 	word-break: break-all;
 }
+
+/* --- TTL field (preset select + custom number) --- */
+.spintax-ttl-field {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+
+.spintax-ttl-field .spintax-ttl-custom {
+	width: 8em;
+}
+
+.spintax-ttl-field .spintax-ttl-custom-unit {
+	color: #646970;
+	font-size: 13px;
+}

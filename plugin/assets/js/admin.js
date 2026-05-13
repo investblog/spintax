@@ -118,6 +118,18 @@
     setTimeout(function () { $tip.fadeOut(300, function () { $tip.remove(); }); }, 1000);
   }
 
+  // --- TTL field: toggle custom number input when "Custom…" is selected ---
+  $(document).on("change", ".spintax-ttl-preset", function () {
+    var $select = $(this);
+    var $wrap = $select.closest(".spintax-ttl-field");
+    var isCustom = $select.val() === "custom";
+    $wrap.find(".spintax-ttl-custom").toggle(isCustom);
+    $wrap.find(".spintax-ttl-custom-unit").toggle(isCustom);
+    if (isCustom) {
+      $wrap.find(".spintax-ttl-custom").trigger("focus");
+    }
+  });
+
   // --- Global variables textarea: tab key inserts tab ---
   $(document).on("keydown", "#spintax-global-variables", function (e) {
     if (e.key === "Tab") {

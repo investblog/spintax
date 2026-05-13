@@ -11,8 +11,10 @@ defined( 'ABSPATH' ) || exit;
 
 use Spintax\Core\Cache\CacheManager;
 use Spintax\Core\Settings\SettingsRepository;
+use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Support\Capabilities;
 use Spintax\Support\Links;
+use Spintax\Support\TtlField;
 use Spintax\Support\Validators;
 
 /**
@@ -46,7 +48,10 @@ class SettingsPage {
 	}
 
 	/**
-	 * Add settings page under Settings menu.
+	 * Add settings page under Settings menu AND under the Spintax CPT
+	 * submenu (after Bindings). Both entries call the same render callback;
+	 * the CPT-submenu link makes Settings discoverable from inside the
+	 * plugin's own menu without forcing users to hunt under WP Settings.
 	 */
 	public function register_menu(): void {
 		$hook = add_options_page(
@@ -57,9 +62,35 @@ class SettingsPage {
 			array( $this, 'render' )
 		);
 
+		$cpt_hook = add_submenu_page(
+			'edit.php?post_type=' . TemplatePostType::POST_TYPE,
+			__( 'Spintax Settings', 'spintax' ),
+			__( 'Settings', 'spintax' ),
+			'manage_options',
+			'spintax-settings',
+			array( $this, 'render' ),
+			20
+		);
+
 		if ( $hook ) {
 			add_action( 'load-' . $hook, array( $this, 'handle_actions' ) );
 		}
+		if ( $cpt_hook ) {
+			add_action( 'load-' . $cpt_hook, array( $this, 'handle_actions' ) );
+		}
+	}
+
+	/**
+	 * Resolve the URL of whichever menu entry the user is on right now —
+	 * Settings → Spintax or Spintax → Settings — so PRG redirects round
+	 * back to the same page.
+	 */
+	private function current_page_url(): string {
+		global $pagenow;
+		if ( 'edit.php' === $pagenow ) {
+			return admin_url( 'edit.php?post_type=' . TemplatePostType::POST_TYPE . '&page=spintax-settings' );
+		}
+		return admin_url( 'options-general.php?page=spintax-settings' );
 	}
 
 	/**
@@ -73,7 +104,7 @@ class SettingsPage {
 			return;
 		}
 
-		$redirect_url = admin_url( 'options-general.php?page=spintax-settings' );
+		$redirect_url = $this->current_page_url();
 
 		// Save settings.
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified by check_admin_referer() below.
@@ -116,11 +147,21 @@ class SettingsPage {
 							<label for="spintax-default-ttl"><?php esc_html_e( 'Default Cache TTL', 'spintax' ); ?></label>
 						</th>
 						<td>
-							<input type="number" id="spintax-default-ttl" name="default_ttl"
-								value="<?php echo esc_attr( $settings['default_ttl'] ); ?>"
-								min="0" step="1" class="regular-text">
-							<p class="description">
-								<?php esc_html_e( 'Seconds. 0 = no caching. Templates can override this value. When cache is enabled, visitors see the same generated variant for a given runtime context until expiry or regeneration.', 'spintax' ); ?>
+							<?php
+							TtlField::render(
+								array(
+									'name'        => 'default_ttl',
+									'id'          => 'spintax-default-ttl',
+									'value'       => (int) $settings['default_ttl'],
+									'allow_empty' => false,
+									'description' => __( 'How long rendered output is cached. Templates can override this. Use "Custom" if you need an exact number of seconds.', 'spintax' ),
+								)
+							);
+							?>
+							<p class="submit" style="margin-top:8px;padding:0;">
+								<button type="submit" name="spintax_purge_cache" class="button">
+									<?php esc_html_e( 'Purge all template caches now', 'spintax' ); ?>
+								</button>
 							</p>
 						</td>
 					</tr>
@@ -176,14 +217,6 @@ class SettingsPage {
 
 			<hr>
 
-			<h2><?php esc_html_e( 'Cache', 'spintax' ); ?></h2>
-			<form method="post">
-				<?php wp_nonce_field( 'spintax_settings_save' ); ?>
-				<?php submit_button( __( 'Purge All Template Caches', 'spintax' ), 'secondary', 'spintax_purge_cache' ); ?>
-			</form>
-
-			<hr>
-
 			<h2><?php esc_html_e( 'Resources', 'spintax' ); ?></h2>
 			<p class="description">
 				<?php esc_html_e( 'Documentation and tools on spintax.net. Links open in a new tab.', 'spintax' ); ?>
@@ -235,8 +268,16 @@ class SettingsPage {
 	 */
 	private function save_settings(): void {
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- nonce verified in handle_actions().
+		$ttl_preset   = isset( $_POST['default_ttl_preset'] )
+			? sanitize_text_field( wp_unslash( (string) $_POST['default_ttl_preset'] ) )
+			: '';
+		$ttl_custom   = isset( $_POST['default_ttl_custom'] )
+			? sanitize_text_field( wp_unslash( (string) $_POST['default_ttl_custom'] ) )
+			: '';
+		$resolved_ttl = TtlField::sanitize( $ttl_preset, $ttl_custom, false );
+
 		$patch = array(
-			'default_ttl'        => isset( $_POST['default_ttl'] ) ? (int) $_POST['default_ttl'] : 3600,
+			'default_ttl'        => null === $resolved_ttl ? 3600 : $resolved_ttl,
 			'editors_can_manage' => ! empty( $_POST['editors_can_manage'] ),
 			'debug'              => ! empty( $_POST['debug'] ),
 		);

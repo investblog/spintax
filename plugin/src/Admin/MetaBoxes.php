@@ -18,8 +18,9 @@ use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Core\Render\Renderer;
 use Spintax\Core\Settings\SettingsRepository;
 use Spintax\Support\Defaults;
-use Spintax\Support\Validators;
 use Spintax\Support\OptionKeys;
+use Spintax\Support\TtlField;
+use Spintax\Support\Validators;
 
 /**
  * Registers and handles three meta boxes:
@@ -88,14 +89,19 @@ class MetaBoxes {
 		}
 		?>
 		<p>
-			<label for="spintax-cache-ttl"><?php esc_html_e( 'Cache TTL (seconds)', 'spintax' ); ?></label><br>
-			<input type="number" id="spintax-cache-ttl" name="spintax_cache_ttl"
-				value="<?php echo esc_attr( $ttl ); ?>"
-				min="0" step="1" class="widefat"
-				placeholder="<?php esc_attr_e( 'Use global default', 'spintax' ); ?>">
-			<span class="description">
-				<?php esc_html_e( '0 = no caching. Empty = global default. Cached output keeps one generated variant per runtime context until expiry or regeneration.', 'spintax' ); ?>
-			</span>
+			<label for="spintax-cache-ttl"><?php esc_html_e( 'Cache TTL', 'spintax' ); ?></label><br>
+			<?php
+			$ttl_value = ( '' === $ttl || null === $ttl ) ? null : (int) $ttl;
+			TtlField::render(
+				array(
+					'name'        => 'spintax_cache_ttl',
+					'id'          => 'spintax-cache-ttl',
+					'value'       => $ttl_value,
+					'allow_empty' => true,
+					'description' => __( 'Override the global default for this template. "Use global default" leaves it inherited.', 'spintax' ),
+				)
+			);
+			?>
 		</p>
 
 		<p>
@@ -181,13 +187,17 @@ class MetaBoxes {
 			return;
 		}
 
-		// Cache TTL.
-		if ( isset( $_POST['spintax_cache_ttl'] ) ) {
-			$ttl = sanitize_text_field( wp_unslash( $_POST['spintax_cache_ttl'] ) );
-			if ( '' === $ttl ) {
+		// Cache TTL — preset select + custom number (see TtlField).
+		if ( isset( $_POST['spintax_cache_ttl_preset'] ) ) {
+			$ttl_preset = sanitize_text_field( wp_unslash( (string) $_POST['spintax_cache_ttl_preset'] ) );
+			$ttl_custom = isset( $_POST['spintax_cache_ttl_custom'] )
+				? sanitize_text_field( wp_unslash( (string) $_POST['spintax_cache_ttl_custom'] ) )
+				: '';
+			$resolved   = TtlField::sanitize( $ttl_preset, $ttl_custom, true );
+			if ( null === $resolved ) {
 				delete_post_meta( $post_id, OptionKeys::META_CACHE_TTL );
 			} else {
-				update_post_meta( $post_id, OptionKeys::META_CACHE_TTL, max( 0, (int) $ttl ) );
+				update_post_meta( $post_id, OptionKeys::META_CACHE_TTL, $resolved );
 			}
 		}
 

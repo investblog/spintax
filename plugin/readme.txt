@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 6.9
-Stable tag: 2.0.3
+Stable tag: 2.0.4
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -200,6 +200,12 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 2.0.4 =
+* UX: Spintax Settings is now also reachable from the Spintax submenu (under Bindings), not only from WP Settings → Spintax. The existing entry under Settings stays for convention; the new one matches the way editors discover the rest of the plugin.
+* UX: Default Cache TTL on the Settings page and the per-template Cache TTL meta box no longer use a bare number input with a 1-second step. They now offer presets — No caching, 1 hour, 6 hours, 1 day, 1 week, 1 month — plus a "Custom…" option for any exact-seconds value. Per-template field also keeps the "Use global default" option.
+* UX: The "Purge All Template Caches" button moved from a standalone section at the bottom of the Settings page into the Default Cache TTL row, so cache controls live together.
+* Internal: 23 new PHPUnit cases covering the TTL preset/custom resolver, the Settings + meta-box save paths, and the dual-menu registration. 464 tests total (was 441).
+
 = 2.0.3 =
 * Fix: ACF target validation now runs on every apply, not just at form save. `BindingApplier::plan()` rejects bindings whose stored `target.field_key` no longer resolves to a field with the expected name (deleted, renamed, or re-assigned in ACF). Two new return codes: `skip_acf_not_loaded` (ACF deactivated since the binding was saved) and `skip_invalid_acf_field` (key + name disagreement). Closes a path where CLI-imported or imported-while-ACF-inactive bindings could write through `update_field()` to the wrong field.
 * Fix: `BindingApplier::read_target()` and `::write_target()` no longer fall back to plain `update_post_meta()` / `get_post_meta()` for `kind = acf_field` when ACF isn't loaded. The applier short-circuits at the runtime guard above, so the low-level methods are the sole writer for verified targets. Pre-2.0.3 the silent fallback could write the rendered value to a post-meta row ACF would never see again.
@@ -280,6 +286,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 2.0.4 =
+UX polish: Spintax Settings is now also reachable from the Spintax submenu (next to Bindings), the Default Cache TTL field offers human presets instead of a bare seconds input, and the Purge Cache button is inline with the TTL row. No functional changes to the engine or bindings.
 
 = 2.0.3 =
 Adds runtime ACF target validation (closes a wrong-field-write path when ACF is reactivated or bindings are imported via WP-CLI), cumulative-failure tracking across Bulk Apply chunks (prevents the Stale badge clearing on multi-chunk walks that partially failed), and a per-binding walk lock that refuses concurrent Bulk Apply runs. Strongly recommended.

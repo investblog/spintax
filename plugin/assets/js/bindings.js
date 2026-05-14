@@ -200,12 +200,36 @@
 		// types an exact field name without clicking a list option
 		// still submits a non-stale `target_key`. The list-click path
 		// (comboSelect) overrides this with the picked option's name.
+		//
+		// We also clear the sibling `target_field_key` input whenever
+		// the typed name doesn't match a known cached field. Otherwise
+		// editing the name without picking a new option would leave
+		// the previous selection's `field_key` attached, hitting the
+		// Tier 5 "key points to a different field" validation path
+		// instead of the cleaner "missing key" error.
 		$( document ).on( 'input', '#spintax-acf-combobox-input', function () {
 			var typed = ( $( this ).val() || '' ).toString();
 			renderAcfOptions( typed );
 			// Strip the "(field_xxx)" suffix in case the user types over
 			// a previous selection's display string.
-			$( '#spintax-target-key' ).val( typed.replace( /\s*\(field_[a-z0-9]+\)\s*$/i, '' ) );
+			var nameOnly = typed.replace( /\s*\(field_[a-z0-9]+\)\s*$/i, '' );
+			$( '#spintax-target-key' ).val( nameOnly );
+			// If the typed name still matches a known field exactly,
+			// keep the existing field_key. Otherwise clear it so the
+			// server falls back to the missing-key validation path.
+			var matched = false;
+			if ( nameOnly ) {
+				$.each( acfFieldsCache, function ( _, item ) {
+					if ( item.name === nameOnly ) {
+						setAcfFieldKey( item.field_key || '' );
+						matched = true;
+						return false;
+					}
+				} );
+			}
+			if ( ! matched ) {
+				setAcfFieldKey( '' );
+			}
 		} );
 
 		// Re-open on focus (so a user who clicks back into the field

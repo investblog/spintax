@@ -602,6 +602,63 @@ class BindingsPageTest extends \WP_UnitTestCase {
 		$this->assertStringContainsString( 'This binding will never run', $html );
 	}
 
+	public function test_trigger_warning_copy_matches_server_rejection(): void {
+		// Reviewer P2: the inline warning must not promise that the save
+		// will succeed (handle_save() rejects the no-triggers case). The
+		// copy needs to align with the server-side rejection.
+		update_option(
+			OptionKeys::BINDINGS,
+			array(
+				'bind_no0run' => array(
+					'id'        => 'bind_no0run',
+					'post_type' => 'post',
+					'status'    => 'any',
+					'target'    => array( 'kind' => 'post_meta', 'key' => 'k', 'field_key' => '' ),
+					'source'    => array( 'mode' => 'template', 'template_id' => 0 ),
+					'triggers'  => array( 'save_post' => false, 'cron' => 'disabled' ),
+					'variables' => array( 'expose_post_context' => false, 'expose_acf_siblings' => false, 'overrides' => '' ),
+					'behavior'  => array(
+						'auto_seed_empty'       => true,
+						'regenerate_on_save'    => false,
+						'preserve_manual_edits' => true,
+						'clear_on_empty'        => false,
+						'chunk_size'            => 20,
+					),
+				),
+			),
+			false
+		);
+
+		$_GET = array( 'action' => 'edit', 'binding_id' => 'bind_no0run' );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Save will be rejected', $html );
+		// Old contradictory copy is gone.
+		$this->assertStringNotContainsString( 'saves will still create the binding', $html );
+	}
+
+	public function test_action_scheduler_notice_mentions_run_now_alongside_cli(): void {
+		if ( BulkApply::action_scheduler_available() ) {
+			$this->markTestSkipped( 'AS notice only renders when Action Scheduler is missing.' );
+		}
+
+		$_GET = array();
+		$_SERVER['REQUEST_METHOD'] = 'GET';
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		// Reviewer P2: the notice was steering users at the CLI fallback
+		// while 2.1.0 exposes a `Run now` button in the admin UI. Notice
+		// copy must now surface both paths.
+		$this->assertStringContainsString( 'Run now', $html );
+		$this->assertStringContainsString( 'wp spintax bindings apply', $html );
+	}
+
 	public function test_trigger_warning_hidden_when_save_post_on(): void {
 		$_GET = array( 'action' => 'new' );
 

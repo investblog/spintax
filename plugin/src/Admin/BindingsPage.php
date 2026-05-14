@@ -423,7 +423,7 @@ class BindingsPage {
 				<strong><?php esc_html_e( 'Action Scheduler is not installed.', 'spintax' ); ?></strong>
 				<?php
 				esc_html_e(
-					'Spintax Bindings work without it, but the admin "Bulk Apply" button needs Action Scheduler to dispatch chunked async jobs. Without AS, use the WP-CLI fallback "wp spintax bindings apply --binding=<id> --all" instead. Per-binding cron schedules still fire, but the walk runs synchronously on the cron tick — risk of PHP timeouts on large catalogues.',
+					'Spintax Bindings work without it, but the admin "Bulk Apply" button needs Action Scheduler to dispatch chunked async jobs. Use the "Run now" button on each binding (synchronous, blocks until the walk finishes) or the WP-CLI fallback "wp spintax bindings apply --binding=<id> --all" instead. Per-binding cron schedules still fire, but the walk runs synchronously on the cron tick — risk of PHP timeouts on large catalogues.',
 					'spintax'
 				);
 				?>
@@ -1167,7 +1167,7 @@ class BindingsPage {
 			>
 				<p>
 					<strong><?php esc_html_e( 'This binding will never run.', 'spintax' ); ?></strong>
-					<?php esc_html_e( 'Enable "Fire on post save" or pick a cron schedule below. Save with no triggers and saves will still create the binding, but no posts get re-rendered until you add one.', 'spintax' ); ?>
+					<?php esc_html_e( 'Save will be rejected with the same message until you enable "Fire on post save" or pick a cron schedule below.', 'spintax' ); ?>
 				</p>
 			</div>
 			<table class="form-table" role="presentation">

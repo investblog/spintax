@@ -111,6 +111,47 @@ class SettingsPageTest extends \WP_UnitTestCase {
 		$this->assertSame( 0, (int) $saved['default_ttl'] );
 	}
 
+	public function test_logs_max_field_persists_via_save_settings(): void {
+		// 2.1.1: readme.txt + README.md document "Settings → Spintax → Max
+		// log entries" as a configurable control. Earlier the option key
+		// existed but no form field exposed it. Verify the round-trip:
+		// POST value lands as an int on the settings option, after the
+		// validator's [10, 5000] clamp.
+		$_POST['default_ttl_preset'] = '3600';
+		$_POST['logs_max']           = '750';
+
+		$this->call_save_settings();
+
+		$saved = ( new SettingsRepository() )->get();
+		$this->assertSame( 750, (int) $saved['logs_max'] );
+	}
+
+	public function test_logs_max_field_clamps_out_of_range_values(): void {
+		// Validator clamps to [10, 5000] — verify both ends.
+		$_POST['default_ttl_preset'] = '3600';
+		$_POST['logs_max']           = '999999';
+		$this->call_save_settings();
+		$this->assertSame( 5000, (int) ( new SettingsRepository() )->get()['logs_max'] );
+
+		$_POST['logs_max'] = '1';
+		$this->call_save_settings();
+		$this->assertSame( 10, (int) ( new SettingsRepository() )->get()['logs_max'] );
+	}
+
+	public function test_logs_max_field_rendered_in_form(): void {
+		// 2.1.1: the form must actually expose the field so the docs
+		// claim ("Settings → Spintax → Max log entries") isn't a lie.
+		set_current_screen( 'settings_page_spintax-settings' );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'name="logs_max"', $html );
+		$this->assertStringContainsString( 'id="spintax-logs-max"', $html );
+		$this->assertStringContainsString( 'Max log entries', $html );
+	}
+
 	public function test_purge_cache_button_lives_inside_main_form(): void {
 		// Snapshot the rendered settings page and assert that the
 		// purge-cache submit button is INSIDE the spintax_settings_save

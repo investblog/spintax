@@ -185,6 +185,26 @@ class SettingsPage {
 							</label>
 						</td>
 					</tr>
+					<tr>
+						<th scope="row">
+							<label for="spintax-logs-max"><?php esc_html_e( 'Max log entries', 'spintax' ); ?></label>
+						</th>
+						<td>
+							<input
+								type="number"
+								id="spintax-logs-max"
+								name="logs_max"
+								value="<?php echo esc_attr( (string) (int) $settings['logs_max'] ); ?>"
+								min="10"
+								max="5000"
+								step="10"
+								class="small-text"
+							/>
+							<p class="description">
+								<?php esc_html_e( 'Ring-buffer size for Spintax → Logs. Older entries roll off once the cap is reached. Range: 10–5000.', 'spintax' ); ?>
+							</p>
+						</td>
+					</tr>
 				</table>
 
 				<h2><?php esc_html_e( 'Global Variables', 'spintax' ); ?></h2>
@@ -276,10 +296,15 @@ class SettingsPage {
 			: '';
 		$resolved_ttl = TtlField::sanitize( $ttl_preset, $ttl_custom, false );
 
+		$logs_max_raw = isset( $_POST['logs_max'] )
+			? (int) sanitize_text_field( wp_unslash( (string) $_POST['logs_max'] ) )
+			: 0;
+
 		$patch = array(
 			'default_ttl'        => null === $resolved_ttl ? 3600 : $resolved_ttl,
 			'editors_can_manage' => ! empty( $_POST['editors_can_manage'] ),
 			'debug'              => ! empty( $_POST['debug'] ),
+			'logs_max'           => $logs_max_raw,
 		);
 		// phpcs:enable WordPress.Security.NonceVerification.Missing
 

@@ -105,16 +105,16 @@ When Action Scheduler isn't loaded, the Bulk Apply button is disabled with a too
 
 = Where do I see Bulk Apply or Run now progress? =
 
-**Spintax → Logs** in the admin sidebar. Both paths log a completion entry per walk (e.g. `Bulk Apply run_synchronously completed for binding <id> — wrote=N skipped=M cleared=K`), plus warnings for partial failures. The Logs page supports level filtering, substring search, and pagination; entries are kept in a ring buffer sized by Settings → Spintax → Max log entries.
+**Spintax → Logs** in the admin sidebar. Both paths log a completion entry per walk (e.g. `Bulk Apply run_synchronously completed for binding <id> — wrote=N skipped=M cleared=K.`), plus warnings for partial failures. The Logs page supports level filtering, substring search, and pagination; entries are kept in a ring buffer sized by Settings → Spintax → Max log entries.
 
 = What WP-CLI commands does the plugin add? =
 
 Five subcommands under `wp spintax bindings`:
 
 * `wp spintax bindings list [--format=table|json|csv]` — list all bindings on the site.
-* `wp spintax bindings apply --binding=<id> [--all|--post=<id>] [--dry-run]` — run a binding against all matching posts (or a single post), with optional dry-run. This is the no-Action-Scheduler fallback path for Bulk Apply.
-* `wp spintax bindings test --binding=<id> --post=<id>` — dry-run a binding against one post and report what `BindingApplier::plan()` would do (`would_write`, current value, rendered preview, skip reason). Same logic as the admin Test panel.
-* `wp spintax bindings export [--format=json] [> bindings.json]` — emit the full bindings store as JSON, deduped by `(post_type, target.key)`.
+* `wp spintax bindings apply --binding=<id> [--all|--post=<id>]` — run a binding against every matching post (`--all`) or a single post (`--post=<id>`). This is the synchronous fallback path for Bulk Apply.
+* `wp spintax bindings test --binding=<id> --post=<id>` — dry-run a binding against one post and report what would be written (target value, rendered preview, skip reason). Same logic as the admin Test panel; use this instead of `apply` when you want a preview.
+* `wp spintax bindings export {--binding=<id>|--all} [> bindings.json]` — emit one binding or the full store as JSON to stdout, deduped by `(post_type, target.key)`.
 * `wp spintax bindings import --file=bindings.json [--overwrite] [--dry-run]` — import bindings from JSON. `--overwrite` updates matches on the same target triple; without it, duplicates are skipped. Use `--dry-run` to preview the plan without writing.
 
 The export/import pair is the recommended staging→production sync path; bindings are not exposed over REST in 2.0.
@@ -221,8 +221,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * UX (Bindings form): the ACF field picker no longer collapses to an empty list after you select a field and refocus the input. The display string the picker writes (`name (field_key)`) is now stripped before the haystack filter, so "browse without retyping" works as documented.
 * UX (Bindings form): defensive — the ACF field-key row is hidden unless `kind=acf_field` exactly (previously hid only when `kind=post_meta`, leaving an empty-kind edge case where the row could render without `hidden`).
 * UX (Bindings list): Run-now capability failure now redirects back to the binding's edit form, consistent with the rest of the binding-edit error paths, instead of bouncing to the silent list view.
+* UX (Settings): the **Max log entries** ring-buffer size (clamped 10–5000, default 200) is now exposed as a form field on Settings → Spintax. The option key was already wired up internally; this release adds the missing control.
 * Internal: tightened `test_run_now_handler_rejects_non_admin` — replaces a conditional soft assertion with two unconditional invariants (walk-lock never acquired, no "Wrote N" success flash).
-* Internal: 517 PHPUnit tests, 944 assertions (was 514 / 938 in 2.1.0).
+* Internal: 520 PHPUnit tests, 950 assertions (was 514 / 938 in 2.1.0).
 
 = 2.1.0 =
 * UX (Settings): Spintax Settings is now also reachable from the Spintax submenu (under Bindings), not only from WP Settings → Spintax — both menu paths resolve to the same page.

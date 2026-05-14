@@ -33,6 +33,9 @@ class AdminMenu {
 		$bindings = new BindingsPage();
 		$bindings->init();
 
+		$logs = new LogsPage();
+		$logs->init();
+
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 	}
 

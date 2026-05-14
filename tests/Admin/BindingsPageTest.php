@@ -4,9 +4,25 @@ namespace Spintax\Tests\Admin;
 
 use Spintax\Admin\BindingsPage;
 use Spintax\Bindings\BindingsRepo;
+use Spintax\Bindings\BulkApply;
 use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Support\Capabilities;
 use Spintax\Support\OptionKeys;
+
+/**
+ * Tiny exception used by tests that need to short-circuit the trait's
+ * `wp_safe_redirect() + exit;` sequence without killing the PHPUnit
+ * worker. Wired up via the `wp_redirect` filter in individual cases.
+ */
+class BindingsPageRedirect extends \Exception {
+
+	public string $redirect_url;
+
+	public function __construct( string $url ) {
+		parent::__construct( $url );
+		$this->redirect_url = $url;
+	}
+}
 
 /**
  * Exercises BindingsPage::handle_save() via reflection so we can assert
@@ -188,6 +204,77 @@ class BindingsPageTest extends \WP_UnitTestCase {
 
 		$this->assertSame( 'error', $result['type'], 'cross-kind duplicate must be rejected (Tier 4 revised)' );
 		$this->assertStringContainsString( 'Another binding already targets this field', $result['message'] );
+	}
+
+	public function test_bulk_apply_notice_links_to_logs_page(): void {
+		$repo   = new BindingsRepo();
+		$tpl_id = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Tpl',
+				'post_content' => 'X',
+			)
+		);
+		$binding = $repo->create(
+			array(
+				'post_type' => 'post',
+				'target'    => array(
+					'kind'      => 'post_meta',
+					'key'       => 'my_field',
+					'field_key' => '',
+				),
+				'source'    => array( 'mode' => 'template', 'template_id' => $tpl_id ),
+				'triggers'  => array( 'save_post' => true ),
+			)
+		);
+
+		// Stub BulkApply so the bulk-apply branch in handle_actions
+		// short-circuits to success WITHOUT touching Action Scheduler
+		// (the tests-cli container doesn't ship AS).
+		$stub_bulk = new class( $repo ) extends BulkApply {
+			public function enqueue( string $binding_id ) {
+				return true;
+			}
+		};
+		$page_under_test = new BindingsPage( $repo, $stub_bulk );
+
+		$nonce = wp_create_nonce( 'spintax_bulk_apply_' . $binding['id'] );
+		$_POST = array(
+			'binding_id'         => $binding['id'],
+			'spintax_bulk_apply' => '1',
+			'_wpnonce'           => $nonce,
+		);
+		// `check_admin_referer()` reads `$_REQUEST['_wpnonce']`, not
+		// `$_POST['_wpnonce']`; PHP's `request_order` doesn't always
+		// auto-populate $_REQUEST in the CLI test runner.
+		$_REQUEST['_wpnonce'] = $nonce;
+
+		// Intercept the wp_safe_redirect → wp_redirect filter so the
+		// trait's `exit;` after wp_safe_redirect doesn't kill PHPUnit.
+		$redirect_filter = static function ( $location ) {
+			throw new BindingsPageRedirect( (string) $location );
+		};
+		add_filter( 'wp_redirect', $redirect_filter, 1, 1 );
+
+		try {
+			$page_under_test->handle_actions();
+			$this->fail( 'handle_actions() must trigger a redirect for Bulk Apply.' );
+		} catch ( BindingsPageRedirect $e ) {
+			// Expected.
+		} finally {
+			remove_filter( 'wp_redirect', $redirect_filter, 1 );
+		}
+
+		$flash = get_transient( 'spintax_admin_notice_' . $this->admin_id );
+		$this->assertIsArray( $flash );
+		$this->assertSame( 'success', $flash['type'] );
+		$this->assertIsArray( $flash['payload'] );
+		$this->assertSame( 'Bulk Apply enqueued.', $flash['payload']['text'] );
+		$this->assertStringContainsString( 'page=spintax-logs', (string) $flash['payload']['action_url'] );
+		$this->assertSame( 'View progress in Logs →', $flash['payload']['action_label'] );
+
+		delete_transient( 'spintax_admin_notice_' . $this->admin_id );
 	}
 
 	public function test_flashed_values_round_trip_back_into_form(): void {

@@ -44,10 +44,35 @@ class BindingsPage {
 	private BindingsRepo $repo;
 
 	/**
-	 * Constructor.
+	 * Lazy-initialised Bulk Apply runner. Injected via the constructor
+	 * for tests so the bulk-apply notice path can be exercised without
+	 * Action Scheduler installed in wp-env's tests container.
+	 *
+	 * @var BulkApply|null
 	 */
-	public function __construct() {
-		$this->repo = new BindingsRepo();
+	private ?BulkApply $bulk;
+
+	/**
+	 * Constructor.
+	 *
+	 * @param BindingsRepo|null $repo Optional bindings repository (DI for tests).
+	 * @param BulkApply|null    $bulk Optional Bulk Apply runner (DI for tests).
+	 */
+	public function __construct( ?BindingsRepo $repo = null, ?BulkApply $bulk = null ) {
+		$this->repo = $repo ?? new BindingsRepo();
+		$this->bulk = $bulk;
+	}
+
+	/**
+	 * Resolve the Bulk Apply runner — uses the injected instance when
+	 * tests provided one, else lazy-creates the production runner. Always
+	 * returns the same instance within a request.
+	 */
+	private function bulk_apply(): BulkApply {
+		if ( null === $this->bulk ) {
+			$this->bulk = new BulkApply( $this->repo );
+		}
+		return $this->bulk;
 	}
 
 	/**
@@ -186,13 +211,17 @@ class BindingsPage {
 			}
 			check_admin_referer( 'spintax_bulk_apply_' . $id );
 
-			$result = ( new BulkApply( $this->repo ) )->enqueue( $id );
+			$result = $this->bulk_apply()->enqueue( $id );
 			if ( is_wp_error( $result ) ) {
 				$this->redirect_with_notice( $redirect_url, $result->get_error_message(), 'error' );
 			}
 			$this->redirect_with_notice(
 				$redirect_url,
-				__( 'Bulk Apply enqueued. Check Logs for progress.', 'spintax' )
+				array(
+					'text'         => __( 'Bulk Apply enqueued.', 'spintax' ),
+					'action_url'   => LogsPage::page_url(),
+					'action_label' => __( 'View progress in Logs →', 'spintax' ),
+				)
 			);
 		}
 	}

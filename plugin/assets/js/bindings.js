@@ -195,9 +195,17 @@
 	}
 
 	function bindAcfCombobox() {
-		// Filter on keystroke + open the list.
+		// Filter on keystroke + open the list. Mirror the typed value
+		// into the canonical hidden `target_key` input so a user who
+		// types an exact field name without clicking a list option
+		// still submits a non-stale `target_key`. The list-click path
+		// (comboSelect) overrides this with the picked option's name.
 		$( document ).on( 'input', '#spintax-acf-combobox-input', function () {
-			renderAcfOptions( $( this ).val() );
+			var typed = ( $( this ).val() || '' ).toString();
+			renderAcfOptions( typed );
+			// Strip the "(field_xxx)" suffix in case the user types over
+			// a previous selection's display string.
+			$( '#spintax-target-key' ).val( typed.replace( /\s*\(field_[a-z0-9]+\)\s*$/i, '' ) );
 		} );
 
 		// Re-open on focus (so a user who clicks back into the field

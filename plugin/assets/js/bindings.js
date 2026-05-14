@@ -41,10 +41,16 @@
 		ensureDatalist().empty();
 	}
 
+	// Writes the canonical hidden ACF field_key input. Accepts empty
+	// strings — callers rely on `setAcfFieldKey('')` to clear the
+	// previous selection when the typed name no longer matches any
+	// known field (reviewer P2 fix, S10 step 7). The earlier
+	// `if (hint)` guard silently swallowed the clear and let stale
+	// field_keys survive into the next POST.
 	function setAcfFieldKey( hint ) {
 		var $hint = $( '#spintax-target-field-key' );
-		if ( $hint.length && hint ) {
-			$hint.val( hint );
+		if ( $hint.length ) {
+			$hint.val( hint != null ? hint : '' );
 		}
 	}
 

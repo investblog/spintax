@@ -17,6 +17,7 @@ use Spintax\Bindings\BindingsRepo;
 use Spintax\Bindings\BulkApply;
 use Spintax\Bindings\Defaults;
 use Spintax\Core\PostType\TemplatePostType;
+use Spintax\Core\Settings\SettingsRepository;
 use Spintax\Support\Capabilities;
 use Spintax\Support\OptionKeys;
 use Spintax\Support\Validators;
@@ -267,6 +268,73 @@ class BindingsPage {
 				)
 			);
 		}
+
+		// Bulk Apply — Run now (synchronous, 2.1.0).
+		//
+		// Gated tightly because run_synchronously() walks the entire
+		// catalogue in the request; on large sites it would PHP-FPM
+		// timeout. Visible only when:
+		// 1. user has `manage_options`, AND
+		// 2. either the debug flag is on, OR Action Scheduler isn't
+		// available (so async dispatch isn't possible anyway).
+		if ( isset( $_POST['spintax_bulk_apply_now'], $_POST['binding_id'] ) ) {
+			$id = sanitize_text_field( wp_unslash( (string) $_POST['binding_id'] ) );
+			if ( ! Validators::is_valid_binding_id( $id ) ) {
+				$this->redirect_with_notice( $redirect_url, __( 'Invalid binding id.', 'spintax' ), 'error' );
+			}
+			check_admin_referer( 'spintax_bulk_apply_now_' . $id );
+			if ( ! current_user_can( 'manage_options' ) || ! self::run_now_available() ) {
+				$this->redirect_with_notice(
+					$redirect_url,
+					__( 'Run-now is restricted to administrators on dev / no-Action-Scheduler sites.', 'spintax' ),
+					'error'
+				);
+			}
+
+			$result = $this->bulk_apply()->run_synchronously( $id );
+			if ( is_wp_error( $result ) ) {
+				$this->redirect_with_notice( $redirect_url, $result->get_error_message(), 'error' );
+			}
+			$totals = is_array( $result ) ? $result : array(
+				'wrote'   => 0,
+				'skipped' => 0,
+				'failed'  => 0,
+			);
+			$this->redirect_with_notice(
+				$redirect_url,
+				array(
+					'text'         => sprintf(
+						/* translators: 1: wrote count, 2: skipped count, 3: failed count */
+						__( 'Bulk Apply finished synchronously. Wrote %1$d, skipped %2$d, failed %3$d.', 'spintax' ),
+						(int) ( $totals['wrote'] ?? 0 ),
+						(int) ( $totals['skipped'] ?? 0 ),
+						(int) ( $totals['failed'] ?? 0 )
+					),
+					'action_url'   => LogsPage::page_url(),
+					'action_label' => __( 'View details in Logs →', 'spintax' ),
+				)
+			);
+		}
+	}
+
+	/**
+	 * Whether the synchronous "Run now" action should be exposed.
+	 *
+	 * Two-part gate (spec §4.10 + 2.1.0): the caller must have
+	 * `manage_options`, AND the environment must be one where async
+	 * dispatch is impractical — either `debug=true` (dev / staging) or
+	 * Action Scheduler is absent. Production sites with AS installed
+	 * never see the button.
+	 */
+	public static function run_now_available(): bool {
+		if ( BulkApply::action_scheduler_available() ) {
+			$settings = ( new SettingsRepository() )->get();
+			$debug    = ! empty( $settings['debug'] );
+			if ( ! $debug ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -701,13 +769,25 @@ class BindingsPage {
 				'spintax_delete_binding_' . $id
 			);
 
-			$stale = $this->is_stale( $id, $mode );
+			$stale       = $this->is_stale( $id, $mode );
+			$walk_state  = $this->walk_state( $id );
+			$show_runnow = current_user_can( 'manage_options' ) && self::run_now_available();
 
 			?>
 			<div class="spintax-binding-card" style="border:1px solid #c3c4c7;background:#fff;padding:12px 16px;margin:12px 0;border-radius:4px;">
 				<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;">
 					<strong><?php echo esc_html( $pt_label ); ?></strong>
-					<?php if ( $stale ) : ?>
+					<?php if ( $walk_state['running'] ) : ?>
+						<span class="spintax-binding-walk-badge" style="background:#e5f3ff;border:1px solid #1d6fb8;color:#0a4b86;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;">
+							<?php
+							printf(
+								/* translators: %d: seconds since the walk started */
+								esc_html__( 'Running (started %ds ago)', 'spintax' ),
+								(int) $walk_state['elapsed']
+							);
+							?>
+						</span>
+					<?php elseif ( $stale ) : ?>
 						<span style="background:#fff7e0;border:1px solid #dba617;color:#3b2c00;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;">
 							<?php esc_html_e( 'Stale: source template edited', 'spintax' ); ?>
 						</span>
@@ -734,15 +814,58 @@ class BindingsPage {
 					<form method="post" style="display:inline;margin:0;">
 						<?php wp_nonce_field( 'spintax_bulk_apply_' . $id ); ?>
 						<input type="hidden" name="binding_id" value="<?php echo esc_attr( $id ); ?>" />
-						<button type="submit" name="spintax_bulk_apply" class="button button-small" onclick="return confirm('<?php echo esc_js( __( 'Apply binding to all matching posts? This may take a while.', 'spintax' ) ); ?>');">
+						<button type="submit" name="spintax_bulk_apply" class="button button-small" <?php disabled( $walk_state['running'] ); ?> onclick="return confirm('<?php echo esc_js( __( 'Apply binding to all matching posts? This may take a while.', 'spintax' ) ); ?>');">
 							<?php esc_html_e( 'Bulk Apply', 'spintax' ); ?>
 						</button>
 					</form>
+					<?php if ( $show_runnow ) : ?>
+						<form method="post" style="display:inline;margin:0;">
+							<?php wp_nonce_field( 'spintax_bulk_apply_now_' . $id ); ?>
+							<input type="hidden" name="binding_id" value="<?php echo esc_attr( $id ); ?>" />
+							<button type="submit" name="spintax_bulk_apply_now" class="button button-small" <?php disabled( $walk_state['running'] ); ?> title="<?php esc_attr_e( 'Run synchronously in this request — useful when Action Scheduler is missing or in dev environments without cron traffic.', 'spintax' ); ?>" onclick="return confirm('<?php echo esc_js( __( 'Run synchronously? This blocks until every matching post has been processed.', 'spintax' ) ); ?>');">
+								<?php esc_html_e( 'Run now', 'spintax' ); ?>
+							</button>
+						</form>
+					<?php endif; ?>
 					<a href="<?php echo esc_url( $delete_url ); ?>" class="button button-small button-link-delete" onclick="return confirm('<?php echo esc_js( __( 'Delete this binding?', 'spintax' ) ); ?>');"><?php esc_html_e( 'Delete', 'spintax' ); ?></a>
 				</div>
 			</div>
 			<?php
 		}
+	}
+
+	/**
+	 * Read the walk-lock state for a binding (2.1.0).
+	 *
+	 * Returns `{running: bool, elapsed: int}` where `running` is true when
+	 * a non-expired lock is in place (`< LOCK_TTL_SECONDS` from
+	 * `BulkApply`). Anything older is treated as orphaned and the card
+	 * shows the stale badge as if no walk were in progress.
+	 *
+	 * @param string $binding_id Binding id.
+	 * @return array{running: bool, elapsed: int}
+	 */
+	private function walk_state( string $binding_id ): array {
+		$lock_ts = (int) get_option( OptionKeys::OPTION_BINDING_WALK_LOCK_PREFIX . $binding_id, 0 );
+		if ( $lock_ts <= 0 ) {
+			return array(
+				'running' => false,
+				'elapsed' => 0,
+			);
+		}
+		$elapsed = max( 0, time() - $lock_ts );
+		// Anything past the lock TTL (one hour) is treated as orphaned —
+		// match BulkApply::LOCK_TTL_SECONDS to keep the threshold in lockstep.
+		if ( $elapsed > 3600 ) {
+			return array(
+				'running' => false,
+				'elapsed' => 0,
+			);
+		}
+		return array(
+			'running' => true,
+			'elapsed' => $elapsed,
+		);
 	}
 
 	/**

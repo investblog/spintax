@@ -278,6 +278,168 @@ class BindingsPageTest extends \WP_UnitTestCase {
 		delete_transient( 'spintax_admin_notice_' . $this->admin_id );
 	}
 
+	public function test_run_now_button_visible_when_debug_or_no_action_scheduler(): void {
+		$repo    = new BindingsRepo();
+		$tpl_id  = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Tpl',
+				'post_content' => 'X',
+			)
+		);
+		$repo->create(
+			array(
+				'post_type' => 'post',
+				'target'    => array( 'kind' => 'post_meta', 'key' => 'k', 'field_key' => '' ),
+				'source'    => array( 'mode' => 'template', 'template_id' => $tpl_id ),
+				'triggers'  => array( 'save_post' => true ),
+			)
+		);
+
+		// AS isn't loaded in tests-cli → run_now_available() returns true
+		// regardless of debug flag.
+		$_GET = array();
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'name="spintax_bulk_apply_now"', $html );
+		$this->assertStringContainsString( 'Run now', $html );
+	}
+
+	public function test_walk_status_badge_renders_when_lock_held(): void {
+		$repo    = new BindingsRepo();
+		$tpl_id  = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Tpl',
+				'post_content' => 'X',
+			)
+		);
+		$binding = $repo->create(
+			array(
+				'post_type' => 'post',
+				'target'    => array( 'kind' => 'post_meta', 'key' => 'k', 'field_key' => '' ),
+				'source'    => array( 'mode' => 'template', 'template_id' => $tpl_id ),
+				'triggers'  => array( 'save_post' => true ),
+			)
+		);
+
+		// Fresh lock — 30 seconds ago.
+		update_option(
+			OptionKeys::OPTION_BINDING_WALK_LOCK_PREFIX . $binding['id'],
+			time() - 30,
+			false
+		);
+
+		$_GET = array();
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'spintax-binding-walk-badge', $html );
+		$this->assertMatchesRegularExpression( '/Running \(started \d+s ago\)/', $html );
+	}
+
+	public function test_walk_status_badge_hidden_when_lock_orphaned(): void {
+		$repo    = new BindingsRepo();
+		$tpl_id  = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Tpl',
+				'post_content' => 'X',
+			)
+		);
+		$binding = $repo->create(
+			array(
+				'post_type' => 'post',
+				'target'    => array( 'kind' => 'post_meta', 'key' => 'k', 'field_key' => '' ),
+				'source'    => array( 'mode' => 'template', 'template_id' => $tpl_id ),
+				'triggers'  => array( 'save_post' => true ),
+			)
+		);
+
+		// Orphaned lock — older than 1 hour. Card must NOT show "Running".
+		update_option(
+			OptionKeys::OPTION_BINDING_WALK_LOCK_PREFIX . $binding['id'],
+			time() - 7200,
+			false
+		);
+
+		$_GET = array();
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringNotContainsString( 'spintax-binding-walk-badge', $html );
+	}
+
+	public function test_run_now_handler_rejects_non_admin(): void {
+		$repo    = new BindingsRepo();
+		$tpl_id  = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Tpl',
+				'post_content' => 'X',
+			)
+		);
+		$binding = $repo->create(
+			array(
+				'post_type' => 'post',
+				'target'    => array( 'kind' => 'post_meta', 'key' => 'k', 'field_key' => '' ),
+				'source'    => array( 'mode' => 'template', 'template_id' => $tpl_id ),
+				'triggers'  => array( 'save_post' => true ),
+			)
+		);
+
+		$editor_id = self::factory()->user->create( array( 'role' => 'editor' ) );
+		wp_set_current_user( $editor_id );
+
+		$nonce                = wp_create_nonce( 'spintax_bulk_apply_now_' . $binding['id'] );
+		$_POST                = array(
+			'binding_id'             => $binding['id'],
+			'spintax_bulk_apply_now' => '1',
+			'_wpnonce'               => $nonce,
+		);
+		$_REQUEST['_wpnonce'] = $nonce;
+
+		$captured        = '';
+		$redirect_filter = static function ( $location ) use ( &$captured ) {
+			$captured = (string) $location;
+			throw new BindingsPageRedirect( (string) $location );
+		};
+		add_filter( 'wp_redirect', $redirect_filter, 1, 1 );
+
+		try {
+			$this->page->handle_actions();
+		} catch ( BindingsPageRedirect $e ) {
+			// expected
+		} finally {
+			remove_filter( 'wp_redirect', $redirect_filter, 1 );
+		}
+
+		$flash = get_transient( 'spintax_admin_notice_' . $editor_id );
+		// Editor either gets capability rejection on the run-now branch
+		// directly, OR — if WP set up the editor before our cap registration —
+		// the bindings-page capability gate (current_user_can(Capabilities::CAP))
+		// may short-circuit earlier and the redirect just bounces back. Either
+		// way: no successful run, and the redirect doesn't carry a "Wrote N"
+		// flash payload.
+		if ( is_array( $flash ) ) {
+			$payload = isset( $flash['payload'] ) ? (array) $flash['payload'] : array();
+			$this->assertStringNotContainsString( 'Wrote', (string) ( $payload['text'] ?? '' ) );
+		}
+
+		delete_transient( 'spintax_admin_notice_' . $editor_id );
+	}
+
 	public function test_stale_banner_renders_when_persisted_binding_is_stale(): void {
 		$repo    = new BindingsRepo();
 		$tpl_id  = wp_insert_post(

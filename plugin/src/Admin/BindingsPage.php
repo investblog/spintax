@@ -1320,19 +1320,58 @@ class BindingsPage {
 		if ( '' === $id || ! $this->is_stale( $id, $mode ) ) {
 			return;
 		}
+
+		// Mirror the list-view's Bulk Apply / Run-now pair so the stale
+		// banner doesn't dead-end editors on sites without Action
+		// Scheduler. When AS is missing, Bulk Apply is disabled (with
+		// the same tooltip) and Run-now becomes the primary CTA — when
+		// AS is present, Bulk Apply stays primary and Run-now is the
+		// secondary escape hatch.
+		$walk_state    = $this->walk_state( $id );
+		$as_available  = BulkApply::action_scheduler_available();
+		$show_runnow   = current_user_can( 'manage_options' ) && self::run_now_available();
+		$bulk_disabled = $walk_state['running'] || ! $as_available;
+		$bulk_title    = $as_available
+			? __( 'Apply this binding to every matching post via Action Scheduler (chunked async).', 'spintax' )
+			: __( 'Action Scheduler is not installed. Use "Run now" (synchronous) or `wp spintax bindings apply --binding=<id> --all` instead.', 'spintax' );
+		$bulk_class    = $as_available ? 'button button-primary' : 'button';
+		$runnow_class  = $as_available ? 'button' : 'button button-primary';
 		?>
 		<div class="spintax-binding-stale-banner notice notice-warning" style="margin:12px 0;">
 			<p>
 				<strong><?php esc_html_e( 'Source template edited since the last walk.', 'spintax' ); ?></strong>
 				<?php esc_html_e( 'Existing target fields still hold output from the previous template version. Run Bulk Apply to re-render every matching post.', 'spintax' ); ?>
 			</p>
-			<form method="post" style="display:inline;margin:0 0 12px;">
-				<?php wp_nonce_field( 'spintax_bulk_apply_' . $id ); ?>
-				<input type="hidden" name="binding_id" value="<?php echo esc_attr( $id ); ?>" />
-				<button type="submit" name="spintax_bulk_apply" class="button button-primary">
-					<?php esc_html_e( 'Bulk Apply now', 'spintax' ); ?>
-				</button>
-			</form>
+			<p style="margin:0 0 8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+				<form method="post" style="display:inline;margin:0;">
+					<?php wp_nonce_field( 'spintax_bulk_apply_' . $id ); ?>
+					<input type="hidden" name="binding_id" value="<?php echo esc_attr( $id ); ?>" />
+					<button
+						type="submit"
+						name="spintax_bulk_apply"
+						class="<?php echo esc_attr( $bulk_class ); ?>"
+						<?php disabled( $bulk_disabled ); ?>
+						title="<?php echo esc_attr( $bulk_title ); ?>"
+					>
+						<?php esc_html_e( 'Bulk Apply now', 'spintax' ); ?>
+					</button>
+				</form>
+				<?php if ( $show_runnow ) : ?>
+					<form method="post" style="display:inline;margin:0;">
+						<?php wp_nonce_field( 'spintax_bulk_apply_now_' . $id ); ?>
+						<input type="hidden" name="binding_id" value="<?php echo esc_attr( $id ); ?>" />
+						<button
+							type="submit"
+							name="spintax_bulk_apply_now"
+							class="<?php echo esc_attr( $runnow_class ); ?>"
+							<?php disabled( $walk_state['running'] ); ?>
+							title="<?php esc_attr_e( 'Run synchronously in this request — useful when Action Scheduler is missing or in dev environments without cron traffic.', 'spintax' ); ?>"
+						>
+							<?php esc_html_e( 'Run now', 'spintax' ); ?>
+						</button>
+					</form>
+				<?php endif; ?>
+			</p>
 		</div>
 		<?php
 	}

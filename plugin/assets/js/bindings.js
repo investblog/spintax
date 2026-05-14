@@ -118,7 +118,13 @@
 
 	function renderAcfOptions( filterText ) {
 		var $list = $acfList().empty();
-		var needle = ( filterText || '' ).toString().toLowerCase();
+		// Strip the ` (field_xxx)` suffix that comboSelect writes into the
+		// input. Without this, refocusing after a selection passes the full
+		// display string back through the filter — the haystack matches
+		// only on group/label/name, so the field_key tail produces an
+		// empty result and the "browse without retyping" path breaks.
+		var raw    = ( filterText || '' ).toString().replace( /\s*\(field_[a-z0-9]+\)\s*$/i, '' );
+		var needle = raw.toLowerCase();
 
 		var matches = $.grep( acfFieldsCache, function ( item ) {
 			if ( ! needle ) {

@@ -5,6 +5,7 @@ namespace Spintax\Tests\Bindings;
 use Spintax\Bindings\BindingsRepo;
 use Spintax\Bindings\BulkApply;
 use Spintax\Core\PostType\TemplatePostType;
+use Spintax\Support\Logging;
 use Spintax\Support\OptionKeys;
 
 class BulkApplyTest extends \WP_UnitTestCase {
@@ -60,6 +61,7 @@ class BulkApplyTest extends \WP_UnitTestCase {
 		// Create 7 posts (more than chunk_size=5 to verify chunking).
 		$ids = self::factory()->post->create_many( 7 );
 
+		( new Logging() )->clear();
 		$totals = ( new BulkApply( $this->repo ) )->run_synchronously( $binding['id'] );
 
 		$this->assertIsArray( $totals );
@@ -70,6 +72,21 @@ class BulkApplyTest extends \WP_UnitTestCase {
 		foreach ( $ids as $id ) {
 			$this->assertSame( 'Hello', get_post_meta( $id, 'target_field', true ) );
 		}
+
+		// Clean run must write the info log line (2.1.1 P2 #1). Without
+		// this assertion, a future refactor of run_synchronously() could
+		// silently delete the log call and the "View details in Logs →"
+		// CTA on the Run-now success notice would land on a Logs page
+		// missing the corresponding completion record.
+		$messages = array_map(
+			static fn( $entry ) => (string) ( $entry['msg'] ?? '' ),
+			( new Logging() )->all()
+		);
+		$expected = sprintf(
+			'Bulk Apply run_synchronously completed for binding %s — wrote=7 skipped=0 cleared=0.',
+			$binding['id']
+		);
+		$this->assertContains( $expected, $messages, 'run_synchronously must log on clean completion' );
 	}
 
 	public function test_run_synchronously_skips_when_target_filled(): void {

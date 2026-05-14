@@ -486,6 +486,64 @@ class BindingsPageTest extends \WP_UnitTestCase {
 		);
 	}
 
+	public function test_stale_banner_offers_runnow_fallback_when_action_scheduler_missing(): void {
+		// Reviewer P2 (2.1.1): without AS, the stale banner's primary
+		// CTA was driving editors into the no_action_scheduler error
+		// path. After the fix, Bulk Apply is disabled with the same
+		// tooltip surfaced on the list view, and Run-now becomes the
+		// primary action (caps gate already verified upstream).
+		// The wp-env tests-cli container ships without Action Scheduler,
+		// so action_scheduler_available() returns false naturally.
+		$repo    = new BindingsRepo();
+		$tpl_id  = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Tpl',
+				'post_content' => 'X',
+			)
+		);
+		$binding = $repo->create(
+			array(
+				'post_type' => 'post',
+				'target'    => array( 'kind' => 'post_meta', 'key' => 'k', 'field_key' => '' ),
+				'source'    => array( 'mode' => 'template', 'template_id' => $tpl_id ),
+				'triggers'  => array( 'save_post' => true ),
+			)
+		);
+		update_option( OptionKeys::OPTION_BINDING_CACHE_VERSION_PREFIX . $binding['id'], 5 );
+		update_option( OptionKeys::OPTION_BINDING_LAST_APPLIED_VERSION_PREFIX . $binding['id'], 2 );
+
+		$_GET = array( 'action' => 'edit', 'binding_id' => $binding['id'] );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		// Isolate just the stale-banner block so the list-view's button
+		// markup (which already pairs Bulk Apply with Run-now) can't
+		// false-positive these assertions.
+		$start = strpos( $html, 'spintax-binding-stale-banner' );
+		$this->assertNotFalse( $start, 'stale banner must render' );
+		$banner_html = substr( $html, $start, 2000 );
+
+		// Bulk Apply present but disabled with the AS-missing tooltip.
+		$this->assertMatchesRegularExpression(
+			'/name="spintax_bulk_apply"[^>]*\bdisabled\b/',
+			$banner_html,
+			'Bulk Apply must be disabled when AS is missing'
+		);
+		$this->assertStringContainsString( 'Action Scheduler is not installed', $banner_html );
+
+		// Run-now present and primary (admin in set_up has manage_options
+		// and run_now_available() returns true when AS is missing).
+		$this->assertMatchesRegularExpression(
+			'/name="spintax_bulk_apply_now"[^>]*class="button button-primary"/',
+			$banner_html,
+			'Run-now must be the primary CTA when AS is missing'
+		);
+	}
+
 	public function test_stale_banner_uses_persisted_source_mode_not_flash_draft(): void {
 		// Reviewer P2: render_form merges flash over persisted; the stale
 		// banner must still reflect the persisted source.mode, not the

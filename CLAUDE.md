@@ -8,8 +8,8 @@ Free WordPress plugin for spintax-based content generation. Target audience: con
 - **WP.org:** https://wordpress.org/plugins/spintax/
 - **Docs / playground:** https://spintax.net
 - **Author:** 301st (https://301.st)
-- **Current version:** 2.1.0
-- **Status:** **Live on WordPress.org as of 2026-05-14** — v2.1.0 (commit `a64fca2`, SVN tag `2.1.0`). Major admin UX overhaul on top of 2.0.3 with all 4 release gates passed (PHPUnit + PHPCS, Plugin Check 0/0 on shipping surface, ACF integration smoke S1-S13 verified end-to-end, fresh-eyes reviewer pass with 3 P2 fixes folded in). 2.0.0 shipped the ACF / post-meta bindings feature in five phases per `docs/spec-acf-bindings.md`; 2.0.1 fixed 5 reviewer findings (2 P1, 3 P2) plus a form-field name collision; 2.0.2 documented Action Scheduler dependency + added an admin notice; 2.0.3 closed two follow-up reviewer findings (runtime ACF `target.field_key` re-verification via `acf_get_field()` + cumulative-failure tracking across Bulk Apply chunks, with a per-binding walk lock to prevent concurrent walks racing on the cumulative flag). 2.1.0 layers a UX overhaul on top: Logs admin page (closes the "check logs" notice gap), AdminNotice trait extended for action-link CTAs, Spintax Settings now also reachable from the spintax CPT submenu with TTL preset / custom select on both Settings + per-template meta box, Bindings form refactored into 3 ARIA tabs with full keyboard nav and PRG-survivable `active_tab` contract, ACF combobox replacing the broken `<datalist>` picker, server-side ACF row hidden for `kind=post_meta` to kill the flash, dismissible AS notice via user_meta + AJAX, inline "this binding will never run" warning + persisted (not flash-merged) stale banner with inline Bulk Apply, "Run now" sync button gated on `manage_options + (debug || !AS)`, walk-status badge from `_spintax_binding_walk_lock_<id>` with 1h orphan TTL. Engine timeline: 1.0.0 → 1.1.0 → 1.4.0 → 1.5.0 → 2.0.0 → 2.0.1 → 2.0.2 → 2.0.3 → 2.1.0.
+- **Current version:** 2.1.1
+- **Status:** live on WordPress.org. Shipping surfaces: spintax engine (templates + shortcode + `spintax_render()`), bindings (ACF + post-meta targets with Bulk Apply / Run-now / cron triggers), Logs page, WP-CLI `wp spintax bindings *`. Detailed release notes live in `plugin/readme.txt` changelog — don't duplicate them here. Reviewer-driven contracts that aren't obvious from the code live in the "Bindings" section below.
 
 ## Reference sources
 
@@ -157,19 +157,20 @@ Entered as raw `#set` syntax in Settings → Spintax textarea (not key-value tab
 
 ## WP.org compliance checklist
 
-All met for v1.5.0:
+Verified at each release tag (re-run before SVN deploy):
+
 - PHPCS: 0 errors, 0 warnings
-- Plugin Check: 0 errors, 0 warnings (test files excluded from ZIP via .distignore)
-- CI: fully green (lint PHP 8.0–8.3, tests PHP 8.0+8.2 × WP 6.2+latest, build ZIP)
+- Plugin Check (`--include-experimental`): 0 errors, 0 warnings on the shipping surface (test files excluded from ZIP via `.distignore`)
+- CI fully green (lint PHP 8.0–8.3, tests PHP 8.0+8.2 × WP 6.2+latest, build ZIP)
 - Nonces on all forms/AJAX
 - Capability checks on all admin actions
-- Input sanitisation via Validators::sanitize_spintax() — wp_check_invalid_utf8, strip null bytes/control chars, normalize line endings
-- Output escaping (wp_kses_post on render output)
-- $wpdb->prepare() for direct queries
-- ABSPATH guard on all PHP files
-- SECURITY.md with responsible disclosure
-- readme.txt: External Services, Privacy Policy, Screenshots, Credits, Upgrade Notice
-- .distignore for 10up deploy action
+- Input sanitisation via `Validators::sanitize_spintax()` — `wp_check_invalid_utf8`, strip null bytes/control chars, normalize line endings
+- Output escaping (`wp_kses_post` on render output)
+- `$wpdb->prepare()` for direct queries
+- `ABSPATH` guard on all PHP files
+- `SECURITY.md` with responsible disclosure
+- `readme.txt`: External Services, Privacy Policy, Screenshots, Credits, Upgrade Notice
+- `.distignore` for 10up deploy action
 - Demo template seeded on first activation
 
 ## Versioning
@@ -203,7 +204,7 @@ npm run version:check          # Verify version sync
 Run ALL of these locally. Zero errors AND zero warnings required:
 
 ```bash
-npm run test:php           # PHPUnit — all tests must pass (currently 430 cases)
+npm run test:php           # PHPUnit — all tests must pass
 npm run lint:php           # PHPCS — 0 errors, 0 warnings
 ```
 

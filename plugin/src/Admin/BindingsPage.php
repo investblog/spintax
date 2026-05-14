@@ -819,6 +819,8 @@ class BindingsPage {
 			</a>
 		</h2>
 
+		<?php $this->render_form_status_banner( $binding ); ?>
+
 		<form method="post" id="spintax-binding-form" class="spintax-binding-form">
 			<?php wp_nonce_field( 'spintax_binding_save' ); ?>
 			<input type="hidden" name="binding_id" value="<?php echo esc_attr( $id ); ?>" />
@@ -1029,13 +1031,28 @@ class BindingsPage {
 				</tr>
 			</table>
 
+			<?php
+			$triggers_save_post = ! empty( $b['triggers']['save_post'] );
+			$triggers_cron      = (string) ( $b['triggers']['cron'] ?? 'disabled' );
+			$triggers_inactive  = ( ! $triggers_save_post && 'disabled' === $triggers_cron );
+			?>
 			<h3><?php esc_html_e( 'Triggers', 'spintax' ); ?></h3>
+			<div
+				class="spintax-trigger-warning notice notice-warning inline"
+				role="status"
+				<?php echo $triggers_inactive ? '' : 'hidden'; ?>
+			>
+				<p>
+					<strong><?php esc_html_e( 'This binding will never run.', 'spintax' ); ?></strong>
+					<?php esc_html_e( 'Enable "Fire on post save" or pick a cron schedule below. Save with no triggers and saves will still create the binding, but no posts get re-rendered until you add one.', 'spintax' ); ?>
+				</p>
+			</div>
 			<table class="form-table" role="presentation">
 				<tr>
 					<th scope="row"><?php esc_html_e( 'When to run', 'spintax' ); ?></th>
 					<td>
 						<label>
-							<input type="checkbox" name="trigger_save_post" value="1" <?php checked( ! empty( $b['triggers']['save_post'] ) ); ?> />
+							<input type="checkbox" name="trigger_save_post" value="1" <?php checked( $triggers_save_post ); ?> />
 							<?php esc_html_e( 'Fire on post save', 'spintax' ); ?>
 						</label>
 						<p class="description">
@@ -1048,7 +1065,7 @@ class BindingsPage {
 					<td>
 						<select name="trigger_cron" id="spintax-trigger-cron">
 							<?php foreach ( Defaults::cron_schedules() as $schedule ) : ?>
-								<option value="<?php echo esc_attr( $schedule ); ?>" <?php selected( $b['triggers']['cron'] ?? 'disabled', $schedule ); ?>>
+								<option value="<?php echo esc_attr( $schedule ); ?>" <?php selected( $triggers_cron, $schedule ); ?>>
 									<?php echo esc_html( $schedule ); ?>
 								</option>
 							<?php endforeach; ?>
@@ -1141,6 +1158,44 @@ class BindingsPage {
 				</a>
 			</div>
 		</form>
+		<?php
+	}
+
+	/**
+	 * Render a status banner above the binding form when the persisted
+	 * binding (NOT the flash-restored draft) is in a state the editor
+	 * should know about before they start editing.
+	 *
+	 * Currently surfaces one signal — the stale badge. Operates on
+	 * `$binding`, not the flash-merged `$b`, so a draft-mode swap of
+	 * `source.mode` mid-edit doesn't mislead the editor about the
+	 * persisted state of the binding (P2 reviewer finding for 2.1.0).
+	 *
+	 * @param array<string, mixed>|null $binding Persisted binding, or null when creating a new one.
+	 */
+	private function render_form_status_banner( ?array $binding ): void {
+		if ( null === $binding ) {
+			return;
+		}
+		$id   = (string) ( $binding['id'] ?? '' );
+		$mode = (string) ( $binding['source']['mode'] ?? '' );
+		if ( '' === $id || ! $this->is_stale( $id, $mode ) ) {
+			return;
+		}
+		?>
+		<div class="spintax-binding-stale-banner notice notice-warning" style="margin:12px 0;">
+			<p>
+				<strong><?php esc_html_e( 'Source template edited since the last walk.', 'spintax' ); ?></strong>
+				<?php esc_html_e( 'Existing target fields still hold output from the previous template version. Run Bulk Apply to re-render every matching post.', 'spintax' ); ?>
+			</p>
+			<form method="post" style="display:inline;margin:0 0 12px;">
+				<?php wp_nonce_field( 'spintax_bulk_apply_' . $id ); ?>
+				<input type="hidden" name="binding_id" value="<?php echo esc_attr( $id ); ?>" />
+				<button type="submit" name="spintax_bulk_apply" class="button button-primary">
+					<?php esc_html_e( 'Bulk Apply now', 'spintax' ); ?>
+				</button>
+			</form>
+		</div>
 		<?php
 	}
 

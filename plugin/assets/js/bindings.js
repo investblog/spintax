@@ -434,6 +434,29 @@
 		} );
 	}
 
+	function refreshTriggerWarning() {
+		var $warning = $( '.spintax-trigger-warning' );
+		if ( $warning.length === 0 ) {
+			return;
+		}
+		var savePostOn = $( 'input[name="trigger_save_post"]' ).is( ':checked' );
+		var cronVal    = ( $( '#spintax-trigger-cron' ).val() || 'disabled' ).toString();
+		var inactive   = ! savePostOn && cronVal === 'disabled';
+		if ( inactive ) {
+			$warning.removeAttr( 'hidden' );
+		} else {
+			$warning.attr( 'hidden', 'hidden' );
+		}
+	}
+
+	function bindTriggerWarning() {
+		$( document ).on(
+			'change',
+			'input[name="trigger_save_post"], #spintax-trigger-cron',
+			refreshTriggerWarning
+		);
+	}
+
 	function bindDismissibleNotices() {
 		// Persist dismissals for spintax-tagged notices. WP's
 		// `notice-dismiss` button hides the element locally; we layer
@@ -457,6 +480,7 @@
 		bindAcfCombobox();
 		bindTestPanel();
 		bindTabSwitcher();
+		bindTriggerWarning();
 		bindDismissibleNotices();
 	} );
 

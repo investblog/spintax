@@ -278,6 +278,182 @@ class BindingsPageTest extends \WP_UnitTestCase {
 		delete_transient( 'spintax_admin_notice_' . $this->admin_id );
 	}
 
+	public function test_stale_banner_renders_when_persisted_binding_is_stale(): void {
+		$repo    = new BindingsRepo();
+		$tpl_id  = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Tpl',
+				'post_content' => 'X',
+			)
+		);
+		$binding = $repo->create(
+			array(
+				'post_type' => 'post',
+				'target'    => array( 'kind' => 'post_meta', 'key' => 'k', 'field_key' => '' ),
+				'source'    => array( 'mode' => 'template', 'template_id' => $tpl_id ),
+				'triggers'  => array( 'save_post' => true ),
+			)
+		);
+
+		// Bump cache_version > last_applied_version → is_stale = true.
+		update_option( OptionKeys::OPTION_BINDING_CACHE_VERSION_PREFIX . $binding['id'], 5 );
+		update_option( OptionKeys::OPTION_BINDING_LAST_APPLIED_VERSION_PREFIX . $binding['id'], 2 );
+
+		$_GET = array( 'action' => 'edit', 'binding_id' => $binding['id'] );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'spintax-binding-stale-banner', $html );
+		$this->assertStringContainsString( 'Source template edited since the last walk', $html );
+		// Inline Bulk Apply form points at the same binding.
+		$this->assertMatchesRegularExpression(
+			'/name="binding_id" value="' . preg_quote( $binding['id'], '/' ) . '"/',
+			$html
+		);
+	}
+
+	public function test_stale_banner_uses_persisted_source_mode_not_flash_draft(): void {
+		// Reviewer P2: render_form merges flash over persisted; the stale
+		// banner must still reflect the persisted source.mode, not the
+		// draft. Build a stale template-mode binding, then flash a
+		// per_post-mode draft. is_stale() reads option keys keyed on the
+		// PERSISTED template-mode setup, so the banner must still render.
+		$repo    = new BindingsRepo();
+		$tpl_id  = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Tpl',
+				'post_content' => 'X',
+			)
+		);
+		$binding = $repo->create(
+			array(
+				'post_type' => 'post',
+				'target'    => array( 'kind' => 'post_meta', 'key' => 'k', 'field_key' => '' ),
+				'source'    => array( 'mode' => 'template', 'template_id' => $tpl_id ),
+				'triggers'  => array( 'save_post' => true ),
+			)
+		);
+		update_option( OptionKeys::OPTION_BINDING_CACHE_VERSION_PREFIX . $binding['id'], 5 );
+		update_option( OptionKeys::OPTION_BINDING_LAST_APPLIED_VERSION_PREFIX . $binding['id'], 2 );
+
+		// Trip a validation error so the flash carries a per_post draft.
+		$this->fill_post_with_valid_meta_binding();
+		$_POST['binding_id']         = $binding['id'];
+		$_POST['source_mode']        = 'per_post';
+		$_POST['source_template_id'] = '0'; // forces "per_post" path validation only.
+		$_POST['target_key']         = ''; // trigger an error so flash is set.
+		$this->call_handle_save();
+
+		$_GET = array( 'action' => 'edit', 'binding_id' => $binding['id'] );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		// Banner must STILL render based on persisted template-mode state.
+		$this->assertStringContainsString( 'spintax-binding-stale-banner', $html );
+	}
+
+	public function test_stale_banner_hidden_when_binding_is_fresh(): void {
+		$repo    = new BindingsRepo();
+		$tpl_id  = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Tpl',
+				'post_content' => 'X',
+			)
+		);
+		$binding = $repo->create(
+			array(
+				'post_type' => 'post',
+				'target'    => array( 'kind' => 'post_meta', 'key' => 'k', 'field_key' => '' ),
+				'source'    => array( 'mode' => 'template', 'template_id' => $tpl_id ),
+				'triggers'  => array( 'save_post' => true ),
+			)
+		);
+
+		$_GET = array( 'action' => 'edit', 'binding_id' => $binding['id'] );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringNotContainsString( 'spintax-binding-stale-banner', $html );
+	}
+
+	public function test_trigger_warning_visible_when_no_triggers(): void {
+		$repo    = new BindingsRepo();
+		$tpl_id  = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Tpl',
+				'post_content' => 'X',
+			)
+		);
+		// Persist via raw option update — the repo's validators would
+		// normally reject a no-trigger binding, but the form needs to
+		// surface the warning if one somehow ends up in that state.
+		// Binding id must match Validators::is_valid_binding_id() pattern
+		// `bind_[a-z0-9]{6}` — render() skips loading otherwise.
+		update_option(
+			OptionKeys::BINDINGS,
+			array(
+				'bind_no0run' => array(
+					'id'        => 'bind_no0run',
+					'post_type' => 'post',
+					'status'    => 'any',
+					'target'    => array( 'kind' => 'post_meta', 'key' => 'k', 'field_key' => '' ),
+					'source'    => array( 'mode' => 'template', 'template_id' => $tpl_id ),
+					'triggers'  => array( 'save_post' => false, 'cron' => 'disabled' ),
+					'variables' => array( 'expose_post_context' => false, 'expose_acf_siblings' => false, 'overrides' => '' ),
+					'behavior'  => array(
+						'auto_seed_empty'       => true,
+						'regenerate_on_save'    => false,
+						'preserve_manual_edits' => true,
+						'clear_on_empty'        => false,
+						'chunk_size'            => 20,
+					),
+				),
+			),
+			false
+		);
+
+		$_GET = array( 'action' => 'edit', 'binding_id' => 'bind_no0run' );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		// Warning element rendered without the `hidden` attribute.
+		$this->assertMatchesRegularExpression(
+			'/<div\s+class="spintax-trigger-warning[^"]*"(?![^>]*hidden)/',
+			$html
+		);
+		$this->assertStringContainsString( 'This binding will never run', $html );
+	}
+
+	public function test_trigger_warning_hidden_when_save_post_on(): void {
+		$_GET = array( 'action' => 'new' );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		// Defaults::binding() ships save_post=true → warning hidden.
+		$this->assertMatchesRegularExpression(
+			'/<div\s+class="spintax-trigger-warning[^"]*"[^>]*hidden/',
+			$html
+		);
+	}
+
 	public function test_form_renders_acf_combobox_when_kind_is_acf_field(): void {
 		$repo    = new BindingsRepo();
 		$tpl_id  = wp_insert_post(

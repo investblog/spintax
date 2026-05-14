@@ -122,6 +122,64 @@ npx wp-env run cli wp post list --post_type=acf-field --post_status=publish --fi
    ```
    **Expected:** stale badge **persists** because failures > 0.
 
+### S7 — Logs viewer capability split (2.1.0)
+
+1. Visit `Spintax → Logs`. **Expected:** table shows ring-buffer entries newest-first.
+2. Filter by level (e.g. `error`), search a substring — list narrows.
+3. Switch to an editor account (not admin). Visit `Spintax → Logs`. **Expected:** the page loads, the level filter works, but **no "Clear all logs" button** is rendered. Direct POST of `spintax_logs_clear` with a valid nonce should `wp_die` ("permission denied").
+4. Switch back to admin. Click "Clear all logs". **Expected:** confirm dialog, then logs wipe + flash notice "Logs cleared.", redirect back to `Spintax → Logs`.
+
+### S8 — Bindings form keyboard navigation (2.1.0)
+
+1. Edit any binding. Tab focus to the Source & Target tab button.
+2. Press `→` (ArrowRight): focus moves to the Behavior tab and its panel activates.
+3. Press `End`: focus jumps to the Test tab.
+4. Press `Home`: focus jumps to Source & Target.
+5. Press `↓` from Source & Target: same as `→` (arrow down also navigates).
+6. **Expected:** `aria-selected="true"` updates on every move; only the active panel is visible (others have `hidden`).
+
+### S9 — Validation-error tab routing (2.1.0)
+
+1. Edit any binding. Switch to the Behavior tab. Uncheck "Fire on post save" and set Cron schedule to "disabled".
+2. Click "Update binding". **Expected:** error "A binding with no triggers will never run…" surfaces, the form re-opens with the **Behavior** tab active (URL has `&active_tab=behavior`), and the trigger checkboxes / select retain their submitted state (flash round-trip).
+3. On the same form, fix triggers, then switch to Source & Target and blank the Field name input. Save.
+4. **Expected:** form re-opens with **Source & Target** tab active and the offending field highlighted; the Behavior tab choices are preserved in the flash.
+
+### S10 — ACF combobox (2.1.0)
+
+1. Edit a binding with kind=ACF field. Click the combobox input.
+2. **Expected:** dropdown listbox opens with detected ACF fields grouped by field group ("Hero — Subtitle (hero_subtitle)" rows).
+3. Type "sub" — list filters to matches.
+4. Press `↓` repeatedly: highlight moves through the items; `aria-activedescendant` updates.
+5. Press `Enter`: the highlighted item is selected, the combobox input shows "name (field_key)", the hidden `target_field_key` row updates.
+6. Press `Esc`: dropdown closes; refocus reopens it.
+7. Type a custom field name (no list match) and submit. **Expected:** the form posts `target_key` = typed value; server returns the usual ACF field_key validation error pointing at the missing key.
+8. Switch Kind = Post meta. **Expected:** combobox hides, plain text input + datalist appears, ACF field-key row hides (`hidden` attribute set server-side — no JS-timing flash).
+
+### S11 — Dismissible Action Scheduler notice (2.1.0)
+
+1. Confirm Action Scheduler is not installed (it isn't in the default wp-env tests-cli).
+2. Visit `Spintax → Bindings`. **Expected:** "Action Scheduler is not installed" notice at the top with the WP-style ✕ dismiss button.
+3. Click ✕. **Expected:** notice fades. Reload the page.
+4. **Expected:** notice stays dismissed (user_meta `_spintax_dismissed_notice_as-v210=1` persists per-user).
+5. Switch to a different admin user. Visit the same page. **Expected:** notice still shows for the new user (dismissal is per-user).
+
+### S12 — Run-now sync button gate (2.1.0)
+
+1. With Action Scheduler **absent**: visit `Spintax → Bindings`. Each card should show **both** "Bulk Apply" and "Run now" buttons (admin only).
+2. Click "Run now" on a binding with 1-2 matching posts. **Expected:** confirm dialog, then a success notice "Bulk Apply finished synchronously. Wrote N, skipped M, failed 0." with a "View details in Logs →" CTA.
+3. With Action Scheduler **installed** (e.g. via WooCommerce) and `settings.debug = false`: visit `Spintax → Bindings`. **Expected:** "Run now" is **not rendered** — only "Bulk Apply".
+4. With AS installed and `settings.debug = true`: visit the page. **Expected:** "Run now" reappears.
+5. Switch to editor role. Visit the page. **Expected:** "Run now" never appears regardless of debug / AS state (capability gate on `manage_options`).
+
+### S13 — Stale banner reads persisted, not draft (2.1.0)
+
+1. Pick an existing template-mode binding. Edit the bound template (Spintax → Templates → Edit, save) so the cache_version bumps.
+2. Visit the binding's edit page. **Expected:** yellow "Source template edited since the last walk" banner above the form, plus an inline "Bulk Apply now" button.
+3. On the same edit page, switch the source `Mode` from "Shared template" to "Per-post template" but **do not save**.
+4. Trigger a validation error (e.g. blank the field name) and submit.
+5. The form re-opens with the draft per_post mode flashed in. **Expected:** the stale banner is **still visible** — it reads from the persisted template-mode binding, not the flash-merged draft.
+
 If any scenario diverges from expected, file an issue (or self-fix) before continuing to gate D.
 
 ## Gate D — Reviewer pass (major releases only)

@@ -2,7 +2,7 @@
 
 Post-v1 design ideas — both engine primitives and plugin-level features. Each entry records locked decisions and the trigger conditions that promote it from "deferred" to "ready for implementation". Items live here until a real-world signal (or explicit user green-light) justifies the work — not preventively.
 
-Product/ecosystem strategy (website, kits, API, bot, vertical packs) lives in `product-roadmap-2026.md` and references this file for individual feature designs. Released v1 behaviour lives in `spec-v1.md`.
+Released v1 behaviour lives in `spec-v1.md`.
 
 ---
 
@@ -12,28 +12,7 @@ Product/ecosystem strategy (website, kits, API, bot, vertical packs) lives in `p
 
 ## Plural Forms
 
-**Status:** active — trigger fired 2026-05-09; **TS implementation shipped in casino-platform**, PHP port in progress.
-
-### Reference implementation (canonical)
-
-The TS implementation is the canonical reference for the primitive. Both the spec and code live in casino-platform:
-
-- **Design spec:** `W:\projects\casino-platform\docs\spintax-plurals-engine-plan.md` (v5, post-fifth-pass review).
-- **Engine code:** `W:\projects\casino-platform\packages\core\utils\spintax-plurals.ts`.
-- **Tests:** `W:\projects\casino-platform\packages\core\utils\spintax-plurals.test.ts` (~70 cases).
-- **Pipeline integration:** `packages/core/utils/resolve-spintax.ts` — `applyPlurals()` slots between `applyConditionals` (pass 2) and `resolveEnumerations`.
-
-PHP port mirrors this exactly. Where the canonical TS behaviour disagrees with anything in this backlog, **the TS implementation wins** — this doc was the abstract design before code; the code is the contract now.
-
-### Trigger confirmation (2026-05-09)
-
-Promoted from deferred to active after a real-data cost analysis of casino-platform templates surfaced three arguments that the original abstract analysis didn't capture:
-
-1. **Engineer-in-the-loop dependency.** The existing-primitives workaround forces every new counter (new casino data column, literal in copy, new dynamic variable) through an assembler change → worker deploy → template work loop. Editor cannot autonomously extend templates — every plural-bearing counter requires engineering coordination first. This is organizational coupling, not cosmetic friction.
-
-2. **Literal numbers are unaddressable.** Phrases like "за 30 дней", "5 крипт", "2 категории" need plural agreement on values that don't exist in the casino data layer at all. Has-flags can't be pre-computed for them. The workaround doesn't cost more here — it doesn't work.
-
-3. **Multiplicative explosion on real entities.** Casino entity count: Languages, Cryptos, Providers, Bonuses, FreeSpins, Days, Hours — six minimum. Each needs 3 has-flags. Some need flags per counter source (FreeSpinsCount, WagerDays, PayoutHours each separately). Plus per-noun macros (LangsNounRu, CryptosNounRu, ProvidersNounRu, BonusesNounRu, FreeSpinsNounRu, DaysNounRu, HoursNounRu) duplicated across every preset. Cost goes from "more expensive" to "unmaintainable" once enumerated on real data.
+**Status:** SHIPPED 1.5.0. Engine + validator + 74 PHPUnit cases live in `plugin/src/Core/Engine/Plurals.php` + `PluralArityError.php` + `PluralFormError.php`. The backlog entry is kept as the locked design + open V2 questions.
 
 ### Problem
 
@@ -86,9 +65,9 @@ The earlier sketch had two structural weaknesses that the colon form closes:
 
 ### Locked locale model
 
-- Single locale per render call (not per-construct). Locale comes from render context: in casino-platform from `allVars.lang`; in the PHP plugin from a new template post meta `_spintax_locale` (default to site WP locale or `en` if unset).
+- Single locale per render call (not per-construct). Locale comes from template post meta `_spintax_locale` (default: site WP locale, falls back to `en` if unset).
 - Locale is normalized to base language: `ru-RU` → `ru`, `uk-UA` → `uk`, `pt-BR` → `pt`, `es-419` → `es`. Done by `normalizeBaseLang()`.
-- Per-construct override (`{plural:en %N%: …}`) was in the abstract design but is **NOT implemented** in TS. Deferred to V2 if a real mixed-language template need surfaces.
+- Per-construct override (`{plural:en %N%: …}`) was in the abstract design but is **NOT implemented**. Deferred to V2 if a real mixed-language template need surfaces.
 
 ### Locked plural rules (V1)
 
@@ -99,7 +78,7 @@ The earlier sketch had two structural weaknesses that the colon form closes:
 
 `bg` (Bulgarian) intentionally NOT included in V1 — has a distinct rule from East Slavic. Adds in V2 with its own bucket. `pl` / `cs` / `sk` / `sl` similarly out (4-bucket, different boundaries).
 
-### Edge case behaviour (per shipped TS)
+### Edge case behaviour (per shipped 1.5.0)
 
 - **Empty / missing / non-numeric count → entire construct → empty string.** Not last slot. (Earlier draft said "last slot + warning"; reality is empty per the unknown-var-renders-empty engine contract.) Authors who want sentence-erase must gate with `{?CasinoHasFoo?…|}`.
 - **Strict numeric:** `trim()` → full-string `^-?\d+$` test → `parseInt`. Rejects `"1,200"`, `"12abc"`, `"08h"`, `"%CasinoFoo%"` that didn't substitute. Comma is empty, not "1".
@@ -110,10 +89,9 @@ The earlier sketch had two structural weaknesses that the colon form closes:
 
 ### Lenient mode (production runtime)
 
-- `applyPlurals(text, lang, { lenient: true })` catches `PluralArityError` / `PluralFormError` per-block, emits the verbatim block text with **fullwidth braces** (`｛plural N: a｜b｝` — codepoints U+FF5B / U+FF5D) instead of throwing.
+- Renderer catches `PluralArityError` / `PluralFormError` per-block, emits the verbatim block text with **fullwidth braces** (`｛plural N: a｜b｝` — codepoints U+FF5B / U+FF5D) instead of throwing.
 - Fullwidth braces survive subsequent pipeline stages: the synonym resolver doesn't see them as ASCII `{}`, so `{plural ...}` doesn't degrade into a random-pick enumeration.
-- Optional `onError` callback receives each caught error for telemetry.
-- Strict mode (default) throws on first error — used by validators and tests so structural issues fail loudly.
+- Strict mode is used by `Validator.php` and PHPUnit so structural issues fail loudly at edit time.
 
 ### Out of scope (not even V2)
 
@@ -132,11 +110,9 @@ The earlier sketch had two structural weaknesses that the colon form closes:
 - Per-construct locale override (`{plural:en %N%: …}`).
 - Admin UI chip-list helper for inserting plural constructs.
 
-### Implementation context
+### V2 expansion
 
-- **TS engine:** SHIPPED in casino-platform (`packages/core/utils/spintax-plurals.ts`). Wired into `resolveForSite()` pipeline. ~70 tests passing. Validator surface: `scripts/validate-spintax.ts` (file-based, syntactic) + planned `scripts/validate-plurals-db.ts` (DB-backed bulk per phase 2A of the canonical plan).
-- **PHP plugin:** PORT IN PROGRESS. Mirror TS algorithm exactly. Pipeline insertion in `Renderer.php` between conditional resolution and enumeration resolution. Extend `Validator.php` to surface arity/form errors at edit time.
-- **V2 expansion (Polish, Arabic, etc.):** still requires its own per-language trigger — don't pre-build.
+V2 locales (Polish 4-form, Arabic 6-form, Bulgarian, Czech / Slovak / Slovenian, Welsh, Hebrew, Latvian, French 0/1=singular) each require their own per-language trigger — don't pre-build. The arity/rule table extension is mechanical, but the test coverage burden compounds, and we should only add a family when we have a real template that needs it.
 
 ### Open questions for future community input
 
@@ -145,18 +121,7 @@ The earlier sketch had two structural weaknesses that the colon form closes:
 - Should V2 expansion (Polish/Arabic) wait for explicit demand per language, or batch on first non-RU/EN trigger?
 - Number formatting (NBSP separators, locale-aware decimal) — separate primitive or part of plural? Lean separate.
 
-These are deliberately not pre-decided. Once a community forms around `spintax.net`, they can go to public vote.
-
-### Estimated effort (PHP port — V1)
-
-- Engine code: ~150 LOC parser-side (brace-aware scanner, resolve_plural_block, helpers, two error classes).
-- Renderer wiring: ~5 LOC (one pipeline insertion + locale resolution).
-- Validator extension: ~30 LOC (new method + integration in existing validator surface).
-- Tests: ~70 PHPUnit cases mirroring TS coverage.
-- Docs: gtw-syntax-reference update + CLAUDE.md sync + readme.txt changelog.
-- Version bump: 1.4.0 → 1.5.0 (3-place sync).
-
-Roughly 2× the weight of the conditionals primitive that shipped in 1.2.0. Bounded but not free — the real cost is keeping rule tables in sync with TS over time, not the initial port.
+These are deliberately not pre-decided.
 
 ---
 

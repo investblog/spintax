@@ -246,21 +246,14 @@ git push origin vX.Y.Z         # → release.yml + wporg-deploy.yml fire in para
 ## Future work (post-2.0)
 
 - ACF / post-meta bindings ✅ **DELIVERED in 2.0.0** (see Bindings section).
-- ACF repeater / flexible_content row-level binding rendering (V2)
+- ACF repeater / flexible_content row-level binding rendering (V2 — no trigger yet)
 - Block-editor inline editing of `per_post` source (V1 is metabox-only)
 - REST API surface for bindings (V1 admin-only)
 - Per-binding locale picker (currently inherits site locale)
+- ACF Pro `acf_register_field_setting` checkbox in the ACF field UI
 - Visual diff in Test panel (current vs rendered)
-- Gutenberg block
-- REST API, WP-CLI, Import/Export
-- Template taxonomy
-- `#const` (correlated constants from GTW)
-- Rebrand demo template from Acme to 301.st promotional content
-- **TS engine port** (in progress) — lives in `W:\projects\casino-platform\packages\core\utils\spintax.ts` + `spintax-plurals.ts`
-  - Full parity with PHP Parser.php including per-element separators, auto-spacing, conditionals, and plural agreement
-  - Mulberry32 PRNG with `hashCode(siteId)` seed for deterministic per-site variants
-  - Tests: `spintax.test.ts` (~105) + `spintax-plurals.test.ts` (74), run via `npx tsx <file>`
-  - **Phase 1** (done): port engine inline in casino-platform; plural primitive vendored both sides 2026-05-10
-  - **Phase 2** (next): integrate into render pipeline — ui_strings, articles, anti-footprint
-  - **Phase 3** (later): extract to this project as standalone CF Worker API
-  - See: `W:\projects\casino-platform\ROADMAP.md` Phase 5c
+- Gutenberg block (V2)
+- Template taxonomy (V2)
+- `#const` (correlated constants from GTW — V2 engine primitive)
+
+V2 items above are locked-but-deferred — promote on real user signal, do not preemptively build.

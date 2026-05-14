@@ -37,6 +37,46 @@ class BindingsPage {
 	private const PAGE_SLUG = 'spintax-bindings';
 
 	/**
+	 * Tab slug for the "Source & Target" panel (scope, target, source).
+	 *
+	 * @var string
+	 */
+	public const TAB_SOURCE_TARGET = 'source-target';
+
+	/**
+	 * Tab slug for the "Behavior" panel (variables, triggers, behavior,
+	 * advanced).
+	 *
+	 * @var string
+	 */
+	public const TAB_BEHAVIOR = 'behavior';
+
+	/**
+	 * Tab slug for the "Test" panel (edit-only dry-run dispatcher).
+	 *
+	 * @var string
+	 */
+	public const TAB_TEST = 'test';
+
+	/**
+	 * Whitelist of accepted tab slugs. Anything else falls back to the
+	 * default (`TAB_SOURCE_TARGET`) at read time so URL tampering can't
+	 * leave the form in an undefined state.
+	 *
+	 * @return string[]
+	 */
+	private static function tab_slugs(): array {
+		return array( self::TAB_SOURCE_TARGET, self::TAB_BEHAVIOR, self::TAB_TEST );
+	}
+
+	/**
+	 * Default tab when nothing is requested (fresh form / unknown slug).
+	 *
+	 * @var string
+	 */
+	private const DEFAULT_TAB = self::TAB_SOURCE_TARGET;
+
+	/**
 	 * Repository instance.
 	 *
 	 * @var BindingsRepo
@@ -196,6 +236,9 @@ class BindingsPage {
 				$args = array( 'action' => $result['form_redirect_action'] );
 				if ( ! empty( $result['existing_id'] ) ) {
 					$args['binding_id'] = $result['existing_id'];
+				}
+				if ( ! empty( $result['active_tab'] ) ) {
+					$args['active_tab'] = $result['active_tab'];
 				}
 				$form_url = add_query_arg( $args, $this->page_url() );
 				$this->redirect_with_notice( $form_url, $result['message'], $result['type'] );
@@ -392,31 +435,33 @@ class BindingsPage {
 		// Tier 1/2/3 guard runs here so we can produce specific messages.
 		$guard_error = $this->run_target_guard( $kind, $key );
 		if ( null !== $guard_error ) {
-			return $this->form_error( $data, $existing_id, $guard_error );
+			return $this->form_error( $data, $existing_id, $guard_error, self::TAB_SOURCE_TARGET );
 		}
 
 		if ( '' === $data['post_type'] ) {
-			return $this->form_error( $data, $existing_id, __( 'Select a post type.', 'spintax' ) );
+			return $this->form_error( $data, $existing_id, __( 'Select a post type.', 'spintax' ), self::TAB_SOURCE_TARGET );
 		}
 		if ( '' === $key ) {
-			return $this->form_error( $data, $existing_id, __( 'Target field key is required.', 'spintax' ) );
+			return $this->form_error( $data, $existing_id, __( 'Target field key is required.', 'spintax' ), self::TAB_SOURCE_TARGET );
 		}
 		$acf_error = $this->validate_acf_field_key( $kind, $key, $data['target']['field_key'] );
 		if ( null !== $acf_error ) {
-			return $this->form_error( $data, $existing_id, $acf_error );
+			return $this->form_error( $data, $existing_id, $acf_error, self::TAB_SOURCE_TARGET );
 		}
 		if ( 'template' === $data['source']['mode'] && $data['source']['template_id'] <= 0 ) {
 			return $this->form_error(
 				$data,
 				$existing_id,
-				__( 'Choose a template (or switch source mode to per-post).', 'spintax' )
+				__( 'Choose a template (or switch source mode to per-post).', 'spintax' ),
+				self::TAB_SOURCE_TARGET
 			);
 		}
 		if ( ! $data['triggers']['save_post'] && 'disabled' === $data['triggers']['cron'] ) {
 			return $this->form_error(
 				$data,
 				$existing_id,
-				__( 'A binding with no triggers will never run. Enable "Fire on post save" or pick a cron schedule.', 'spintax' )
+				__( 'A binding with no triggers will never run. Enable "Fire on post save" or pick a cron schedule.', 'spintax' ),
+				self::TAB_BEHAVIOR
 			);
 		}
 
@@ -427,7 +472,9 @@ class BindingsPage {
 		}
 
 		if ( $result instanceof WP_Error ) {
-			return $this->form_error( $data, $existing_id, $result->get_error_message() );
+			// Repo-level errors (e.g. cross-kind dedup) live on the
+			// Source & Target tab because they're target-shape conflicts.
+			return $this->form_error( $data, $existing_id, $result->get_error_message(), self::TAB_SOURCE_TARGET );
 		}
 
 		return array(
@@ -443,18 +490,25 @@ class BindingsPage {
 	 * in a transient so `render_form()` can repopulate the form on the
 	 * next request (spec §4.8.1, added in 2.0.1).
 	 *
+	 * The `$tab` argument (2.1.0) records which tab the offending field
+	 * lives on so the redirect can re-open the right panel. Falls back
+	 * to `DEFAULT_TAB` for callers that don't yet care.
+	 *
 	 * @param array<string, mixed> $data        Form payload as built by handle_save().
 	 * @param string               $existing_id Binding id when editing, '' when creating.
 	 * @param string               $message     Error message to surface.
-	 * @return array{message: string, type: string, form_redirect_action: string, existing_id: string}
+	 * @param string               $tab         Active tab on which the error should display.
+	 * @return array{message: string, type: string, form_redirect_action: string, existing_id: string, active_tab: string}
 	 */
-	private function form_error( array $data, string $existing_id, string $message ): array {
-		$this->flash_form_state( $data, $existing_id );
+	private function form_error( array $data, string $existing_id, string $message, string $tab = self::DEFAULT_TAB ): array {
+		$tab = in_array( $tab, self::tab_slugs(), true ) ? $tab : self::DEFAULT_TAB;
+		$this->flash_form_state( $data, $existing_id, $tab );
 		return array(
 			'message'              => $message,
 			'type'                 => 'error',
 			'form_redirect_action' => '' !== $existing_id ? 'edit' : 'new',
 			'existing_id'          => $existing_id,
+			'active_tab'           => $tab,
 		);
 	}
 
@@ -466,13 +520,15 @@ class BindingsPage {
 	 *
 	 * @param array<string, mixed> $data        Form payload.
 	 * @param string               $existing_id Binding id when editing.
+	 * @param string               $active_tab  Tab the user was on (carries the active panel through the PRG).
 	 */
-	private function flash_form_state( array $data, string $existing_id ): void {
+	private function flash_form_state( array $data, string $existing_id, string $active_tab = self::DEFAULT_TAB ): void {
 		set_transient(
 			$this->form_flash_key(),
 			array(
 				'data'        => $data,
 				'existing_id' => $existing_id,
+				'active_tab'  => in_array( $active_tab, self::tab_slugs(), true ) ? $active_tab : self::DEFAULT_TAB,
 			),
 			60
 		);
@@ -481,7 +537,7 @@ class BindingsPage {
 	/**
 	 * Read and clear the form-flash transient.
 	 *
-	 * @return array{data: array<string, mixed>, existing_id: string}|null
+	 * @return array{data: array<string, mixed>, existing_id: string, active_tab: string}|null
 	 */
 	private function consume_form_flash(): ?array {
 		$flash = get_transient( $this->form_flash_key() );
@@ -489,9 +545,11 @@ class BindingsPage {
 			return null;
 		}
 		delete_transient( $this->form_flash_key() );
+		$tab = (string) ( $flash['active_tab'] ?? self::DEFAULT_TAB );
 		return array(
 			'data'        => $flash['data'],
 			'existing_id' => (string) ( $flash['existing_id'] ?? '' ),
+			'active_tab'  => in_array( $tab, self::tab_slugs(), true ) ? $tab : self::DEFAULT_TAB,
 		);
 	}
 
@@ -712,6 +770,22 @@ class BindingsPage {
 			$b  = is_array( $binding ) ? $binding : $defaults;
 			$id = (string) ( $b['id'] ?? '' );
 		}
+
+		// Resolve the active tab. Priority: explicit `?active_tab=…`
+		// query param (used by validation-error redirects), then the
+		// flash-restored value, then the default. URL values are
+		// whitelisted to keep tampered links from leaving the form in
+		// an undefined state.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only UI state from GET.
+		$tab_from_get = isset( $_GET['active_tab'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['active_tab'] ) ) : '';
+		if ( in_array( $tab_from_get, self::tab_slugs(), true ) ) {
+			$active_tab = $tab_from_get;
+		} elseif ( null !== $flash && isset( $flash['active_tab'] ) ) {
+			$active_tab = (string) $flash['active_tab'];
+		} else {
+			$active_tab = self::DEFAULT_TAB;
+		}
+
 		$post_types = get_post_types( array( 'public' => true ), 'objects' );
 		$templates  = get_posts(
 			array(
@@ -725,16 +799,58 @@ class BindingsPage {
 			)
 		);
 
+		$has_test_tab = ( $binding && '' !== $id );
+		$tabs         = array(
+			self::TAB_SOURCE_TARGET => __( 'Source & Target', 'spintax' ),
+			self::TAB_BEHAVIOR      => __( 'Behavior', 'spintax' ),
+		);
+		if ( $has_test_tab ) {
+			$tabs[ self::TAB_TEST ] = __( 'Test', 'spintax' );
+		}
+		if ( ! isset( $tabs[ $active_tab ] ) ) {
+			$active_tab = self::DEFAULT_TAB;
+		}
+
 		?>
-		<h2>
+		<h2 class="spintax-binding-form-header">
 			<?php echo $binding ? esc_html__( 'Edit Binding', 'spintax' ) : esc_html__( 'New Binding', 'spintax' ); ?>
+			<a href="<?php echo esc_url( $this->page_url() ); ?>" class="page-title-action">
+				<?php esc_html_e( '← Back to bindings', 'spintax' ); ?>
+			</a>
 		</h2>
 
-		<form method="post" id="spintax-binding-form">
+		<form method="post" id="spintax-binding-form" class="spintax-binding-form">
 			<?php wp_nonce_field( 'spintax_binding_save' ); ?>
 			<input type="hidden" name="binding_id" value="<?php echo esc_attr( $id ); ?>" />
+			<input type="hidden" name="active_tab" id="spintax-active-tab" value="<?php echo esc_attr( $active_tab ); ?>" />
 
-			<h3><?php esc_html_e( 'Scope', 'spintax' ); ?></h3>
+			<div class="spintax-binding-tabs" role="tablist" aria-label="<?php esc_attr_e( 'Binding sections', 'spintax' ); ?>">
+				<?php
+				foreach ( $tabs as $slug => $label ) :
+					$is_active = ( $slug === $active_tab );
+					?>
+					<button
+						type="button"
+						role="tab"
+						id="spintax-tab-<?php echo esc_attr( $slug ); ?>"
+						aria-controls="spintax-panel-<?php echo esc_attr( $slug ); ?>"
+						aria-selected="<?php echo $is_active ? 'true' : 'false'; ?>"
+						tabindex="<?php echo $is_active ? '0' : '-1'; ?>"
+						data-spintax-tab="<?php echo esc_attr( $slug ); ?>"
+					>
+						<?php echo esc_html( $label ); ?>
+					</button>
+				<?php endforeach; ?>
+			</div>
+
+			<div
+				id="spintax-panel-<?php echo esc_attr( self::TAB_SOURCE_TARGET ); ?>"
+				class="spintax-binding-panel"
+				role="tabpanel"
+				aria-labelledby="spintax-tab-<?php echo esc_attr( self::TAB_SOURCE_TARGET ); ?>"
+				<?php echo self::TAB_SOURCE_TARGET === $active_tab ? '' : 'hidden'; ?>
+			>
+				<h3 class="screen-reader-text"><?php esc_html_e( 'Scope', 'spintax' ); ?></h3>
 			<table class="form-table" role="presentation">
 				<tr>
 					<th scope="row"><label for="spintax-post-type"><?php esc_html_e( 'Post type', 'spintax' ); ?></label></th>
@@ -830,10 +946,19 @@ class BindingsPage {
 				</tr>
 			</table>
 
-			<h3><?php esc_html_e( 'Variables', 'spintax' ); ?></h3>
-			<table class="form-table" role="presentation">
-				<tr>
-					<th scope="row"><?php esc_html_e( 'Expose context', 'spintax' ); ?></th>
+			</div>
+
+			<div
+				id="spintax-panel-<?php echo esc_attr( self::TAB_BEHAVIOR ); ?>"
+				class="spintax-binding-panel"
+				role="tabpanel"
+				aria-labelledby="spintax-tab-<?php echo esc_attr( self::TAB_BEHAVIOR ); ?>"
+				<?php echo self::TAB_BEHAVIOR === $active_tab ? '' : 'hidden'; ?>
+			>
+				<h3><?php esc_html_e( 'Variables', 'spintax' ); ?></h3>
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Expose context', 'spintax' ); ?></th>
 					<td>
 						<label>
 							<input type="checkbox" name="expose_post_context" value="1" <?php checked( ! empty( $b['variables']['expose_post_context'] ) ); ?> />
@@ -938,29 +1063,39 @@ class BindingsPage {
 				</tr>
 			</table>
 
-			<?php if ( $binding && '' !== $id ) : ?>
-				<h3><?php esc_html_e( 'Test', 'spintax' ); ?></h3>
-				<table class="form-table" role="presentation">
-					<tr>
-						<th scope="row"><label for="spintax-binding-test-post-id"><?php esc_html_e( 'Post ID', 'spintax' ); ?></label></th>
-						<td>
-							<input type="number" id="spintax-binding-test-post-id" class="small-text" min="1" placeholder="123" />
-							<button type="button" id="spintax-binding-test-button" class="button"><?php esc_html_e( 'Test', 'spintax' ); ?></button>
-							<p class="description">
-								<?php esc_html_e( 'Dry-run this binding against a specific post. No writes happen.', 'spintax' ); ?>
-							</p>
-							<div id="spintax-binding-test-results" style="margin-top:12px;"></div>
-						</td>
-					</tr>
-				</table>
+			</div>
+
+			<?php if ( $has_test_tab ) : ?>
+				<div
+					id="spintax-panel-<?php echo esc_attr( self::TAB_TEST ); ?>"
+					class="spintax-binding-panel"
+					role="tabpanel"
+					aria-labelledby="spintax-tab-<?php echo esc_attr( self::TAB_TEST ); ?>"
+					<?php echo self::TAB_TEST === $active_tab ? '' : 'hidden'; ?>
+				>
+					<h3><?php esc_html_e( 'Test', 'spintax' ); ?></h3>
+					<table class="form-table" role="presentation">
+						<tr>
+							<th scope="row"><label for="spintax-binding-test-post-id"><?php esc_html_e( 'Post ID', 'spintax' ); ?></label></th>
+							<td>
+								<input type="number" id="spintax-binding-test-post-id" class="small-text" min="1" placeholder="123" />
+								<button type="button" id="spintax-binding-test-button" class="button"><?php esc_html_e( 'Test', 'spintax' ); ?></button>
+								<p class="description">
+									<?php esc_html_e( 'Dry-run this binding against a specific post. No writes happen.', 'spintax' ); ?>
+								</p>
+								<div id="spintax-binding-test-results" style="margin-top:12px;"></div>
+							</td>
+						</tr>
+					</table>
+				</div>
 			<?php endif; ?>
 
-			<p class="submit">
+			<div class="spintax-binding-footer">
 				<input type="submit" name="spintax_save_binding" class="button-primary" value="<?php echo $binding ? esc_attr__( 'Update binding', 'spintax' ) : esc_attr__( 'Create binding', 'spintax' ); ?>" />
 				<a href="<?php echo esc_url( $this->page_url() ); ?>" class="button">
 					<?php esc_html_e( 'Cancel', 'spintax' ); ?>
 				</a>
-			</p>
+			</div>
 		</form>
 		<?php
 	}

@@ -278,6 +278,142 @@ class BindingsPageTest extends \WP_UnitTestCase {
 		delete_transient( 'spintax_admin_notice_' . $this->admin_id );
 	}
 
+	public function test_form_renders_tabs_with_aria_attributes(): void {
+		$_GET = array( 'action' => 'new' );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'class="spintax-binding-tabs"', $html );
+		$this->assertStringContainsString( 'role="tablist"', $html );
+		$this->assertStringContainsString( 'id="spintax-tab-source-target"', $html );
+		$this->assertStringContainsString( 'id="spintax-tab-behavior"', $html );
+		// Test tab only appears in the edit view; new-binding form omits it.
+		$this->assertStringNotContainsString( 'id="spintax-tab-test"', $html );
+
+		// Source & Target is default-active; Behavior must be hidden.
+		$this->assertMatchesRegularExpression(
+			'/id="spintax-tab-source-target"[^>]*aria-selected="true"/',
+			$html
+		);
+		$this->assertMatchesRegularExpression(
+			'/id="spintax-tab-behavior"[^>]*aria-selected="false"/',
+			$html
+		);
+
+		// Hidden input carries the active_tab for POST round-trip.
+		$this->assertStringContainsString( 'name="active_tab"', $html );
+	}
+
+	public function test_form_renders_test_tab_when_editing(): void {
+		$repo    = new BindingsRepo();
+		$tpl_id  = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Tpl',
+				'post_content' => 'X',
+			)
+		);
+		$binding = $repo->create(
+			array(
+				'post_type' => 'post',
+				'target'    => array( 'kind' => 'post_meta', 'key' => 'k', 'field_key' => '' ),
+				'source'    => array( 'mode' => 'template', 'template_id' => $tpl_id ),
+				'triggers'  => array( 'save_post' => true ),
+			)
+		);
+
+		$_GET = array( 'action' => 'edit', 'binding_id' => $binding['id'] );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'id="spintax-tab-test"', $html );
+		$this->assertStringContainsString( 'id="spintax-panel-test"', $html );
+	}
+
+	public function test_form_activates_tab_from_query_arg(): void {
+		$_GET = array( 'action' => 'new', 'active_tab' => 'behavior' );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertMatchesRegularExpression(
+			'/id="spintax-tab-behavior"[^>]*aria-selected="true"/',
+			$html
+		);
+		// Source & Target panel must be hidden when Behavior is active.
+		$this->assertMatchesRegularExpression(
+			'/id="spintax-panel-source-target"[^>]*hidden/',
+			$html
+		);
+	}
+
+	public function test_form_falls_back_to_default_tab_when_query_invalid(): void {
+		$_GET = array( 'action' => 'new', 'active_tab' => 'malicious-anywhere' );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertMatchesRegularExpression(
+			'/id="spintax-tab-source-target"[^>]*aria-selected="true"/',
+			$html
+		);
+	}
+
+	public function test_trigger_validation_error_routes_to_behavior_tab(): void {
+		$this->fill_post_with_valid_meta_binding();
+		// Both triggers off → "binding will never run" error.
+		$_POST['trigger_save_post'] = '';
+		$_POST['trigger_cron']      = 'disabled';
+
+		$result = $this->call_handle_save();
+
+		$this->assertSame( 'error', $result['type'] );
+		$this->assertSame( BindingsPage::TAB_BEHAVIOR, $result['active_tab'] );
+	}
+
+	public function test_target_validation_error_routes_to_source_target_tab(): void {
+		$this->fill_post_with_valid_meta_binding();
+		$_POST['target_key'] = '';
+
+		$result = $this->call_handle_save();
+
+		$this->assertSame( 'error', $result['type'] );
+		$this->assertSame( BindingsPage::TAB_SOURCE_TARGET, $result['active_tab'] );
+	}
+
+	public function test_flashed_active_tab_round_trips_into_form(): void {
+		$this->fill_post_with_valid_meta_binding();
+		// Trigger a Behavior-tab validation error so the flash carries
+		// active_tab = 'behavior'.
+		$_POST['trigger_save_post'] = '';
+		$_POST['trigger_cron']      = 'disabled';
+
+		$this->call_handle_save();
+
+		$flash = get_transient( 'spintax_binding_form_flash_' . $this->admin_id );
+		$this->assertSame( BindingsPage::TAB_BEHAVIOR, $flash['active_tab'] );
+
+		// Render the form WITHOUT an `active_tab` query param — the flash
+		// should be the source of truth.
+		$_GET = array( 'action' => 'new' );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertMatchesRegularExpression(
+			'/id="spintax-tab-behavior"[^>]*aria-selected="true"/',
+			$html
+		);
+	}
+
 	public function test_form_drops_stale_phase3_copy(): void {
 		$_GET = array( 'action' => 'new' );
 

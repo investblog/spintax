@@ -195,6 +195,75 @@
 		} );
 	}
 
+	function activateTab( slug, opts ) {
+		opts = opts || {};
+		var $tabs   = $( '.spintax-binding-tabs [role="tab"]' );
+		var $panels = $( '.spintax-binding-panel' );
+		if ( $tabs.length === 0 ) {
+			return;
+		}
+
+		var $targetTab = $tabs.filter( '[data-spintax-tab="' + slug + '"]' );
+		if ( $targetTab.length === 0 ) {
+			return;
+		}
+
+		$tabs.attr( 'aria-selected', 'false' ).attr( 'tabindex', '-1' );
+		$panels.attr( 'hidden', 'hidden' );
+
+		$targetTab.attr( 'aria-selected', 'true' ).attr( 'tabindex', '0' );
+		$( '#spintax-panel-' + slug ).removeAttr( 'hidden' );
+		$( '#spintax-active-tab' ).val( slug );
+
+		if ( opts.focus ) {
+			$targetTab.trigger( 'focus' );
+		}
+	}
+
+	function bindTabSwitcher() {
+		var $tabStrip = $( '.spintax-binding-tabs' );
+		if ( $tabStrip.length === 0 ) {
+			return;
+		}
+
+		// Mouse / pointer activation.
+		$tabStrip.on( 'click', '[role="tab"]', function ( e ) {
+			e.preventDefault();
+			activateTab( $( this ).data( 'spintax-tab' ), { focus: false } );
+		} );
+
+		// Keyboard navigation per WAI-ARIA tabs pattern.
+		$tabStrip.on( 'keydown', '[role="tab"]', function ( e ) {
+			var $tabs   = $tabStrip.find( '[role="tab"]' );
+			var index   = $tabs.index( this );
+			var lastIdx = $tabs.length - 1;
+			var nextIdx = null;
+
+			switch ( e.key ) {
+				case 'ArrowRight':
+				case 'ArrowDown':
+					nextIdx = index === lastIdx ? 0 : index + 1;
+					break;
+				case 'ArrowLeft':
+				case 'ArrowUp':
+					nextIdx = index === 0 ? lastIdx : index - 1;
+					break;
+				case 'Home':
+					nextIdx = 0;
+					break;
+				case 'End':
+					nextIdx = lastIdx;
+					break;
+			}
+
+			if ( nextIdx !== null ) {
+				e.preventDefault();
+				var slug = $tabs.eq( nextIdx ).data( 'spintax-tab' );
+				activateTab( slug, { focus: true } );
+			}
+		} );
+	}
+
 	function bindDismissibleNotices() {
 		// Persist dismissals for spintax-tagged notices. WP's
 		// `notice-dismiss` button hides the element locally; we layer
@@ -216,6 +285,7 @@
 	$( function () {
 		bindForm();
 		bindTestPanel();
+		bindTabSwitcher();
 		bindDismissibleNotices();
 	} );
 

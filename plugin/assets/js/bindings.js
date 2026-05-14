@@ -74,10 +74,188 @@
 		} );
 	}
 
+	// ----- ACF combobox (2.1.0) -----
+	//
+	// Replaces the native <datalist> ACF picker with a custom listbox so we
+	// can group fields by ACF field group, search across name + label, and
+	// auto-fill the sibling field-key hidden input on selection. WAI-ARIA
+	// combobox pattern: aria-expanded, aria-activedescendant + roving
+	// tabindex on the listbox items.
+	var acfFieldsCache = []; // last fetched list of {name, label, group, field_key}.
+	var acfActiveIndex = -1;
+
+	function $acfCombo() {
+		return $( '[data-spintax-acf-combobox]' );
+	}
+
+	function $acfInput() {
+		return $( '#spintax-acf-combobox-input' );
+	}
+
+	function $acfList() {
+		return $( '#spintax-acf-combobox-list' );
+	}
+
+	function comboHide() {
+		$acfList().attr( 'hidden', 'hidden' );
+		$acfInput().attr( 'aria-expanded', 'false' ).removeAttr( 'aria-activedescendant' );
+		acfActiveIndex = -1;
+	}
+
+	function comboShow() {
+		if ( $acfList().children().length === 0 ) {
+			return;
+		}
+		$acfList().removeAttr( 'hidden' );
+		$acfInput().attr( 'aria-expanded', 'true' );
+	}
+
+	function renderAcfOptions( filterText ) {
+		var $list = $acfList().empty();
+		var needle = ( filterText || '' ).toString().toLowerCase();
+
+		var matches = $.grep( acfFieldsCache, function ( item ) {
+			if ( ! needle ) {
+				return true;
+			}
+			var hay = ( ( item.group || '' ) + ' ' + ( item.label || '' ) + ' ' + ( item.name || '' ) ).toLowerCase();
+			return hay.indexOf( needle ) !== -1;
+		} );
+
+		if ( matches.length === 0 ) {
+			$list.append(
+				$( '<li>' )
+					.addClass( 'spintax-acf-combobox-empty' )
+					.text( 'No ACF fields match.' )
+			);
+			comboShow();
+			return;
+		}
+
+		$.each( matches, function ( i, item ) {
+			var label = ( item.label || item.name ) + ' (' + item.name + ')';
+			var $li = $( '<li>' )
+				.attr( 'role', 'option' )
+				.attr( 'id', 'spintax-acf-combobox-opt-' + i )
+				.attr( 'data-spintax-acf-name', item.name )
+				.attr( 'data-spintax-acf-field-key', item.field_key || '' )
+				.append( $( '<strong>' ).text( label ) );
+			if ( item.group ) {
+				$li.append( $( '<span>' ).addClass( 'spintax-acf-combobox-group' ).text( '  ·  ' + item.group ) );
+			}
+			$list.append( $li );
+		} );
+
+		acfActiveIndex = -1;
+		comboShow();
+	}
+
+	function comboSelect( $li ) {
+		if ( ! $li || $li.length === 0 ) {
+			return;
+		}
+		var name = $li.attr( 'data-spintax-acf-name' ) || '';
+		var fkey = $li.attr( 'data-spintax-acf-field-key' ) || '';
+		if ( ! name ) {
+			return;
+		}
+
+		// Display the picked field in the combobox input; canonical
+		// values go into the hidden form inputs so the server payload
+		// stays unchanged.
+		var display = name + ( fkey ? ' (' + fkey + ')' : '' );
+		$acfInput().val( display );
+		$( '#spintax-target-key' ).val( name ).trigger( 'change' );
+		setAcfFieldKey( fkey );
+		comboHide();
+	}
+
+	function moveAcfActive( delta ) {
+		var $items = $acfList().children( '[role="option"]' );
+		if ( $items.length === 0 ) {
+			return;
+		}
+		acfActiveIndex = ( acfActiveIndex + delta + $items.length ) % $items.length;
+		$items.removeClass( 'spintax-acf-combobox-active' );
+		var $current = $items.eq( acfActiveIndex ).addClass( 'spintax-acf-combobox-active' );
+		$acfInput().attr( 'aria-activedescendant', $current.attr( 'id' ) );
+
+		// Bring it into view.
+		var listEl  = $acfList()[ 0 ];
+		var itemEl  = $current[ 0 ];
+		if ( listEl && itemEl ) {
+			var listRect = listEl.getBoundingClientRect();
+			var itemRect = itemEl.getBoundingClientRect();
+			if ( itemRect.bottom > listRect.bottom ) {
+				listEl.scrollTop += itemRect.bottom - listRect.bottom;
+			} else if ( itemRect.top < listRect.top ) {
+				listEl.scrollTop -= listRect.top - itemRect.top;
+			}
+		}
+	}
+
+	function bindAcfCombobox() {
+		// Filter on keystroke + open the list.
+		$( document ).on( 'input', '#spintax-acf-combobox-input', function () {
+			renderAcfOptions( $( this ).val() );
+		} );
+
+		// Re-open on focus (so a user who clicks back into the field
+		// after dismissing the list can browse without retyping).
+		$( document ).on( 'focus', '#spintax-acf-combobox-input', function () {
+			if ( acfFieldsCache.length > 0 ) {
+				renderAcfOptions( $( this ).val() );
+			}
+		} );
+
+		// Click to select.
+		$( document ).on( 'mousedown', '#spintax-acf-combobox-list [role="option"]', function ( e ) {
+			// Prevent the input's blur from firing before click.
+			e.preventDefault();
+			comboSelect( $( this ) );
+		} );
+
+		// Keyboard nav per ARIA combobox spec.
+		$( document ).on( 'keydown', '#spintax-acf-combobox-input', function ( e ) {
+			var $items = $acfList().children( '[role="option"]' );
+			switch ( e.key ) {
+				case 'ArrowDown':
+					e.preventDefault();
+					if ( $acfList().attr( 'hidden' ) ) {
+						renderAcfOptions( $( this ).val() );
+					}
+					moveAcfActive( 1 );
+					break;
+				case 'ArrowUp':
+					e.preventDefault();
+					moveAcfActive( -1 );
+					break;
+				case 'Enter':
+					if ( acfActiveIndex >= 0 && $items.length > 0 ) {
+						e.preventDefault();
+						comboSelect( $items.eq( acfActiveIndex ) );
+					}
+					break;
+				case 'Escape':
+					comboHide();
+					break;
+			}
+		} );
+
+		// Close on outside click.
+		$( document ).on( 'click', function ( e ) {
+			if ( $( e.target ).closest( '[data-spintax-acf-combobox]' ).length === 0 ) {
+				comboHide();
+			}
+		} );
+	}
+
 	function loadAcfFields() {
 		var post_type = postTypeValue();
 		if ( ! post_type ) {
-			clearSuggestions();
+			acfFieldsCache = [];
+			$acfList().empty();
+			comboHide();
 			return;
 		}
 		$.get(
@@ -91,27 +269,11 @@
 			if ( ! resp || ! resp.success ) {
 				return;
 			}
-			var $list = ensureDatalist().empty();
-			var keyByName = {};
-			$.each( resp.data, function ( _, item ) {
-				$list.append(
-					$( '<option>' )
-						.val( item.name )
-						.text( ( item.group ? item.group + ' — ' : '' ) + ( item.label || item.name ) )
-				);
-				if ( item.field_key ) {
-					keyByName[ item.name ] = item.field_key;
-				}
-			} );
-			// Wire input → field_key autofill on exact name match.
-			$( '#spintax-target-key' )
-				.off( 'input.spintaxAcfFieldKey change.spintaxAcfFieldKey' )
-				.on( 'input.spintaxAcfFieldKey change.spintaxAcfFieldKey', function () {
-					var name = ( $( this ).val() || '' ).toString();
-					if ( keyByName[ name ] ) {
-						setAcfFieldKey( keyByName[ name ] );
-					}
-				} );
+			acfFieldsCache = resp.data || [];
+			// Render fresh options keyed on whatever the user has already
+			// typed so post-type switch mid-edit doesn't blank the list.
+			renderAcfOptions( $acfInput().val() );
+			comboHide(); // collapsed by default until focus / keystroke.
 		} );
 	}
 
@@ -119,12 +281,20 @@
 		clearSuggestions();
 		var kind = kindValue();
 		if ( kind === 'acf_field' ) {
-			$( '#spintax-target-field-key' ).closest( 'tr' ).show();
+			// Show combobox, hide the plain text input + its description.
+			$acfCombo().removeAttr( 'hidden' );
+			$( '#spintax-target-key, .spintax-target-key-help' ).attr( 'hidden', 'hidden' );
+			$( '.spintax-target-field-key-row' ).removeAttr( 'hidden' );
 			loadAcfFields();
 		} else if ( kind === 'post_meta' ) {
-			// post_meta has no field_key concept; clear and hide that row.
+			// Plain post-meta path keeps the legacy text+datalist UI;
+			// the ACF combobox is hidden and the field-key row is
+			// suppressed entirely (no field-key concept for post_meta).
+			$acfCombo().attr( 'hidden', 'hidden' );
+			comboHide();
+			$( '#spintax-target-key, .spintax-target-key-help' ).removeAttr( 'hidden' );
 			setAcfFieldKey( '' );
-			$( '#spintax-target-field-key' ).closest( 'tr' ).hide();
+			$( '.spintax-target-field-key-row' ).attr( 'hidden', 'hidden' );
 			loadMetaKeys();
 		}
 	}
@@ -284,6 +454,7 @@
 
 	$( function () {
 		bindForm();
+		bindAcfCombobox();
 		bindTestPanel();
 		bindTabSwitcher();
 		bindDismissibleNotices();

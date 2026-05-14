@@ -278,6 +278,110 @@ class BindingsPageTest extends \WP_UnitTestCase {
 		delete_transient( 'spintax_admin_notice_' . $this->admin_id );
 	}
 
+	public function test_form_renders_acf_combobox_when_kind_is_acf_field(): void {
+		$repo    = new BindingsRepo();
+		$tpl_id  = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Tpl',
+				'post_content' => 'X',
+			)
+		);
+		$binding = $repo->create(
+			array(
+				'post_type' => 'post',
+				'target'    => array(
+					'kind'      => 'acf_field',
+					'key'       => 'hero_text',
+					'field_key' => 'field_abc',
+				),
+				'source'    => array( 'mode' => 'template', 'template_id' => $tpl_id ),
+				'triggers'  => array( 'save_post' => true ),
+			)
+		);
+
+		$_GET = array( 'action' => 'edit', 'binding_id' => $binding['id'] );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		// Combobox container visible; plain text input hidden.
+		$this->assertMatchesRegularExpression(
+			'/<div class="spintax-acf-combobox"[^>]*>(?![^<]*hidden)/',
+			$html
+		);
+		$this->assertStringContainsString( 'id="spintax-acf-combobox-input"', $html );
+		$this->assertStringContainsString( 'role="combobox"', $html );
+		$this->assertStringContainsString( 'aria-autocomplete="list"', $html );
+
+		// Plain target_key input gets hidden when kind=acf_field.
+		$this->assertMatchesRegularExpression(
+			'/<input[^>]*id="spintax-target-key"[^>]*hidden/',
+			$html
+		);
+
+		// ACF field key row is visible — combobox autofills it.
+		$this->assertMatchesRegularExpression(
+			'/<tr class="spintax-target-field-key-row"(?![^>]*hidden)/',
+			$html
+		);
+
+		// Display value seeded with "name (field_key)" for the picked field.
+		$this->assertMatchesRegularExpression(
+			'/id="spintax-acf-combobox-input"[^>]*value="hero_text \(field_abc\)"/',
+			$html
+		);
+	}
+
+	public function test_form_hides_combobox_and_field_key_row_when_kind_is_post_meta(): void {
+		$repo    = new BindingsRepo();
+		$tpl_id  = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Tpl',
+				'post_content' => 'X',
+			)
+		);
+		$binding = $repo->create(
+			array(
+				'post_type' => 'post',
+				'target'    => array(
+					'kind'      => 'post_meta',
+					'key'       => 'my_field',
+					'field_key' => '',
+				),
+				'source'    => array( 'mode' => 'template', 'template_id' => $tpl_id ),
+				'triggers'  => array( 'save_post' => true ),
+			)
+		);
+
+		$_GET = array( 'action' => 'edit', 'binding_id' => $binding['id'] );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		// Combobox container must be hidden when persisted kind=post_meta —
+		// this is server-side B5 (no flash before JS toggles).
+		$this->assertMatchesRegularExpression(
+			'/<div class="spintax-acf-combobox"[^>]*hidden/',
+			$html
+		);
+		// ACF field key row hidden (no field-key concept for post_meta).
+		$this->assertMatchesRegularExpression(
+			'/<tr class="spintax-target-field-key-row"[^>]*hidden/',
+			$html
+		);
+		// Plain target_key text input remains visible.
+		$this->assertMatchesRegularExpression(
+			'/<input[^>]*id="spintax-target-key"(?![^>]*hidden)/',
+			$html
+		);
+	}
+
 	public function test_form_renders_tabs_with_aria_attributes(): void {
 		$_GET = array( 'action' => 'new' );
 

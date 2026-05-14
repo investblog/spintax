@@ -892,21 +892,65 @@ class BindingsPage {
 						</label>
 					</td>
 				</tr>
+				<?php
+				$current_kind  = (string) ( $b['target']['kind'] ?? '' );
+				$current_key   = (string) ( $b['target']['key'] ?? '' );
+				$current_fkey  = (string) ( $b['target']['field_key'] ?? '' );
+				$is_acf        = ( 'acf_field' === $current_kind );
+				$is_post_meta  = ( 'post_meta' === $current_kind );
+				$display_label = '' !== $current_key
+					? $current_key . ( '' !== $current_fkey ? ' (' . $current_fkey . ')' : '' )
+					: '';
+				?>
 				<tr>
-					<th scope="row"><label for="spintax-target-key"><?php esc_html_e( 'Field name / meta key', 'spintax' ); ?></label></th>
+					<th scope="row">
+						<label for="spintax-target-key"><?php esc_html_e( 'Field name / meta key', 'spintax' ); ?></label>
+					</th>
 					<td>
-						<input type="text" name="target_key" id="spintax-target-key" class="regular-text" value="<?php echo esc_attr( $b['target']['key'] ?? '' ); ?>" autocomplete="off" required />
-						<p class="description">
-							<?php esc_html_e( 'Start typing to pick from detected fields, or paste an exact name (e.g. hero_subtitle) or post-meta key (e.g. _my_meta).', 'spintax' ); ?>
+						<div class="spintax-acf-combobox" data-spintax-acf-combobox <?php echo $is_acf ? '' : 'hidden'; ?>>
+							<input
+								type="search"
+								class="regular-text spintax-acf-combobox-input"
+								id="spintax-acf-combobox-input"
+								placeholder="<?php esc_attr_e( 'Search ACF fields by name, label, or group…', 'spintax' ); ?>"
+								autocomplete="off"
+								role="combobox"
+								aria-expanded="false"
+								aria-autocomplete="list"
+								aria-controls="spintax-acf-combobox-list"
+								value="<?php echo esc_attr( $display_label ); ?>"
+							/>
+							<ul
+								class="spintax-acf-combobox-list"
+								id="spintax-acf-combobox-list"
+								role="listbox"
+								hidden
+							></ul>
+							<p class="description">
+								<?php esc_html_e( 'Pick a top-level text / textarea / wysiwyg ACF field. Group → field name appears next to each option; selecting one autofills the stable field key.', 'spintax' ); ?>
+							</p>
+						</div>
+
+						<input
+							type="text"
+							name="target_key"
+							id="spintax-target-key"
+							class="regular-text"
+							value="<?php echo esc_attr( $current_key ); ?>"
+							autocomplete="off"
+							<?php echo $is_acf ? 'hidden' : ''; ?>
+						/>
+						<p class="description spintax-target-key-help" <?php echo $is_acf ? 'hidden' : ''; ?>>
+							<?php esc_html_e( 'Start typing to pick from detected post-meta keys, or paste an exact key (e.g. _my_meta).', 'spintax' ); ?>
 						</p>
 					</td>
 				</tr>
-				<tr>
+				<tr class="spintax-target-field-key-row" <?php echo $is_post_meta ? 'hidden' : ''; ?>>
 					<th scope="row"><label for="spintax-target-field-key"><?php esc_html_e( 'ACF field key', 'spintax' ); ?></label></th>
 					<td>
-						<input type="text" name="target_field_key" id="spintax-target-field-key" class="regular-text code" value="<?php echo esc_attr( $b['target']['field_key'] ?? '' ); ?>" placeholder="field_5f8a1234abcd" autocomplete="off" />
+						<input type="text" name="target_field_key" id="spintax-target-field-key" class="regular-text code" value="<?php echo esc_attr( $current_fkey ); ?>" placeholder="field_5f8a1234abcd" autocomplete="off" />
 						<p class="description">
-							<?php esc_html_e( 'Only used when Kind = ACF field. Field key (e.g. field_5f8a1234abcd) is the stable identifier ACF needs for the first write. Required for ACF targets — picking a field above autofills this.', 'spintax' ); ?>
+							<?php esc_html_e( 'Stable ACF field identifier — picking a field above autofills this. Edit only if you need to override a manually-entered field name.', 'spintax' ); ?>
 						</p>
 					</td>
 				</tr>

@@ -141,6 +141,74 @@
 	margin-right: 6px;
 }
 
+/* --- ACF combobox (2.1.0) --- */
+.spintax-acf-combobox {
+	position: relative;
+	display: inline-block;
+	width: 25em;
+	max-width: 100%;
+}
+
+.spintax-acf-combobox[hidden] {
+	display: none;
+}
+
+.spintax-acf-combobox-input {
+	width: 100%;
+}
+
+.spintax-acf-combobox-list {
+	position: absolute;
+	top: 100%;
+	left: 0;
+	right: 0;
+	max-height: 280px;
+	overflow-y: auto;
+	margin: 0;
+	padding: 4px 0;
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 0 0 4px 4px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+	z-index: 100;
+	list-style: none;
+}
+
+.spintax-acf-combobox-list[hidden] {
+	display: none;
+}
+
+.spintax-acf-combobox-list [role="option"] {
+	padding: 6px 12px;
+	cursor: pointer;
+	font-size: 13px;
+	line-height: 1.4;
+}
+
+.spintax-acf-combobox-list [role="option"]:hover,
+.spintax-acf-combobox-list .spintax-acf-combobox-active {
+	background: #2271b1;
+	color: #fff;
+}
+
+.spintax-acf-combobox-list [role="option"]:hover .spintax-acf-combobox-group,
+.spintax-acf-combobox-list .spintax-acf-combobox-active .spintax-acf-combobox-group {
+	color: #cfe2f4;
+}
+
+.spintax-acf-combobox-group {
+	color: #646970;
+	font-size: 12px;
+	font-style: italic;
+}
+
+.spintax-acf-combobox-empty {
+	padding: 6px 12px;
+	color: #646970;
+	font-size: 13px;
+	font-style: italic;
+}
+
 /* --- TTL field (preset select + custom number) --- */
 .spintax-ttl-field {
 	display: inline-flex;

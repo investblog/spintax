@@ -284,8 +284,18 @@ class BindingsPage {
 			}
 			check_admin_referer( 'spintax_bulk_apply_now_' . $id );
 			if ( ! current_user_can( 'manage_options' ) || ! self::run_now_available() ) {
+				// Route back to the binding's edit form so the editor
+				// can see context (same surface that exposed Run now
+				// in the first place), not the silent list view.
+				$form_url = add_query_arg(
+					array(
+						'action'     => 'edit',
+						'binding_id' => $id,
+					),
+					$this->page_url()
+				);
 				$this->redirect_with_notice(
-					$redirect_url,
+					$form_url,
 					__( 'Run-now is restricted to administrators on dev / no-Action-Scheduler sites.', 'spintax' ),
 					'error'
 				);
@@ -769,9 +779,14 @@ class BindingsPage {
 				'spintax_delete_binding_' . $id
 			);
 
-			$stale       = $this->is_stale( $id, $mode );
-			$walk_state  = $this->walk_state( $id );
-			$show_runnow = current_user_can( 'manage_options' ) && self::run_now_available();
+			$stale         = $this->is_stale( $id, $mode );
+			$walk_state    = $this->walk_state( $id );
+			$show_runnow   = current_user_can( 'manage_options' ) && self::run_now_available();
+			$as_available  = BulkApply::action_scheduler_available();
+			$bulk_disabled = $walk_state['running'] || ! $as_available;
+			$bulk_title    = $as_available
+				? __( 'Apply this binding to every matching post via Action Scheduler (chunked async).', 'spintax' )
+				: __( 'Action Scheduler is not installed. Use "Run now" (synchronous) or `wp spintax bindings apply --binding=<id> --all` instead.', 'spintax' );
 
 			?>
 			<div class="spintax-binding-card" style="border:1px solid #c3c4c7;background:#fff;padding:12px 16px;margin:12px 0;border-radius:4px;">
@@ -814,7 +829,7 @@ class BindingsPage {
 					<form method="post" style="display:inline;margin:0;">
 						<?php wp_nonce_field( 'spintax_bulk_apply_' . $id ); ?>
 						<input type="hidden" name="binding_id" value="<?php echo esc_attr( $id ); ?>" />
-						<button type="submit" name="spintax_bulk_apply" class="button button-small" <?php disabled( $walk_state['running'] ); ?> onclick="return confirm('<?php echo esc_js( __( 'Apply binding to all matching posts? This may take a while.', 'spintax' ) ); ?>');">
+						<button type="submit" name="spintax_bulk_apply" class="button button-small" <?php disabled( $bulk_disabled ); ?> title="<?php echo esc_attr( $bulk_title ); ?>" onclick="return confirm('<?php echo esc_js( __( 'Apply binding to all matching posts? This may take a while.', 'spintax' ) ); ?>');">
 							<?php esc_html_e( 'Bulk Apply', 'spintax' ); ?>
 						</button>
 					</form>
@@ -1070,7 +1085,7 @@ class BindingsPage {
 						</p>
 					</td>
 				</tr>
-				<tr class="spintax-target-field-key-row" <?php echo $is_post_meta ? 'hidden' : ''; ?>>
+				<tr class="spintax-target-field-key-row" <?php echo $is_acf ? '' : 'hidden'; ?>>
 					<th scope="row"><label for="spintax-target-field-key"><?php esc_html_e( 'ACF field key', 'spintax' ); ?></label></th>
 					<td>
 						<input type="text" name="target_field_key" id="spintax-target-field-key" class="regular-text code" value="<?php echo esc_attr( $current_fkey ); ?>" placeholder="field_5f8a1234abcd" autocomplete="off" />

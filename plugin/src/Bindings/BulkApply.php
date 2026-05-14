@@ -345,6 +345,21 @@ class BulkApply {
 				);
 				$this->finalise_walk( $binding_id, /* stamp */ false );
 			} else {
+				// Symmetric with the AS `handle()` path (which logs a
+				// "Bulk Apply completed for binding X" line in finalise).
+				// Without this log entry, the "View details in Logs →"
+				// CTA on the Run-now success notice lands on a page
+				// missing the corresponding completion record.
+				( new Logging() )->push(
+					'info',
+					sprintf(
+						'Bulk Apply run_synchronously completed for binding %s — wrote=%d skipped=%d cleared=%d.',
+						$binding_id,
+						$totals['wrote'],
+						$totals['skipped'],
+						$totals['cleared']
+					)
+				);
 				$this->finalise_walk( $binding_id, /* stamp */ true );
 			}
 		} catch ( \Throwable $e ) {

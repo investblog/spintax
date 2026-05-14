@@ -425,16 +425,24 @@ class BindingsPageTest extends \WP_UnitTestCase {
 			remove_filter( 'wp_redirect', $redirect_filter, 1 );
 		}
 
+		// The editor never reaches `run_synchronously()`, so target meta
+		// must be untouched and no per-binding lock should be in place.
+		// These hold regardless of which capability gate (CPT-level vs.
+		// manage_options) short-circuits first.
+		$this->assertSame(
+			0,
+			(int) get_option( \Spintax\Support\OptionKeys::OPTION_BINDING_WALK_LOCK_PREFIX . $binding['id'], 0 ),
+			'editor must not have acquired the per-binding walk lock'
+		);
+
 		$flash = get_transient( 'spintax_admin_notice_' . $editor_id );
-		// Editor either gets capability rejection on the run-now branch
-		// directly, OR — if WP set up the editor before our cap registration —
-		// the bindings-page capability gate (current_user_can(Capabilities::CAP))
-		// may short-circuit earlier and the redirect just bounces back. Either
-		// way: no successful run, and the redirect doesn't carry a "Wrote N"
-		// flash payload.
-		if ( is_array( $flash ) ) {
+		if ( false !== $flash ) {
 			$payload = isset( $flash['payload'] ) ? (array) $flash['payload'] : array();
-			$this->assertStringNotContainsString( 'Wrote', (string) ( $payload['text'] ?? '' ) );
+			$this->assertStringNotContainsString(
+				'Wrote',
+				(string) ( $payload['text'] ?? '' ),
+				'editor must NOT see a "Wrote N skipped M failed K" success flash'
+			);
 		}
 
 		delete_transient( 'spintax_admin_notice_' . $editor_id );

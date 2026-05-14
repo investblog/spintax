@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 6.9
-Stable tag: 2.1.0
+Stable tag: 2.1.1
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -200,6 +200,14 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 2.1.1 =
+* UX (Bindings list): "Bulk Apply" button now disables and exposes a tooltip pointing at the Run-now / WP-CLI fallback when Action Scheduler isn't installed — previously the click hit the `no_action_scheduler` error path so users had to click-to-learn.
+* UX (Bindings list): clean synchronous Run-now walks now write a log entry too (`Bulk Apply run_synchronously completed for binding <id> — wrote=N skipped=M cleared=K`), so the "View details in Logs →" CTA on the success notice always lands on a populated page. Previously only failures logged.
+* UX (Bindings form): defensive — ACF field-key row is hidden unless `kind=acf_field` exactly (previously hid only when `kind=post_meta`, leaving an empty-kind edge case where the row could render without `hidden`).
+* UX (Bindings list): Run-now capability failure now redirects back to the binding's edit form, consistent with the rest of the binding-edit error paths, instead of bouncing to the silent list view.
+* Internal: tightened `test_run_now_handler_rejects_non_admin` — replaces the conditional `if (is_array($flash))` with two unconditional invariants (walk-lock never acquired, no "Wrote N" success flash). Soft assertion would have passed silently if the redirect captured no flash.
+* Internal: 516 PHPUnit tests, 939 assertions (was 938 in 2.1.0; +1 from the run_synchronously logging assertion).
+
 = 2.1.0 =
 * UX (Settings): Spintax Settings is now also reachable from the Spintax submenu (under Bindings), not only from WP Settings → Spintax — both menu paths resolve to the same page.
 * UX (Settings): Default Cache TTL and per-template Cache TTL no longer use a bare seconds input. Both surfaces now offer human presets (No caching / 1 hour / 6 hours / 1 day / 1 week / 1 month) plus a "Custom…" option for any exact-seconds value.
@@ -296,6 +304,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 2.1.1 =
+Bindings list polish: Bulk Apply disables with a tooltip when Action Scheduler is missing; clean Run-now walks now write a log entry so the success notice's Logs CTA has something to show; defensive fixes around the field-key row and Run-now capability failures.
 
 = 2.1.0 =
 Admin UX overhaul. New Logs page closes the "check logs" gap. Bindings form is now three keyboard-friendly tabs with a real ACF combobox. TTL fields use presets. Stale banner + trigger warning + Run-now sync button on the list. No data migration; recommended for binding users.

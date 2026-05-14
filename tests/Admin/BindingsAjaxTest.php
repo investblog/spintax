@@ -290,4 +290,63 @@ class BindingsAjaxTest extends \WP_Ajax_UnitTestCase {
 		// Crucially — test panel is a dry-run; the target stays empty.
 		$this->assertSame( '', get_post_meta( $post_id, 'target_field', true ) );
 	}
+
+	// ----- dismiss_admin_notice (added in 2.1.0) -----
+
+	public function test_dismiss_admin_notice_writes_user_meta(): void {
+		wp_set_current_user( $this->admin_id );
+
+		$this->set_nonce();
+		$_REQUEST['notice_id'] = 'as-v210';
+		$_POST['notice_id']    = 'as-v210';
+
+		$resp = $this->dispatch( 'spintax_dismiss_admin_notice' );
+
+		$this->assertTrue( $resp['success'] );
+		$this->assertSame( 'as-v210', $resp['data']['dismissed'] );
+		$this->assertSame(
+			'1',
+			(string) get_user_meta( $this->admin_id, BindingsAjax::DISMISSED_NOTICE_META_PREFIX . 'as-v210', true )
+		);
+		$this->assertTrue( BindingsAjax::is_notice_dismissed( 'as-v210' ) );
+	}
+
+	public function test_dismiss_admin_notice_rejects_unknown_id(): void {
+		wp_set_current_user( $this->admin_id );
+
+		$this->set_nonce();
+		$_REQUEST['notice_id'] = 'random-id';
+		$_POST['notice_id']    = 'random-id';
+
+		$resp = $this->dispatch( 'spintax_dismiss_admin_notice' );
+
+		$this->assertFalse( $resp['success'] );
+		// No user_meta written for the rejected id.
+		$this->assertSame(
+			'',
+			(string) get_user_meta( $this->admin_id, BindingsAjax::DISMISSED_NOTICE_META_PREFIX . 'random-id', true )
+		);
+	}
+
+	public function test_dismiss_admin_notice_requires_capability(): void {
+		wp_set_current_user( $this->subscriber_id );
+
+		$this->set_nonce();
+		$_REQUEST['notice_id'] = 'as-v210';
+		$_POST['notice_id']    = 'as-v210';
+
+		$resp = $this->dispatch( 'spintax_dismiss_admin_notice' );
+
+		$this->assertFalse( $resp['success'] );
+		// Subscriber's user_meta must remain untouched.
+		$this->assertSame(
+			'',
+			(string) get_user_meta( $this->subscriber_id, BindingsAjax::DISMISSED_NOTICE_META_PREFIX . 'as-v210', true )
+		);
+	}
+
+	public function test_is_notice_dismissed_returns_false_for_unauthenticated_user(): void {
+		wp_set_current_user( 0 );
+		$this->assertFalse( BindingsAjax::is_notice_dismissed( 'as-v210' ) );
+	}
 }

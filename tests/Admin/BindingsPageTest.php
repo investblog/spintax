@@ -2,6 +2,7 @@
 
 namespace Spintax\Tests\Admin;
 
+use Spintax\Admin\BindingsAjax;
 use Spintax\Admin\BindingsPage;
 use Spintax\Bindings\BindingsRepo;
 use Spintax\Bindings\BulkApply;
@@ -275,6 +276,69 @@ class BindingsPageTest extends \WP_UnitTestCase {
 		$this->assertSame( 'View progress in Logs →', $flash['payload']['action_label'] );
 
 		delete_transient( 'spintax_admin_notice_' . $this->admin_id );
+	}
+
+	public function test_form_drops_stale_phase3_copy(): void {
+		$_GET = array( 'action' => 'new' );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		// Stale 2.0-era hint about a deferred feature — Phase 3 has
+		// shipped, so the text was misleading.
+		$this->assertStringNotContainsString( 'Phase 3 will add', $html );
+		$this->assertStringNotContainsString( 'Phase 3 will autofill', $html );
+	}
+
+	public function test_form_replaces_dry_jargon_with_plain_copy(): void {
+		$_GET = array( 'action' => 'new' );
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringNotContainsString( 'DRY across posts', $html );
+		$this->assertStringContainsString( 'Shared template', $html );
+	}
+
+	public function test_action_scheduler_notice_hidden_when_dismissed(): void {
+		if ( BulkApply::action_scheduler_available() ) {
+			$this->markTestSkipped( 'AS notice only renders when Action Scheduler is missing.' );
+		}
+
+		update_user_meta(
+			$this->admin_id,
+			BindingsAjax::DISMISSED_NOTICE_META_PREFIX . 'as-v210',
+			1
+		);
+
+		$_GET = array();
+		$_SERVER['REQUEST_METHOD'] = 'GET';
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringNotContainsString( 'Action Scheduler is not installed', $html );
+	}
+
+	public function test_action_scheduler_notice_shows_when_not_dismissed(): void {
+		if ( BulkApply::action_scheduler_available() ) {
+			$this->markTestSkipped( 'AS notice only renders when Action Scheduler is missing.' );
+		}
+
+		// Fresh user_meta — notice should appear with the dismiss data attribute.
+		$_GET = array();
+		$_SERVER['REQUEST_METHOD'] = 'GET';
+
+		ob_start();
+		$this->page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Action Scheduler is not installed', $html );
+		$this->assertStringContainsString( 'data-spintax-dismiss-notice="as-v210"', $html );
+		$this->assertStringContainsString( 'is-dismissible', $html );
 	}
 
 	public function test_flashed_values_round_trip_back_into_form(): void {

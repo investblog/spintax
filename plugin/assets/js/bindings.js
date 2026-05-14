@@ -195,9 +195,28 @@
 		} );
 	}
 
+	function bindDismissibleNotices() {
+		// Persist dismissals for spintax-tagged notices. WP's
+		// `notice-dismiss` button hides the element locally; we layer
+		// an AJAX write on top so subsequent page loads also stay clean.
+		$( document ).on( 'click', '.notice[data-spintax-dismiss-notice] .notice-dismiss', function () {
+			var $notice  = $( this ).closest( '.notice[data-spintax-dismiss-notice]' );
+			var noticeId = ( $notice.data( 'spintax-dismiss-notice' ) || '' ).toString();
+			if ( ! noticeId ) {
+				return;
+			}
+			$.post( cfg.ajaxUrl, {
+				action: 'spintax_dismiss_admin_notice',
+				nonce: cfg.nonce,
+				notice_id: noticeId
+			} );
+		} );
+	}
+
 	$( function () {
 		bindForm();
 		bindTestPanel();
+		bindDismissibleNotices();
 	} );
 
 }( window.jQuery ) );

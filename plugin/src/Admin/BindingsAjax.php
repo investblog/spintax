@@ -50,6 +50,27 @@ class BindingsAjax {
 	}
 
 	/**
+	 * User-meta key prefix for dismissed admin notices.
+	 *
+	 * The full key is `<prefix><notice_id>`, where `notice_id` is a
+	 * version-scoped slug (e.g. `as-v210`) so a future release that
+	 * needs the same notice category surfaced again can bump the id
+	 * without manually clearing per-user meta.
+	 */
+	public const DISMISSED_NOTICE_META_PREFIX = '_spintax_dismissed_notice_';
+
+	/**
+	 * Whitelist of notice ids the dismiss endpoint will accept. Keeps
+	 * the surface auditable — random ids posted by malicious or buggy
+	 * clients can't fill `wp_usermeta` with junk rows.
+	 *
+	 * @return string[]
+	 */
+	public static function dismissible_notice_ids(): array {
+		return array( 'as-v210' );
+	}
+
+	/**
 	 * Register hooks.
 	 */
 	public function init(): void {
@@ -57,6 +78,47 @@ class BindingsAjax {
 		add_action( 'wp_ajax_spintax_binding_meta_keys', array( $this, 'meta_keys' ) );
 		add_action( 'wp_ajax_spintax_binding_acf_fields', array( $this, 'acf_fields' ) );
 		add_action( 'wp_ajax_spintax_binding_template_list', array( $this, 'template_list' ) );
+		add_action( 'wp_ajax_spintax_dismiss_admin_notice', array( $this, 'dismiss_admin_notice' ) );
+	}
+
+	/**
+	 * Persist that the current user has dismissed a specific notice.
+	 *
+	 * Expected POST: `notice_id` (whitelist), `nonce` (spintax_admin).
+	 * Stores `1` in `wp_usermeta` under
+	 * `_spintax_dismissed_notice_<notice_id>` so `render_*` helpers
+	 * can short-circuit on subsequent page loads.
+	 */
+	public function dismiss_admin_notice(): void {
+		$this->guard();
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified by guard() above.
+		$notice_id = isset( $_POST['notice_id'] ) ? sanitize_key( wp_unslash( (string) $_POST['notice_id'] ) ) : '';
+
+		if ( ! in_array( $notice_id, self::dismissible_notice_ids(), true ) ) {
+			wp_send_json_error( array( 'message' => __( 'Unknown notice id.', 'spintax' ) ), 400 );
+		}
+
+		update_user_meta(
+			get_current_user_id(),
+			self::DISMISSED_NOTICE_META_PREFIX . $notice_id,
+			1
+		);
+
+		wp_send_json_success( array( 'dismissed' => $notice_id ) );
+	}
+
+	/**
+	 * Check whether the current user has dismissed a given notice id.
+	 *
+	 * @param string $notice_id Notice slug from `dismissible_notice_ids()`.
+	 */
+	public static function is_notice_dismissed( string $notice_id ): bool {
+		$user_id = get_current_user_id();
+		if ( $user_id <= 0 ) {
+			return false;
+		}
+		return (bool) get_user_meta( $user_id, self::DISMISSED_NOTICE_META_PREFIX . $notice_id, true );
 	}
 
 	/**

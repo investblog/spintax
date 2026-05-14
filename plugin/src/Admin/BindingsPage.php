@@ -298,9 +298,16 @@ class BindingsPage {
 		if ( BulkApply::action_scheduler_available() ) {
 			return;
 		}
+		// Per-user dismissal (added in 2.1.0): once an editor has read
+		// the notice they don't need to see it on every Bindings page
+		// visit. Dismissal is keyed on `as-v210` so a future release
+		// (e.g. 2.2.0) can re-surface the notice by minting a new id.
+		if ( BindingsAjax::is_notice_dismissed( 'as-v210' ) ) {
+			return;
+		}
 
 		?>
-		<div class="notice notice-info">
+		<div class="notice notice-info is-dismissible" data-spintax-dismiss-notice="as-v210">
 			<p>
 				<strong><?php esc_html_e( 'Action Scheduler is not installed.', 'spintax' ); ?></strong>
 				<?php
@@ -774,7 +781,7 @@ class BindingsPage {
 					<td>
 						<input type="text" name="target_key" id="spintax-target-key" class="regular-text" value="<?php echo esc_attr( $b['target']['key'] ?? '' ); ?>" autocomplete="off" required />
 						<p class="description">
-							<?php esc_html_e( 'Phase 3 will add a dropdown of detected fields. For now, type the name (e.g. hero_subtitle) or post-meta key (e.g. _my_meta).', 'spintax' ); ?>
+							<?php esc_html_e( 'Start typing to pick from detected fields, or paste an exact name (e.g. hero_subtitle) or post-meta key (e.g. _my_meta).', 'spintax' ); ?>
 						</p>
 					</td>
 				</tr>
@@ -783,7 +790,7 @@ class BindingsPage {
 					<td>
 						<input type="text" name="target_field_key" id="spintax-target-field-key" class="regular-text code" value="<?php echo esc_attr( $b['target']['field_key'] ?? '' ); ?>" placeholder="field_5f8a1234abcd" autocomplete="off" />
 						<p class="description">
-							<?php esc_html_e( 'Only used when Kind = ACF field. Field key (e.g. field_5f8a1234abcd) is the stable identifier ACF needs for the first write. Required for ACF targets — Phase 3 will autofill this from the field picker.', 'spintax' ); ?>
+							<?php esc_html_e( 'Only used when Kind = ACF field. Field key (e.g. field_5f8a1234abcd) is the stable identifier ACF needs for the first write. Required for ACF targets — picking a field above autofills this.', 'spintax' ); ?>
 						</p>
 					</td>
 				</tr>
@@ -796,12 +803,12 @@ class BindingsPage {
 					<td>
 						<label>
 							<input type="radio" name="source_mode" value="template" <?php checked( $b['source']['mode'] ?? '', 'template' ); ?> />
-							<?php esc_html_e( 'Bind to a Spintax template (DRY across posts)', 'spintax' ); ?>
+							<?php esc_html_e( 'Shared template — render the same source on every matching post', 'spintax' ); ?>
 						</label>
 						<br/>
 						<label>
 							<input type="radio" name="source_mode" value="per_post" <?php checked( $b['source']['mode'] ?? '', 'per_post' ); ?> />
-							<?php esc_html_e( 'Per-post template (authored inline on each post)', 'spintax' ); ?>
+							<?php esc_html_e( 'Per-post template — each post supplies its own source inline', 'spintax' ); ?>
 						</label>
 					</td>
 				</tr>

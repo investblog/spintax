@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 6.9
-Stable tag: 2.0.4
+Stable tag: 2.1.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -200,11 +200,21 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
-= 2.0.4 =
-* UX: Spintax Settings is now also reachable from the Spintax submenu (under Bindings), not only from WP Settings → Spintax. The existing entry under Settings stays for convention; the new one matches the way editors discover the rest of the plugin.
-* UX: Default Cache TTL on the Settings page and the per-template Cache TTL meta box no longer use a bare number input with a 1-second step. They now offer presets — No caching, 1 hour, 6 hours, 1 day, 1 week, 1 month — plus a "Custom…" option for any exact-seconds value. Per-template field also keeps the "Use global default" option.
-* UX: The "Purge All Template Caches" button moved from a standalone section at the bottom of the Settings page into the Default Cache TTL row, so cache controls live together.
-* Internal: 23 new PHPUnit cases covering the TTL preset/custom resolver, the Settings + meta-box save paths, and the dual-menu registration. 464 tests total (was 441).
+= 2.1.0 =
+* UX (Settings): Spintax Settings is now also reachable from the Spintax submenu (under Bindings), not only from WP Settings → Spintax — both menu paths resolve to the same page.
+* UX (Settings): Default Cache TTL and per-template Cache TTL no longer use a bare seconds input. Both surfaces now offer human presets (No caching / 1 hour / 6 hours / 1 day / 1 week / 1 month) plus a "Custom…" option for any exact-seconds value.
+* UX (Settings): "Purge All Template Caches" button moved inline into the Default Cache TTL row.
+* UX (Bindings): New **Logs** admin page under Spintax → Logs — newest-first table of ring-buffer entries with level filter, substring search, pagination clamped to settings.logs_max. Editors view; admins clear. Replaces the pre-2.1.0 "Check logs" admin notice that pointed at a screen that didn't exist.
+* UX (Bindings): Admin notices that point at logs (Bulk Apply enqueued, etc.) now ship a real "View progress in Logs →" link. The flash-notice trait accepts a `{text, action_url, action_label}` payload alongside legacy strings.
+* UX (Bindings): Binding edit / create form is now a three-tab layout (Source & Target / Behavior / Test). WAI-ARIA tablist + keyboard navigation (Arrow keys, Home / End). Validation errors redirect back to whichever tab the offending field lives on; the active tab survives the PRG round-trip via flash transient and `?active_tab=` query arg.
+* UX (Bindings): ACF field picker on the form is now a custom searchable combobox (replaces the buggy `<input list>` + `<datalist>`). Group → field grouping, substring search across group / label / name, full ARIA combobox semantics, and clicking a row autofills both the field name and the stable ACF field key in one go.
+* UX (Bindings): Inline "This binding will never run" warning under Triggers when both `save_post` is off and cron is disabled — live update on checkbox / select change so editors notice the problem before submitting.
+* UX (Bindings): Stale-source banner above the binding form (and an inline "Bulk Apply now" button) when the persisted binding's source template has been edited since the last walk.
+* UX (Bindings): "Run now" button next to Bulk Apply (admins only, gated on debug=true OR Action Scheduler absent). Runs the walk synchronously via `BulkApply::run_synchronously()` — useful for dev sites without cron traffic and for installs without Action Scheduler. Walk-status badge ("Running (started Ns ago)") appears on the card while the per-binding walk lock is held.
+* UX (Bindings): The "Action Scheduler is not installed" notice is now per-user dismissible via a new `wp_ajax_spintax_dismiss_admin_notice` endpoint. Whitelisted notice ids prevent the endpoint from filling `wp_usermeta` with arbitrary rows.
+* UX (Bindings): Stale "Phase 3 will add a dropdown" copy removed (Phase 3 shipped in 2.0.0). "Bind to a Spintax template (DRY across posts)" softened to "Shared template — render the same source on every matching post".
+* Internal: AdminNotice trait extended with backward-compat for both legacy `{message, type}` and the new rich payload. BindingsPage constructor now accepts an optional `BulkApply` for test injection. New shared `Spintax\Support\TtlField` helper backs the preset / custom TTL widget. Notice action-url is `esc_url()`-filtered so `javascript:` and other unsafe schemes are stripped.
+* Internal: 73 new PHPUnit cases — TTL preset / custom resolver, Settings + meta-box save paths, dual-menu registration, AdminNotice payload shapes, LogsPage filtering / pagination / capability gating, Bindings tabs ARIA + PRG round-trip, ACF combobox rendering, dismissible notice endpoint, stale banner from persisted entity (not flash draft), trigger warning visibility, Run now handler gates + walk badge thresholds. 514 tests total (was 441).
 
 = 2.0.3 =
 * Fix: ACF target validation now runs on every apply, not just at form save. `BindingApplier::plan()` rejects bindings whose stored `target.field_key` no longer resolves to a field with the expected name (deleted, renamed, or re-assigned in ACF). Two new return codes: `skip_acf_not_loaded` (ACF deactivated since the binding was saved) and `skip_invalid_acf_field` (key + name disagreement). Closes a path where CLI-imported or imported-while-ACF-inactive bindings could write through `update_field()` to the wrong field.
@@ -287,8 +297,8 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Upgrade Notice ==
 
-= 2.0.4 =
-UX polish: Spintax Settings is now also reachable from the Spintax submenu (next to Bindings), the Default Cache TTL field offers human presets instead of a bare seconds input, and the Purge Cache button is inline with the TTL row. No functional changes to the engine or bindings.
+= 2.1.0 =
+Admin UX overhaul. New Logs page closes the "check logs" gap. Bindings form is now three keyboard-friendly tabs with a real ACF combobox. TTL fields use presets. Stale banner + trigger warning + Run-now sync button on the list. No data migration; recommended for binding users.
 
 = 2.0.3 =
 Adds runtime ACF target validation (closes a wrong-field-write path under ACF reactivation / WP-CLI imports), cumulative-failure tracking across Bulk Apply chunks (Stale badge no longer clears on partial failures), and a per-binding walk lock that refuses concurrent walks. Strongly recommended.

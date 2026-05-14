@@ -193,6 +193,7 @@ Yes. After activating Spintax 2.0, a dismissible admin banner points to **Tools 
 1. Template editor with spintax markup and live preview.
 2. Settings page with global variables editor.
 3. Template list with shortcode, cache status, and cron schedule.
+4. Binding edit form: three-tab layout (Source & Target / Behavior / Test), ACF combobox with stable field-key autofill, post-type and status scope filters, shared-template vs per-post source modes.
 
 == External services ==
 

@@ -149,3 +149,17 @@ Tests at 441 (was 309 pre-2.0.0). Plugin Check `--include-experimental` clean fo
 - Visual diff in Test panel (current target vs rendered).
 
 Trigger for any V2 item: a real user request, a project at 301.st / casino-platform that needs it, or the user's explicit green-light. Do not preemptively design.
+
+### Polish: auto-dismiss migration banner after a successful run
+
+**Status:** deferred — minor UX wart, no functional impact. User-flagged 2026-05-15.
+
+**Problem.** `MigrationPage::maybe_render_banner()` shows the "legacy data detected → open migration" admin notice whenever `Migration::has_predecessor_data()` is true and the `spintax_migration_banner_dismissed` option is unset. Predecessor `nested-spintax-for-acf` data is **intentionally never deleted** (non-destructive migration is a locked contract). So after the editor runs the migration successfully, `has_predecessor_data()` still returns true and the banner keeps nagging on every admin page until they manually click "Dismiss" — asking them to migrate data they just migrated.
+
+**Fix options (pick at implementation time):**
+1. In `handle_actions()` after `Migration::execute()` succeeds, also `update_option( self::DISMISSED_OPTION, 1, false )` so the banner self-suppresses post-run. Simplest; one line. Downside: a later genuinely-new predecessor binding wouldn't re-surface the banner (acceptable — the Tools page is still discoverable, and re-running migration is explicitly safe/idempotent).
+2. Make the banner gate on "predecessor data exists AND at least one predecessor row has no corresponding binding yet" instead of bare `has_predecessor_data()`. Self-clears once everything is migrated, re-appears if new legacy data shows up. More correct, more code (needs a "has unmigrated rows" check reusing `Migration::build_plan()`'s already-migrated detection).
+
+Lean option 1 unless a user actually hits the "added new legacy data after first migration" case.
+
+**Trigger:** bundle into the next bindings-touching patch, or promote if a user complains about the persistent banner.

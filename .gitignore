@@ -31,4 +31,6 @@ plugin/phpunit.xml.dist
 .env.*
 .svn-credentials
 
-.claude/
+# Ignore local Claude Code state, but share project review subagents.
+.claude/*
+!.claude/agents/

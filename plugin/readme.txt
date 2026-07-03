@@ -2,8 +2,8 @@
 Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
-Tested up to: 6.9
-Stable tag: 2.1.1
+Tested up to: 7.0
+Stable tag: 2.2.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -23,6 +23,7 @@ Spintax is a content-generation toolkit for WordPress. Author reusable templates
 * **Plural agreement** `{plural <count>: form1|form2|form3}` — pick grammatically correct noun form by count. RU/UK/BE 3-form (one|few|many), EN-style 2-form (one|many). First spintax engine with first-class plurals.
 * **Nested templates** — embed templates within templates via `#include` or `[spintax]`
 * **ACF / post-meta bindings (NEW in 2.0)** — configure once per post type, render Spintax templates into ACF text/textarea/wysiwyg fields or post-meta keys on every matching post. Auto-seed empty fields, preserve manual edits, Bulk Apply via Action Scheduler.
+* **WooCommerce product context (NEW in 2.2)** — on a single-product page, `[spintax]` / `spintax_render()` automatically expose the current product as `%product_name%`, `%product_sku%`, `%product_categories%`, `%product_attribute_<slug>%`, and more. Read-only: nothing is written to products, and volatile pricing is intentionally out of scope. WooCommerce is optional — the variables simply appear when a product context is present.
 * **Object cache** — rendered output cached via WP Object Cache API (Redis/Memcached ready)
 * **Cron regeneration** — optional scheduled cache refresh per template, plus per-binding cron walks
 * **WP-CLI** — `wp spintax bindings list|apply|test|export|import`
@@ -76,6 +77,14 @@ The plugin uses the WordPress Object Cache API. With a persistent backend (Redis
 = Can I pass variables through shortcodes? =
 
 Yes: `[spintax slug="greeting" name="Alice" city="Moscow"]` makes `%name%` and `%city%` available inside the template.
+
+= Can I use product data from WooCommerce? =
+
+Yes, since 2.2. On a single-product page the plugin auto-detects the current product and exposes it to `[spintax]` and `spintax_render()` as `%product_*%` variables — for example `%product_name%`, `%product_slug%`, `%product_sku%`, `%product_type%`, `%product_stock_status%`, `%product_categories%`, `%product_tags%`, `%product_short_description%`, and one `%product_attribute_<slug>%` per product attribute. So a template embedded as `[spintax slug="product-seo-block"]` on a product renders that product's data, and the same template on two products gets two separate cached variants.
+
+Pricing (`%product_price%` and friends) is intentionally **not** exposed: it is volatile commerce data, not generated copy, and folding it into templates would churn the render cache on every price change.
+
+This release is **read-only** — the plugin never writes to product records. To target a specific product regardless of the current page, pass `[spintax slug="…" product_id="123"]`; any explicit variable you pass always overrides the auto-detected one. WooCommerce is optional: with it inactive, or on non-product pages, behavior is unchanged. Product loops/cards and writing generated copy into product fields are planned for later releases.
 
 = What are ACF / post-meta bindings? =
 
@@ -214,6 +223,14 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 2.2.0 =
+* Feature (WooCommerce): product context variables. On a single-product page, `[spintax]` and `spintax_render()` now auto-expose the current product as `%product_id%`, `%product_name%`, `%product_slug%`, `%product_sku%`, `%product_type%`, `%product_stock_status%`, `%product_categories%`, `%product_tags%`, `%product_short_description%`, and one `%product_attribute_<slug>%` per attribute. Read-only — nothing is written to products. Volatile pricing data is intentionally excluded.
+* Feature (WooCommerce): pass `product_id="123"` to target a specific product regardless of the current page; explicit shortcode / PHP variables always override auto-detected product variables.
+* Correctness: product variables enter the runtime layer, so each product renders (and caches) its own variant — product A's cached output can never leak to product B. Non-product pages and WooCommerce-inactive sites are byte-for-byte unchanged.
+* Performance: the product variable map (including the term lookups behind `%product_categories%` / `%product_tags%`) is memoised per product for the request; nested `[spintax]` / `#include` inherit the product context without re-detecting it.
+* Fix (engine): `{plural %n%: …}` no longer renders empty when the count variable was `#set` to an enumeration (e.g. `#set %n% = {1|4|9}`). Enumerations inside `#set` values now collapse once, so a variable holds a single stable value — the plural count sees a real number and every `%n%` reference stays consistent. Values carrying conditionals/plurals are left deferred (unchanged).
+* Internal: new `WooCommerceProductContextSource` + `RuntimeContextBuilder`, wired into the shortcode and `spintax_render()` entry points. WooCommerce remains an optional dependency — no fatal errors when it is absent. 537 PHPUnit tests (was 520).
+
 = 2.1.1 =
 * UX (Bindings list): "Bulk Apply" button now disables and exposes a tooltip pointing at the Run-now / WP-CLI fallback when Action Scheduler isn't installed — previously the click hit the `no_action_scheduler` error path so users had to click-to-learn.
 * UX (Bindings list): clean synchronous Run-now walks now write a log entry too (`Bulk Apply run_synchronously completed for binding <id> — wrote=N skipped=M cleared=K`), so the "View details in Logs →" CTA on the success notice always lands on a populated page. Previously only failures logged.
@@ -321,6 +338,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 2.2.0 =
+Read-only WooCommerce product context variables (`%product_name%`, `%product_categories%`, `%product_attribute_<slug>%`, and more) in `[spintax]` / `spintax_render()` on single-product pages; each product caches its own variant. Pricing excluded. WooCommerce optional; non-product sites unchanged.
 
 = 2.1.1 =
 Bindings UX polish: Bulk Apply disables with a tooltip when Action Scheduler is missing, the stale-source banner promotes Run-now in that case, the ACF picker no longer empties out after a selection, and clean Run-now walks write a Logs entry so the success notice's CTA always has something to show.

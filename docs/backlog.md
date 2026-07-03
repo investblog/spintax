@@ -163,3 +163,15 @@ Trigger for any V2 item: a real user request, a project at 301.st / casino-platf
 Lean option 1 unless a user actually hits the "added new legacy data after first migration" case.
 
 **Trigger:** bundle into the next bindings-touching patch, or promote if a user complains about the persistent banner.
+
+### Latent: locale absent from render cache key
+
+**Status:** deferred — latent, surfaced during WooCommerce 2.2.0 context-variables work. Not a 2.2.0 regression.
+
+**Problem.** `RenderContext::get_context_hash()` derives the render cache key from the runtime-variable map only. Template `_spintax_locale` meta / site locale drive `{plural …}` output but are **not** part of the cache key. Two renders that differ only by locale — same template, same runtime vars — collide on one cache entry, so whichever renders first wins until the entry rotates. Pre-existing since plurals (1.5.0); harmless on single-locale sites, which is why it stayed hidden.
+
+**Why WooCommerce raises the stakes.** A multilingual WooCommerce store (WPML / Polylang) renders the same product template under multiple locales through identical `%product_*%` runtime vars. With locale out of the key, a product's plural-bearing copy could serve the wrong grammatical forms across languages. 2.2.0 explicitly scopes out multilingual fan-out (non-goal), so this is deferred, not fixed — but recorded so it is not rediscovered as a "Woo bug".
+
+**Fix (at implementation time).** Fold the effective locale into the cache key — e.g. include it in `get_context_hash()`'s hashed payload, or pass it into `CacheManager::build_key()` alongside `template_id` / `version` / `context_hash`. Keep it cheap; locale is a single short string. Add a regression test: same template + same runtime vars + two locales → two cache entries.
+
+**Trigger:** first multilingual/plural WooCommerce (or any multilingual plurals) signal, or bundle into the Phase 2 bindings refactor if the cache-key surface is being touched anyway.

@@ -20,11 +20,17 @@ if ( ! function_exists( 'spintax_render' ) ) {
 	 * @return string Rendered HTML.
 	 */
 	function spintax_render( $id_or_slug, array $vars = array() ): string {
-		static $renderer = null;
+		static $renderer        = null;
+		static $product_context = null;
 
 		if ( null === $renderer ) {
-			$renderer = new Spintax\Core\Render\Renderer();
+			$renderer        = new Spintax\Core\Render\Renderer();
+			$product_context = new Spintax\Core\Variables\WooCommerceProductContextSource();
 		}
+
+		// Layer WooCommerce product context beneath the caller's variables on
+		// product pages (no-op off-product or when WooCommerce is inactive).
+		$vars = Spintax\Core\Variables\RuntimeContextBuilder::merge( $product_context, $vars );
 
 		return $renderer->render( $id_or_slug, $vars );
 	}

@@ -10,6 +10,8 @@ namespace Spintax\Core\Shortcode;
 defined( 'ABSPATH' ) || exit;
 
 use Spintax\Core\Render\Renderer;
+use Spintax\Core\Variables\RuntimeContextBuilder;
+use Spintax\Core\Variables\WooCommerceProductContextSource;
 
 /**
  * Registers and handles the [spintax] shortcode for use in posts/pages.
@@ -24,12 +26,21 @@ class ShortcodeController {
 	private Renderer $renderer;
 
 	/**
+	 * WooCommerce product-context variable source.
+	 *
+	 * @var WooCommerceProductContextSource
+	 */
+	private WooCommerceProductContextSource $product_context;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param Renderer|null $renderer Optional renderer instance.
+	 * @param Renderer|null                        $renderer        Optional renderer instance.
+	 * @param WooCommerceProductContextSource|null $product_context Optional product-context source.
 	 */
-	public function __construct( ?Renderer $renderer = null ) {
-		$this->renderer = $renderer ?? new Renderer();
+	public function __construct( ?Renderer $renderer = null, ?WooCommerceProductContextSource $product_context = null ) {
+		$this->renderer        = $renderer ?? new Renderer();
+		$this->product_context = $product_context ?? new WooCommerceProductContextSource();
 	}
 
 	/**
@@ -71,6 +82,10 @@ class ShortcodeController {
 		// WordPress lowercases all shortcode attribute names.
 		$runtime_vars = $raw_atts;
 		unset( $runtime_vars['id'], $runtime_vars['slug'] );
+
+		// Layer WooCommerce product context beneath explicit attributes on
+		// product pages (no-op off-product or when WooCommerce is inactive).
+		$runtime_vars = RuntimeContextBuilder::merge( $this->product_context, $runtime_vars );
 
 		return $this->renderer->render( $id_or_slug, $runtime_vars );
 	}

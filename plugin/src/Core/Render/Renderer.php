@@ -243,6 +243,24 @@ class Renderer {
 		$extracted = $this->parser->extract_set_directives( $text );
 		$text      = $extracted['body'];
 
+		// Stage 4b: Collapse enumerations inside #set values once, so a local
+		// variable holds a single stable value (e.g. `#set %n% = {1|4|9}` → "4").
+		// This keeps repeated `%n%` references consistent and — critically — lets
+		// `{plural %n%: …}` see a numeric count instead of an unresolved `{1|4|9}`
+		// that the plural pass (which runs before enumeration resolution) would
+		// drop. Values carrying conditionals/plurals are left untouched: those
+		// constructs may reference variables defined on other lines and must stay
+		// deferred to the body pipeline (Stages 6a–6d).
+		foreach ( $extracted['variables'] as $set_name => $set_value ) {
+			if ( false === strpos( $set_value, '{' ) ) {
+				continue;
+			}
+			if ( false !== strpos( $set_value, '{?' ) || false !== strpos( $set_value, '{plural ' ) ) {
+				continue;
+			}
+			$extracted['variables'][ $set_name ] = $this->parser->resolve_enumerations( $set_value );
+		}
+
 		// Stage 5: Build variable context.
 		$context = $context->with_local( $extracted['variables'] );
 		if ( ! empty( $runtime_vars ) ) {

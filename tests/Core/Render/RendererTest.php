@@ -424,4 +424,50 @@ class RendererTest extends \WP_UnitTestCase {
 		$this->assertIsString( $result );
 		$this->assertStringContainsString( 'VAR', $result );
 	}
+
+	// =========================================================================
+	// `#set` value enumeration collapsing (stable variables + plural counts)
+	// =========================================================================
+
+	/**
+	 * Regression: `{plural %n%: …}` where %n% is `#set` to an enumeration used
+	 * to render empty because the plural pass ran before enumeration resolution
+	 * and saw an unresolved `{1|4}` count. The #set value now collapses once so
+	 * the count is numeric. Deterministic parser picks index 0 → count 1 → "item".
+	 */
+	public function test_plural_count_resolves_from_set_enumeration(): void {
+		$result = $this->renderer->process_template(
+			"#set %n% = {1|4}\nStock %n% {plural %n%: item|items}",
+			array()
+		);
+		$this->assertSame( 'Stock 1 item', $result );
+	}
+
+	/**
+	 * A `#set` value carrying an enumeration collapses to ONE stable value, so
+	 * every reference sees the same pick (not an independent roll per use).
+	 */
+	public function test_set_enumeration_value_is_stable_across_references(): void {
+		$calls    = 0;
+		$parser   = $this->make_sequence_parser( array( 0, 1 ), $calls );
+		$renderer = new Renderer( $parser );
+
+		$result = $renderer->process_template( "#set %g% = {A|B}\nPick %g% %g%", array() );
+
+		$this->assertSame( 'Pick A A', $result );
+		$this->assertSame( 1, $calls ); // resolved once, not once-per-reference.
+	}
+
+	/**
+	 * Guard: a `#set` value carrying a conditional is NOT collapsed at set-time
+	 * (it may reference a variable defined on another line); it stays deferred
+	 * to the body pipeline and still resolves against later-set variables.
+	 */
+	public function test_set_value_with_conditional_still_defers(): void {
+		$result = $this->renderer->process_template(
+			"#set %cta% = {?bonus?Claim bonus|Deposit}\n#set %bonus% = 1\n%cta%",
+			array()
+		);
+		$this->assertSame( 'Claim bonus', $result );
+	}
 }

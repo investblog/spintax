@@ -55,9 +55,11 @@ class WooCommerceProductContextSource {
 	private $resolve_product;
 
 	/**
-	 * Per-request memo of built variable maps, keyed by product id.
+	 * Per-request memo of built variable maps, keyed by "<path>:<product_id>"
+	 * where <path> is `explicit` or `auto`. Scoping by path prevents an
+	 * ungated auto-detected entry from being served to an explicit lookup.
 	 *
-	 * @var array<int, array<string, string>>
+	 * @var array<string, array<string, string>>
 	 */
 	private array $memo = array();
 
@@ -104,23 +106,26 @@ class WooCommerceProductContextSource {
 			return array();
 		}
 
-		if ( isset( $this->memo[ $product_id ] ) ) {
-			return $this->memo[ $product_id ];
+		// Scope the memo by path: an explicit lookup must never be served an
+		// auto-detected (ungated) cache entry for the same id, or the publish
+		// gate below could be bypassed within a single request.
+		$memo_key = ( $explicit ? 'explicit:' : 'auto:' ) . $product_id;
+		if ( isset( $this->memo[ $memo_key ] ) ) {
+			return $this->memo[ $memo_key ];
 		}
 
 		$product = ( $this->resolve_product )( $product_id );
 
 		// Never expose a non-published product's context via an explicit
 		// `product_id`: it would let an author read draft / private products
-		// they were not served. Not memoised — an auto-detect for the same id
-		// later in the request is legitimately gated differently.
+		// they were not served. The auto-detect path can't reach those.
 		if ( $product && $explicit && 'publish' !== $this->product_status( $product ) ) {
-			return array();
+			$product = null;
 		}
 
 		$map = $product ? $this->map( $product ) : array();
 
-		$this->memo[ $product_id ] = $map;
+		$this->memo[ $memo_key ] = $map;
 
 		return $map;
 	}
@@ -175,7 +180,35 @@ class WooCommerceProductContextSource {
 			'product_short_description' => $this->plain_text( (string) $product->get_short_description() ),
 		);
 
-		return array_merge( $map, $this->attributes( $product ) );
+		$map = array_merge( $map, $this->attributes( $product ) );
+
+		return array_map( array( $this, 'shield_spintax' ), $map );
+	}
+
+	/**
+	 * Neutralise spintax structural characters in a product value.
+	 *
+	 * Product data is content, not markup. A product field containing `{a|b}`,
+	 * `[x]`, `[spintax …]`, `{?…}`, `{plural …}` or `%var%` would otherwise be
+	 * re-interpreted by the render pipeline (it treats variable values as
+	 * spintax). Encoding the structural characters as HTML entities makes them
+	 * render literally and blocks nested-shortcode execution, while surviving
+	 * the final `wp_kses_post` unchanged.
+	 *
+	 * @param string $value Product-derived value.
+	 * @return string
+	 */
+	private function shield_spintax( string $value ): string {
+		return strtr(
+			$value,
+			array(
+				'{' => '&#123;',
+				'}' => '&#125;',
+				'[' => '&#91;',
+				']' => '&#93;',
+				'%' => '&#37;',
+			)
+		);
 	}
 
 	/**

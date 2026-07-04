@@ -297,6 +297,17 @@ class RendererTest extends \WP_UnitTestCase {
 		$this->assertStringContainsString( 'Function works', $result );
 	}
 
+	/**
+	 * Regression: the WooCommerce product-context wiring added to spintax_render()
+	 * must not disturb the existing explicit-variable pass-through. (WooCommerce
+	 * is absent in the test env, so the product source is a no-op here.)
+	 */
+	public function test_spintax_render_passes_explicit_vars_after_woo_wiring(): void {
+		$this->make_template( 'Woo Helper Vars', 'Hello %who%!' );
+		$result = spintax_render( 'woo-helper-vars', array( 'who' => 'World' ) );
+		$this->assertSame( 'Hello World!', $result );
+	}
+
 	// =========================================================================
 	// HTML sanitisation
 	// =========================================================================

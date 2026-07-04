@@ -143,6 +143,49 @@ class WooCommerceProductContextSourceTest extends \WP_UnitTestCase {
 		$this->assertSame( '7', $vars['product_id'] );
 	}
 
+	public function test_explicit_gate_not_bypassed_by_auto_detect_memo(): void {
+		global $wp_query;
+
+		// Simulate an admin preview whose queried object is a draft product.
+		$draft_id = self::factory()->post->create(
+			array( 'post_type' => 'product', 'post_status' => 'draft' )
+		);
+		$wp_query->queried_object    = get_post( $draft_id );
+		$wp_query->queried_object_id = $draft_id;
+
+		$source = new WooCommerceProductContextSource(
+			static fn(): bool => true,
+			fn( int $id ) => $this->fake_product(
+				array( 'id' => $id, 'status' => 'draft', 'name' => 'Secret Draft' )
+			)
+		);
+
+		// Auto-detect on the draft caches its map (ungated path)...
+		$auto = $source->build( 0 );
+		$this->assertSame( 'Secret Draft', $auto['product_name'] );
+
+		// ...and an explicit lookup for the SAME id must still be gated,
+		// not served the auto-cached entry.
+		$this->assertSame( array(), $source->build( $draft_id ) );
+	}
+
+	public function test_product_values_are_shielded_from_spintax_interpretation(): void {
+		$source = new WooCommerceProductContextSource(
+			static fn(): bool => true,
+			fn( int $id ) => $this->fake_product(
+				array( 'id' => $id, 'name' => 'Deal {50|60}% [x] %n%' )
+			)
+		);
+
+		$vars = $source->build( 5 );
+
+		// Structural characters are entity-encoded → rendered literally, never
+		// parsed as enumeration / permutation / variable / nested shortcode.
+		$this->assertSame( 'Deal &#123;50|60&#125;&#37; &#91;x&#93; &#37;n&#37;', $vars['product_name'] );
+		$this->assertStringNotContainsString( '{', $vars['product_name'] );
+		$this->assertStringNotContainsString( '[', $vars['product_name'] );
+	}
+
 	public function test_build_maps_core_product_fields(): void {
 		$source = new WooCommerceProductContextSource(
 			static fn(): bool => true,

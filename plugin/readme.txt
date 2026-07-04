@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 7.0
-Stable tag: 2.2.0
+Stable tag: 2.2.1
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -223,6 +223,11 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 2.2.1 =
+* Security (hardening): an explicit `[spintax product_id=N]` could still surface a draft/private product's context if that product had first been auto-detected earlier in the same request — the per-request memo was returned before the published-status gate. The memo is now scoped per resolution path (auto vs explicit), so the gate always applies. Follow-up to the 2.2.0 explicit-id gate.
+* Security (defense-in-depth): WooCommerce product values (name, SKU, categories, tags, short description, attributes) are neutralized so spintax structural characters (`{` `}` `[` `]` `%`) render literally instead of being re-interpreted as enumerations / permutations / variables — or executing a nested `[spintax]`. Product data is content, not markup.
+* Tests: +4 (memo-bypass regression, product-value shielding unit + render, `spintax_render()` variable pass-through). 543 PHPUnit tests.
+
 = 2.2.0 =
 * Feature (WooCommerce): product context variables. On a single-product page, `[spintax]` and `spintax_render()` now auto-expose the current product as `%product_id%`, `%product_name%`, `%product_slug%`, `%product_sku%`, `%product_type%`, `%product_stock_status%`, `%product_categories%`, `%product_tags%`, `%product_short_description%`, and one `%product_attribute_<slug>%` per attribute. Read-only — nothing is written to products. Volatile pricing data is intentionally excluded.
 * Feature (WooCommerce): pass `product_id="123"` to target a specific product regardless of the current page; explicit shortcode / PHP variables always override auto-detected product variables. Explicit `product_id` exposes published products only, so it can't surface draft or private product data.
@@ -338,6 +343,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 2.2.1 =
+Security hardening for 2.2.0's WooCommerce context variables: closes a same-request memo bypass of the published-product gate on explicit product_id, and neutralizes spintax characters in product values so they render literally. Recommended for 2.2.0 users.
 
 = 2.2.0 =
 Read-only WooCommerce product context variables (`%product_name%`, `%product_categories%`, `%product_attribute_<slug>%`, and more) in `[spintax]` / `spintax_render()` on single-product pages; each product caches its own variant. Pricing excluded. WooCommerce optional; non-product sites unchanged.

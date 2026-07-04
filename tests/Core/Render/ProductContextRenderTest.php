@@ -56,18 +56,21 @@ class ProductContextRenderTest extends \WP_UnitTestCase {
 	 *
 	 * @param int $id Product id.
 	 */
-	private function fake_product( int $id ): object {
-		return new class( $id ) {
+	private function fake_product( int $id, string $name = '' ): object {
+		$name = '' !== $name ? $name : 'Product ' . $id;
+		return new class( $id, $name ) {
 			private int $id;
+			private string $name;
 
-			public function __construct( int $id ) {
-				$this->id = $id;
+			public function __construct( int $id, string $name ) {
+				$this->id   = $id;
+				$this->name = $name;
 			}
 
 			public function get_id() {
 				return $this->id; }
 			public function get_name() {
-				return 'Product ' . $this->id; }
+				return $this->name; }
 			public function get_slug() {
 				return 'product-' . $this->id; }
 			public function get_sku() {
@@ -170,5 +173,23 @@ class ProductContextRenderTest extends \WP_UnitTestCase {
 
 		$this->assertStringContainsString( 'Override', $result );
 		$this->assertStringNotContainsString( 'Product 1', $result );
+	}
+
+	public function test_product_value_with_spintax_chars_renders_literally(): void {
+		$this->make_template( 'raw', 'Name: %product_name%' );
+		$source = new WooCommerceProductContextSource(
+			static fn(): bool => true,
+			fn( int $id ) => $this->fake_product( $id, 'Choice {A|B}' )
+		);
+		$this->register_controller(
+			new Renderer( new Parser( static fn( int $min, int $max ): int => $min ) ),
+			$source
+		);
+
+		$out = do_shortcode( '[spintax slug="raw" product_id="1"]' );
+
+		// The enumeration inside the product name must NOT collapse to "A"/"B"
+		// — the pipe survives because the braces were entity-shielded.
+		$this->assertStringContainsString( 'A|B', $out );
 	}
 }

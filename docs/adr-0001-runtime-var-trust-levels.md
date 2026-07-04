@@ -58,11 +58,13 @@ through the engine unmodified. No shielding.
 The value is **content from a record**, potentially authored by a different or
 lower-privileged actor than the template author. It is *data, not markup*.
 
-| Source | Value origin | Compliant today? |
-|--------|--------------|:----------------:|
+| Source | Value origin | Compliant? |
+|--------|--------------|:----------:|
 | `WooCommerceProductContextSource` | WC product fields (name, sku, categories, tags, short desc, attributes) | ✅ shielded + published-gate |
-| `PostContextSource` | `wp_posts` fields (`post_title`, `post_name`, author name, …) | ❌ **not shielded** |
-| `AcfSiblingsSource` | ACF sibling field values (text/textarea/wysiwyg) | ❌ **not shielded** |
+| `PostContextSource` | `wp_posts` fields (`post_title`, `post_name`, author name, …) | ✅ shielded (2.2.2) |
+| `AcfSiblingsSource` | ACF sibling field values (text/textarea/wysiwyg) | ✅ shielded (2.2.2) |
+
+All three route their returned map through `Spintax\Support\SpintaxShield::neutralize_map()`.
 
 ## Decision
 
@@ -81,12 +83,11 @@ lower-privileged actor than the template author. It is *data, not markup*.
      caches (see the 2.2.1 memo-scoping fix). Auto-detected records already
      limited by the main query need no extra gate.
 
-3. **The shield is one shared utility, not copy-pasted per source.** Today
-   `shield_spintax()` is private to `WooCommerceProductContextSource`. When the
-   second T2 source is hardened, extract it to a shared home (e.g.
-   `Spintax\Support\SpintaxShield::neutralize()` or a shared trait) so the
-   invariant has exactly one definition. Until then, this ADR is the single
-   source of the character set (`{ } [ ] % #`).
+3. **The shield is one shared utility, not copy-pasted per source.**
+   `Spintax\Support\SpintaxShield` (`neutralize()` / `neutralize_map()`) owns the
+   single definition of the structural character set (`{ } [ ] % #`). Every T2
+   source routes its returned map through it; no source re-implements the set.
+   (Was extracted in 2.2.2 from the WC source's original private method.)
 
 4. **T1 behavior is unchanged.** We do not shield authored spintax and we do not
    change the engine's "values may be spintax" semantics. The boundary is at the
@@ -94,13 +95,11 @@ lower-privileged actor than the template author. It is *data, not markup*.
 
 ## Consequences
 
-- **Consistency debt (known, lower-urgency):** `PostContextSource` and
-  `AcfSiblingsSource` are T2-non-compliant (pre-existing since 2.0 bindings).
-  Their consumers are `manage_spintax_templates` content-managers configuring
-  bindings that render into stored fields, so the blast radius is smaller than
-  the front-end WC case — but the class is identical. Hardening = extract the
-  shared shield, apply in both `build()` methods, add tests. Tracked as the
-  "consistent shielding" follow-up.
+- **Consistency debt — RESOLVED in 2.2.2:** `PostContextSource` and
+  `AcfSiblingsSource` (T2-non-compliant since 2.0 bindings) now route through
+  `SpintaxShield`, closing the pre-existing gap before Phase 2 adds new paths.
+  Behavior change: a post/ACF field value that happened to *contain* spintax now
+  renders literally (data, not markup) — see the 2.2.2 changelog.
 - **Future sources inherit the rule for free** once the shared shield exists:
   Phase 3 WooCommerce write targets, taxonomy/term context (Phase 4), and any
   new `Core/Variables/*Source` that reads records.

@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 7.0
-Stable tag: 2.2.1
+Stable tag: 2.2.2
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -223,6 +223,11 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 2.2.2 =
+* Security (hardening, data-derived context): post-context and ACF-sibling binding variables are now shielded the same way WooCommerce product values already were. The render engine can no longer re-interpret a record-sourced value (e.g. `%post_title%`, `%acf_<field>%`) as spintax — enumeration / permutation / conditional / plural / `%var%` — execute a nested `[spintax]`, or inject a `#include`. All three data-derived sources now share one `SpintaxShield` utility, so the "record data is content, not markup" rule holds everywhere (see the trust-level ADR in the repo's `docs/`).
+* Behavior note: a post or ACF field value that *contained* spintax and previously expanded now renders literally. This is intentional — data is data; author spintax in the template. Template body, `#set` locals, global variables, `spintax_render()` arguments and shortcode attributes are unaffected.
+* Tests: +6 (SpintaxShield unit + post-context shielding). 550 PHPUnit tests.
+
 = 2.2.1 =
 * Security (hardening): an explicit `[spintax product_id=N]` could still surface a draft/private product's context if that product had first been auto-detected earlier in the same request — the per-request memo was returned before the published-status gate. The memo is now scoped per resolution path (auto vs explicit), so the gate always applies. Follow-up to the 2.2.0 explicit-id gate.
 * Security (defense-in-depth): WooCommerce product values (name, SKU, categories, tags, short description, attributes) are neutralized so spintax structural characters (`{` `}` `[` `]` `%` `#`) render literally instead of being re-interpreted as enumerations / permutations / variables, a nested `[spintax]`, or a `#include` directive. Product data is content, not markup.
@@ -343,6 +348,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 2.2.2 =
+Extends 2.2.1's product-value spintax shielding to post-context and ACF-sibling binding variables via a shared utility. Record-sourced values (post_title, acf_*) now render literally instead of being re-interpreted as spintax. Template / #set / global authoring is unchanged.
 
 = 2.2.1 =
 Security hardening for 2.2.0's WooCommerce context variables: closes a same-request memo bypass of the published-product gate on explicit product_id, and neutralizes spintax characters in product values so they render literally. Recommended for 2.2.0 users.

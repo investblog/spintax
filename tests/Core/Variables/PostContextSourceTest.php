@@ -3,6 +3,7 @@
 namespace Spintax\Tests\Core\Variables;
 
 use Spintax\Core\Variables\PostContextSource;
+use Spintax\Support\SpintaxShield;
 
 class PostContextSourceTest extends \WP_UnitTestCase {
 
@@ -34,6 +35,25 @@ class PostContextSourceTest extends \WP_UnitTestCase {
 		$this->assertSame( 'Alice', $vars['author_name'] );
 		$this->assertNotEmpty( $vars['post_date'] );
 		$this->assertNotEmpty( $vars['post_modified'] );
+	}
+
+	public function test_post_values_are_shielded_from_spintax_interpretation(): void {
+		$post = self::factory()->post->create_and_get(
+			array(
+				'post_title'  => 'Deal {50|60} [x] #inc',
+				'post_status' => 'publish',
+			)
+		);
+
+		$vars = $this->source->build( $post->ID );
+
+		// Structural characters are entity-encoded so a post field can't be
+		// re-interpreted as spintax by the render pipeline (ADR-0001, T2).
+		$this->assertStringNotContainsString( '{', $vars['post_title'] );
+		$this->assertStringNotContainsString( '[', $vars['post_title'] );
+		$this->assertStringContainsString( '&#123;', $vars['post_title'] );
+		$this->assertStringContainsString( '&#35;inc', $vars['post_title'] );
+		$this->assertSame( SpintaxShield::neutralize( $post->post_title ), $vars['post_title'] );
 	}
 
 	public function test_build_returns_empty_for_unknown_post(): void {

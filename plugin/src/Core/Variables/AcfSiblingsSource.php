@@ -7,6 +7,8 @@
 
 namespace Spintax\Core\Variables;
 
+use Spintax\Support\SpintaxShield;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -81,6 +83,8 @@ class AcfSiblingsSource {
 			$result[ 'acf_' . $name ] = (string) $value;
 		}
 
-		return $result;
+		// ACF field values are content, not markup — shield so the render
+		// pipeline can't re-interpret them as spintax (ADR-0001, T2).
+		return SpintaxShield::neutralize_map( $result );
 	}
 }

@@ -7,6 +7,8 @@
 
 namespace Spintax\Core\Variables;
 
+use Spintax\Support\SpintaxShield;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -53,15 +55,19 @@ class PostContextSource {
 			}
 		}
 
-		return array(
-			'post_id'       => (string) $post->ID,
-			'post_title'    => (string) $post->post_title,
-			'post_url'      => (string) get_permalink( $post ),
-			'post_slug'     => (string) $post->post_name,
-			'post_date'     => (string) mysql2date( 'c', $post->post_date, false ),
-			'post_modified' => (string) mysql2date( 'c', $post->post_modified, false ),
-			'author_id'     => (string) $author_id,
-			'author_name'   => $author_name,
+		// Data-derived values (post fields) are content, not markup — shield so
+		// the render pipeline can't re-interpret them as spintax (ADR-0001, T2).
+		return SpintaxShield::neutralize_map(
+			array(
+				'post_id'       => (string) $post->ID,
+				'post_title'    => (string) $post->post_title,
+				'post_url'      => (string) get_permalink( $post ),
+				'post_slug'     => (string) $post->post_name,
+				'post_date'     => (string) mysql2date( 'c', $post->post_date, false ),
+				'post_modified' => (string) mysql2date( 'c', $post->post_modified, false ),
+				'author_id'     => (string) $author_id,
+				'author_name'   => $author_name,
+			)
 		);
 	}
 }

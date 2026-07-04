@@ -7,6 +7,8 @@
 
 namespace Spintax\Core\Variables;
 
+use Spintax\Support\SpintaxShield;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -182,37 +184,9 @@ class WooCommerceProductContextSource {
 
 		$map = array_merge( $map, $this->attributes( $product ) );
 
-		return array_map( array( $this, 'shield_spintax' ), $map );
-	}
-
-	/**
-	 * Neutralise spintax structural characters in a product value.
-	 *
-	 * Product data is content, not markup. A product field containing `{a|b}`,
-	 * `[x]`, `[spintax …]`, `{?…}`, `{plural …}`, `%var%` or a `#include`
-	 * line directive would otherwise be re-interpreted by the render pipeline
-	 * (it treats variable values as spintax). Encoding the structural
-	 * characters as HTML entities makes them render literally — blocking
-	 * nested-shortcode execution and directive injection — while surviving the
-	 * final `wp_kses_post` unchanged. `#` is encoded too because `#include`
-	 * resolves after variable expansion, so a value with an embedded newline
-	 * could otherwise reach line-start.
-	 *
-	 * @param string $value Product-derived value.
-	 * @return string
-	 */
-	private function shield_spintax( string $value ): string {
-		return strtr(
-			$value,
-			array(
-				'{' => '&#123;',
-				'}' => '&#125;',
-				'[' => '&#91;',
-				']' => '&#93;',
-				'%' => '&#37;',
-				'#' => '&#35;',
-			)
-		);
+		// Product data is content, not markup — shield it so the render pipeline
+		// can't re-interpret a product field as spintax (see ADR-0001, T2).
+		return SpintaxShield::neutralize_map( $map );
 	}
 
 	/**

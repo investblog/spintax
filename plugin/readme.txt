@@ -225,11 +225,11 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 = 2.2.0 =
 * Feature (WooCommerce): product context variables. On a single-product page, `[spintax]` and `spintax_render()` now auto-expose the current product as `%product_id%`, `%product_name%`, `%product_slug%`, `%product_sku%`, `%product_type%`, `%product_stock_status%`, `%product_categories%`, `%product_tags%`, `%product_short_description%`, and one `%product_attribute_<slug>%` per attribute. Read-only — nothing is written to products. Volatile pricing data is intentionally excluded.
-* Feature (WooCommerce): pass `product_id="123"` to target a specific product regardless of the current page; explicit shortcode / PHP variables always override auto-detected product variables.
+* Feature (WooCommerce): pass `product_id="123"` to target a specific product regardless of the current page; explicit shortcode / PHP variables always override auto-detected product variables. Explicit `product_id` exposes published products only, so it can't surface draft or private product data.
 * Correctness: product variables enter the runtime layer, so each product renders (and caches) its own variant — product A's cached output can never leak to product B. Non-product pages and WooCommerce-inactive sites are byte-for-byte unchanged.
 * Performance: the product variable map (including the term lookups behind `%product_categories%` / `%product_tags%`) is memoised per product for the request; nested `[spintax]` / `#include` inherit the product context without re-detecting it.
 * Fix (engine): `{plural %n%: …}` no longer renders empty when the count variable was `#set` to an enumeration (e.g. `#set %n% = {1|4|9}`). Enumerations inside `#set` values now collapse once, so a variable holds a single stable value — the plural count sees a real number and every `%n%` reference stays consistent. Values carrying conditionals/plurals are left deferred (unchanged).
-* Internal: new `WooCommerceProductContextSource` + `RuntimeContextBuilder`, wired into the shortcode and `spintax_render()` entry points. WooCommerce remains an optional dependency — no fatal errors when it is absent. 537 PHPUnit tests (was 520).
+* Internal: new `WooCommerceProductContextSource` + `RuntimeContextBuilder`, wired into the shortcode and `spintax_render()` entry points. WooCommerce remains an optional dependency — no fatal errors when it is absent. 539 PHPUnit tests (was 520).
 
 = 2.1.1 =
 * UX (Bindings list): "Bulk Apply" button now disables and exposes a tooltip pointing at the Run-now / WP-CLI fallback when Action Scheduler isn't installed — previously the click hit the `no_action_scheduler` error path so users had to click-to-learn.

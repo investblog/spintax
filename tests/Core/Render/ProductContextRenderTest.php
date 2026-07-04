@@ -88,6 +88,8 @@ class ProductContextRenderTest extends \WP_UnitTestCase {
 				return array(); }
 			public function get_attribute( $name ) {
 				return ''; }
+			public function get_status() {
+				return 'publish'; }
 		};
 	}
 

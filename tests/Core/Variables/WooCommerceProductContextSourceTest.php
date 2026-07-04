@@ -27,6 +27,7 @@ class WooCommerceProductContextSourceTest extends \WP_UnitTestCase {
 				'short_description' => '<p>Nice &amp; soft</p>',
 				'attributes'        => array(),
 				'attribute_values'  => array(),
+				'status'            => 'publish',
 			),
 			$overrides
 		);
@@ -86,6 +87,10 @@ class WooCommerceProductContextSourceTest extends \WP_UnitTestCase {
 			public function get_attribute( $name ) {
 				return $this->data['attribute_values'][ $name ] ?? '';
 			}
+
+			public function get_status() {
+				return $this->data['status'];
+			}
 		};
 	}
 
@@ -115,6 +120,27 @@ class WooCommerceProductContextSourceTest extends \WP_UnitTestCase {
 		);
 
 		$this->assertSame( array(), $source->build( 0 ) );
+	}
+
+	public function test_explicit_product_id_blocks_non_published_product(): void {
+		// An explicit product_id must not expose a draft/private product's
+		// context (it bypasses the main-query gate the auto path relies on).
+		$source = new WooCommerceProductContextSource(
+			static fn(): bool => true,
+			fn( int $id ) => $this->fake_product( array( 'id' => $id, 'status' => 'draft' ) )
+		);
+
+		$this->assertSame( array(), $source->build( 7 ) );
+	}
+
+	public function test_explicit_product_id_allows_published_product(): void {
+		$source = new WooCommerceProductContextSource(
+			static fn(): bool => true,
+			fn( int $id ) => $this->fake_product( array( 'id' => $id, 'status' => 'publish' ) )
+		);
+
+		$vars = $source->build( 7 );
+		$this->assertSame( '7', $vars['product_id'] );
 	}
 
 	public function test_build_maps_core_product_fields(): void {

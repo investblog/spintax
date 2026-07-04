@@ -84,6 +84,8 @@ class WooCommerceProductContextSource {
 	 * Build the product-context variable map.
 	 *
 	 * @param int $product_id Explicit product id, or 0 to auto-detect from the main query.
+	 *                        An explicit id resolves only published products (auto-detect
+	 *                        is already limited to the served product).
 	 * @return array<string, string> Empty when WooCommerce is inactive or no product resolves.
 	 */
 	public function build( int $product_id = 0 ): array {
@@ -91,7 +93,11 @@ class WooCommerceProductContextSource {
 			return array();
 		}
 
-		if ( $product_id <= 0 ) {
+		// An explicit id bypasses the main-query gate, so it is status-checked
+		// below. Auto-detection is already limited to the published product
+		// WordPress served for this request.
+		$explicit = $product_id > 0;
+		if ( ! $explicit ) {
 			$product_id = $this->detect_current_product_id();
 		}
 		if ( $product_id <= 0 ) {
@@ -103,11 +109,30 @@ class WooCommerceProductContextSource {
 		}
 
 		$product = ( $this->resolve_product )( $product_id );
-		$map     = $product ? $this->map( $product ) : array();
+
+		// Never expose a non-published product's context via an explicit
+		// `product_id`: it would let an author read draft / private products
+		// they were not served. Not memoised — an auto-detect for the same id
+		// later in the request is legitimately gated differently.
+		if ( $product && $explicit && 'publish' !== $this->product_status( $product ) ) {
+			return array();
+		}
+
+		$map = $product ? $this->map( $product ) : array();
 
 		$this->memo[ $product_id ] = $map;
 
 		return $map;
+	}
+
+	/**
+	 * Read a resolved product's post status.
+	 *
+	 * @param object $product WC_Product-like object.
+	 * @return string Status slug, or '' when unavailable (treated as non-published).
+	 */
+	private function product_status( object $product ): string {
+		return method_exists( $product, 'get_status' ) ? (string) $product->get_status() : '';
 	}
 
 	/**

@@ -189,11 +189,14 @@ class WooCommerceProductContextSource {
 	 * Neutralise spintax structural characters in a product value.
 	 *
 	 * Product data is content, not markup. A product field containing `{a|b}`,
-	 * `[x]`, `[spintax …]`, `{?…}`, `{plural …}` or `%var%` would otherwise be
-	 * re-interpreted by the render pipeline (it treats variable values as
-	 * spintax). Encoding the structural characters as HTML entities makes them
-	 * render literally and blocks nested-shortcode execution, while surviving
-	 * the final `wp_kses_post` unchanged.
+	 * `[x]`, `[spintax …]`, `{?…}`, `{plural …}`, `%var%` or a `#include`
+	 * line directive would otherwise be re-interpreted by the render pipeline
+	 * (it treats variable values as spintax). Encoding the structural
+	 * characters as HTML entities makes them render literally — blocking
+	 * nested-shortcode execution and directive injection — while surviving the
+	 * final `wp_kses_post` unchanged. `#` is encoded too because `#include`
+	 * resolves after variable expansion, so a value with an embedded newline
+	 * could otherwise reach line-start.
 	 *
 	 * @param string $value Product-derived value.
 	 * @return string
@@ -207,6 +210,7 @@ class WooCommerceProductContextSource {
 				'[' => '&#91;',
 				']' => '&#93;',
 				'%' => '&#37;',
+				'#' => '&#35;',
 			)
 		);
 	}

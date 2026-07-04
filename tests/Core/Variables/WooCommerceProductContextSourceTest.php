@@ -186,6 +186,22 @@ class WooCommerceProductContextSourceTest extends \WP_UnitTestCase {
 		$this->assertStringNotContainsString( '[', $vars['product_name'] );
 	}
 
+	public function test_hash_is_shielded_to_block_include_injection(): void {
+		// A product value with an embedded newline + `#include` must not reach
+		// line-start as a live directive after substitution.
+		$source = new WooCommerceProductContextSource(
+			static fn(): bool => true,
+			fn( int $id ) => $this->fake_product(
+				array( 'id' => $id, 'name' => "Buy now\n#include \"evil-slug\"" )
+			)
+		);
+
+		$vars = $source->build( 5 );
+
+		$this->assertStringNotContainsString( '#include', $vars['product_name'] );
+		$this->assertStringContainsString( '&#35;include', $vars['product_name'] );
+	}
+
 	public function test_build_maps_core_product_fields(): void {
 		$source = new WooCommerceProductContextSource(
 			static fn(): bool => true,

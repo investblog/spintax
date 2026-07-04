@@ -133,6 +133,7 @@ GTW-original primitives plus plugin extensions (`{?…?}` conditionals since 1.4
 - **[spintax] shielding** — shortcodes inside templates are placeholder-shielded before permutation resolution to avoid bracket conflicts
 - **Preview uses editor content** — AJAX sends textarea value, NOT saved DB content
 - **No wp_kses_post on input** — template source is raw spintax, sanitisation only on render OUTPUT
+- **Runtime-var trust levels** — the engine treats every variable value as potential spintax (resolved after `%var%` expansion). Sources split into **T1 markup-authoring** (template/`#set`/globals/`spintax_render` args/shortcode attrs — values MAY be spintax, no shielding) and **T2 data-derived** (`*ContextSource`/`*SiblingsSource` reading records — values MUST be shielded `{ } [ ] % #` + access-gated). Full contract in `docs/adr-0001-runtime-var-trust-levels.md`. Compliant today: `WooCommerceProductContextSource`. **Non-compliant (known debt):** `PostContextSource`, `AcfSiblingsSource`.
 - **minsize/maxsize defaults** — if only maxsize set, minsize=1 (not total). If only minsize set, maxsize=total.
 - **Auto-spacing for word separators** — purely alphabetic separators (`<и>`, `<and>`, `<до>`) are auto-padded with spaces in `join_with_separators`. Punctuation separators (`,`, `;`) are NOT padded (post-processing handles them).
 - **Per-element separator priority** — customSep > lastsep > sep. HTML tags distinguished from separators by checking for `/`, self-closing `/`, or attributes after tag name.

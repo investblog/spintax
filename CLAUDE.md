@@ -8,13 +8,19 @@ Free WordPress plugin for spintax-based content generation. Target audience: con
 - **WP.org:** https://wordpress.org/plugins/spintax/
 - **Docs / playground:** https://spintax.net
 - **Author:** 301st (https://301.st)
-- **Current version:** 2.1.1
-- **Status:** live on WordPress.org. Shipping surfaces: spintax engine (templates + shortcode + `spintax_render()`), bindings (ACF + post-meta targets with Bulk Apply / Run-now / cron triggers), Logs page, WP-CLI `wp spintax bindings *`. Detailed release notes live in `plugin/readme.txt` changelog — don't duplicate them here. Reviewer-driven contracts that aren't obvious from the code live in the "Bindings" section below.
+- **Current version:** 2.3.1
+- **Status:** live on WordPress.org. Shipping surfaces: spintax engine (templates + shortcode + `spintax_render()`), **WooCommerce product context variables** (`%product_*%`, read-only, 2.2.0), bindings (ACF + post-meta targets with Bulk Apply / Run-now / cron triggers; decision engine is a pure `Planner` + `TargetRegistry` since 2.3.0), Logs page, WP-CLI `wp spintax bindings *`. Detailed release notes live in `plugin/readme.txt` changelog — don't duplicate them here. Reviewer-driven contracts that aren't obvious from the code live in the "Bindings" section below.
+- **Active roadmap:** WooCommerce integration. Phase 1 (context vars) SHIPPED 2.2.0; Phase 2 (pure Planner / TargetRegistry refactor) SHIPPED 2.3.0. **Next: Phase 3** = `woocommerce_product_field` write targets — spec-first mini-spec at `docs/spec-woocommerce-phase3.md` (not yet coded; two-PR delivery). Product framing: `docs/spec-woocommerce.md` + `docs/spec-woocommerce-discussion.md`.
 
 ## Reference sources
 
 - **GTW syntax reference:** `docs/gtw-syntax-reference.md`
 - **Product spec:** `docs/spec-v1.md`
+- **Bindings design + locked contracts:** `docs/spec-acf-bindings.md`
+- **Runtime-var trust levels (T1/T2 shielding):** `docs/adr-0001-runtime-var-trust-levels.md`
+- **WooCommerce:** `docs/spec-woocommerce.md` (engineering) + `docs/spec-woocommerce-discussion.md` (product) + `docs/spec-woocommerce-phase3.md` (write-targets mini-spec)
+- **Release protocol:** `docs/release-checklist.md`; **backlog:** `docs/backlog.md`
+- **OpenCart port (Planner/TargetRegistry design origin):** `W:\projects\spintax-opencart`
 - **Old WP plugin (buggy, for reference only):** `C:\Users\Admin\Local Sites\testcom\app\public\wp-content\plugins\nested-spintax-for-acf`
 - **Java spintax engine (algorithm reference):** `W:\spintax-java`
 - **Project structure template:** `W:\Projects\wpci` (images-sync-for-cloudflare, approved on WP.org)
@@ -61,23 +67,35 @@ plugin/
       Defaults.php               # Factory methods for default config
       Logging.php                # Ring-buffer debug logger
       OptionKeys.php             # Centralised option/meta key constants
-      Validators.php             # Data normalisation helpers + 4-tier binding-key guard
+      Validators.php             # Data normalisation helpers + binding-key guard tiers
+      SpintaxShield.php          # neutralize {}[]%# in T2 data-derived values (2.2.2; ADR-0001)
     Bindings/                    # ACF / post-meta bindings (2.0.0)
-      BindingApplier.php         # §4.4 decision tree (9 return codes) + ACF write helpers
+      BindingApplier.php         # fact-resolver + assembler; delegates decision→Planner, dispatch→TargetRegistry (2.3.0)
       BindingResolver.php        # template-mode / per_post-mode source lookup
       BindingsRepo.php           # CRUD over single autoloaded option, fires saved/deleted actions
       BulkApply.php              # Action Scheduler walker + WP-CLI fallback path
-      Defaults.php               # Default binding shape + MAX_BINDINGS=200, chunk_size constants
+      Defaults.php               # Default binding shape + MAX_BINDINGS=200; target_kinds() delegates to TargetRegistry
       Migration.php              # one-shot import from nested-spintax-for-acf
+      Plan/                      # Pure write-decision (2.3.0)
+        PlanCode.php             # single source of the 13 outcome strings + is_write/category/all
+        PlanInput.php            # immutable fact DTO (snake_case promoted props)
+        Planner.php              # PURE scope_reject() + plan() — no WP calls; the decision authority
+      Target/                    # Target-kind descriptors (2.3.0)
+        TargetKind.php           # interface: id/read/write/validate_runtime/normalize_target
+        AcfFieldTarget.php       # get_field/update_field($field_key) + runtime ACF guard
+        PostMetaTarget.php       # get/update_post_meta; default for unknown kind
+        TargetRegistry.php       # static get/ids/all — allow-list source of truth
       Triggers/
         SavePostTrigger.php      # save_post priority 20 — after ACF p10
         TemplateCascadeTrigger.php # bumps per-binding cache version on template edit
         CronTrigger.php          # per-binding wp_schedule_event hooks
     CLI/
       BindingsCommand.php        # wp spintax bindings list|apply|test|export|import
-    Core/Variables/              # Variable sources consumed by BindingApplier
-      PostContextSource.php      # %post_id%, %post_title%, etc.
-      AcfSiblingsSource.php      # %acf_<name>% for same-group siblings (top-level only)
+    Core/Variables/              # Variable sources (T2 data-derived = shielded; see ADR-0001)
+      PostContextSource.php      # %post_id%, %post_title%, … (binding path; SpintaxShield'd)
+      AcfSiblingsSource.php      # %acf_<name>% same-group siblings, top-level only (shielded)
+      WooCommerceProductContextSource.php # %product_*% read-only, front-end (2.2.0; shielded, memoised)
+      RuntimeContextBuilder.php  # merges auto product ctx UNDER explicit vars (shortcode/spintax_render)
   assets/css/admin.css           # Native WP styles augmentation
   assets/js/admin.js             # Preview AJAX, copy shortcode, variables
   assets/js/bindings.js          # Bindings form: field discovery datalist + Test panel
@@ -96,7 +114,9 @@ ACF / post-meta bindings let editors configure once-per-post-type "render this t
 - `ajax_acf_fields` does NOT recurse into `sub_fields` / `flexible_content` (V1 non-goal NG1).
 - Reserved-key guard has 5 tiers: WP internal meta (`_wp_*`), plugin-internal (`_spintax_*`), wp_posts columns (`post_title`, etc.), **uniqueness on `(post_type, target.key)` — regardless of `target.kind` (2.0.1; ACF and post_meta on same name collide because they share the wp_postmeta row)**, and ACF field_key validity for `kind=acf_field` (2.0.1).
 - BindingApplier.plan() runs **scope filter first** (2.0.1) — returns `SKIP_OUT_OF_SCOPE_TYPE` if `post.post_type != binding.post_type`, `SKIP_OUT_OF_SCOPE_STATUS` if `binding.status === 'publish'` and `post.post_status !== 'publish'`. Test panel inherits this transparently.
-- **Runtime ACF target validation (2.0.3)** — after the scope filter, `plan()` re-verifies `target.field_key` for `kind=acf_field` via `acf_get_field()`. Returns `SKIP_ACF_NOT_LOADED` when ACF isn't loaded (save layer accepts ACF bindings while ACF is inactive so they survive deactivation cycles; the applier short-circuits during such intervals rather than falling back to raw post_meta writes) or `SKIP_INVALID_ACF_FIELD` when the key resolves to a field whose name disagrees with `target.key` (renamed/deleted/foreign key). Brings total return codes to 13. `read_target` and `write_target` no longer have silent post-meta fallbacks — they're called only after the runtime guard has cleared the target.
+- **Runtime ACF target validation (2.0.3)** — after the scope filter, `plan()` re-verifies `target.field_key` for `kind=acf_field` via `acf_get_field()`. Returns `SKIP_ACF_NOT_LOADED` when ACF isn't loaded (save layer accepts ACF bindings while ACF is inactive so they survive deactivation cycles; the applier short-circuits during such intervals rather than falling back to raw post_meta writes) or `SKIP_INVALID_ACF_FIELD` when the key resolves to a field whose name disagrees with `target.key` (renamed/deleted/foreign key). Brings total return codes to 13. No silent post-meta fallback for `kind=acf_field` — the target is read/written only after the runtime guard clears it.
+- **Pure decision engine (2.3.0, Phase 2)** — the write-decision is now a pure function in `Bindings/Plan/`: `BindingApplier::plan()` resolves I/O facts into a `PlanInput` DTO, `Planner::plan()` decides (no WP calls), and a pure `assemble()` rebuilds the 6-key `plan()` array. The 13 codes live in `PlanCode` (`BindingApplier::` constants are aliases to it — the wire contract; don't change the strings). Target-kind read/write/validate/normalize dispatch through `Bindings/Target/TargetRegistry` (`AcfFieldTarget`/`PostMetaTarget`), NOT inline `=== 'acf_field'` branches. `TargetRegistry::ids()` is the allow-list; unknown kind falls back to `post_meta`. Behavior byte-for-byte preserved (existing binding suite passes unedited; `PlannerTest` locks all 13 codes + the `rendered_hash` `''`-vs-`sha1('')` distinction). **Runtime-core scope only** — admin form radio/combobox, AJAX discovery, `Migration::classify`, list badge/metabox label and `AcfSiblingsSource` gate stay per-kind branches by design. `TargetKind::validate_save` is **deferred to Phase 3** (adding it in Phase 2 would reorder admin first-error precedence).
+- **Cheap scope-skip ordering (2.3.1)** — `plan()` resolves facts lazily/staged: scope (post/type/status) → runtime target → source, rejecting via `Planner::scope_reject()` after each stage, so an out-of-scope dry-run never pays for `resolve_source()` or render. Not-yet-resolved facts default to "passing" so each staged `scope_reject` call isolates its gate.
 - Bulk Apply Stale-badge gating: `stamp_last_applied_version()` only fires when the **entire walk** had zero failures. 2.0.1 gated per-chunk; 2.0.3 added a cumulative flag in option `_spintax_binding_walk_failed_v_<id>` so failures in any earlier chunk also block the final stamp.
 - **Walk lock (2.0.3)** — `BulkApply::enqueue()` and `::run_synchronously()` acquire a per-binding lock (option `_spintax_binding_walk_lock_<id>`, value = timestamp) at walk start and refuse to start if another walk is in flight; stale locks (>1h) are auto-overwritten. Prevents admin + cron concurrent walks racing on the cumulative flag.
 - BindingsPage save-flow (2.0.1): validation errors flash form state into transient `spintax_binding_form_flash_<user_id>` (TTL 60s) and redirect back to the form, not the list — `render_form()` consumes the flash.
@@ -110,6 +130,30 @@ ACF / post-meta bindings let editors configure once-per-post-type "render this t
 2. Per-binding cron schedules — `CronTrigger::fire()` falls back to `BulkApply::run_synchronously()`, running the entire walk on the cron tick. Risk of PHP-FPM timeouts on large catalogues.
 Detection via `BulkApply::action_scheduler_available()` (checks `function_exists('as_enqueue_async_action')`). Bindings admin page renders an info notice via `BindingsPage::render_action_scheduler_notice()` when AS is missing — links to `plugin-install.php?s=action+scheduler` and the wp.org listing. Many WP shops ship AS bundled with WooCommerce / Jetpack / etc., so check before adding it as a separate install.
 
+## WooCommerce
+
+**Product context variables (2.2.0, read-only).** On a singular product page,
+`WooCommerceProductContextSource::build()` exposes the current product as `%product_id%`
+(always present — the cache discriminator), `%product_name%`, `%product_slug%`, `%product_sku%`,
+`%product_type%`, `%product_stock_status%`, `%product_categories%`, `%product_tags%`,
+`%product_short_description%`, and `%product_attribute_<slug>%` per attribute. **Pricing is
+deliberately excluded** (volatile → cache churn).
+
+- Vars enter the **runtime layer** (via `RuntimeContextBuilder::merge`, auto UNDER explicit) at
+  `ShortcodeController::handle()` and `spintax_render()`. `Renderer` is untouched — nested
+  `[spintax]` / `#include` inherit product context via `for_child_render()` (Strategy A: engine
+  stays WC-agnostic). Runtime membership means the cache key discriminates per product (no A→B
+  bleed).
+- Detection: singular product only (`get_queried_object`); loops deferred. `product_id="123"`
+  shortcode attr forces a specific product but is **gated to published** (2.2.1) and the memo is
+  path-scoped (`explicit:`/`auto:`) so a draft can't leak via cache.
+- Values are **shielded** (`SpintaxShield`) so product content can't be re-parsed as spintax
+  (T2 source, ADR-0001). WooCommerce is optional — no fatals when inactive.
+- Latent (backlog): `locale` is not in the render cache key → multilingual plural collision risk.
+
+**Write targets (Phase 3, not yet coded).** `woocommerce_product_field` binding target kind
+(`description` / `short_description` via WC CRUD). Spec-first: `docs/spec-woocommerce-phase3.md`.
+
 ## Spintax syntax
 
 GTW-original primitives plus plugin extensions (`{?…?}` conditionals since 1.4.0, `{plural …}` since 1.5.0).
@@ -120,7 +164,7 @@ GTW-original primitives plus plugin extensions (`{?…?}` conditionals since 1.4
   - `[<minsize=2;maxsize=3;sep=", ";lastsep=" and "> a|b|c]` — configured
   - `[<, > a|b < and >|c]` — per-element separator: `< sep >` before `|` assigns custom separator to the next element; travels with element during shuffle
 - `%var%` — variable reference (case-insensitive)
-- `#set %var% = value` — local variable (value can contain spintax)
+- `#set %var% = value` — local variable (value can contain spintax). **Enumerations in a `#set` value collapse ONCE at set-time (2.2.1, Renderer Stage 4b)** — so `#set %n% = {1|4|9}` binds a single stable value across every `%n%` reference (was an independent roll per use), which is what makes `{plural %n%: …}` see a numeric count. Values containing `{?…}` / `{plural …}` are left deferred (they may reference vars on other lines).
 - `{?VAR?then|else}` — conditional (1.4.0): render `then` if `VAR` is truthy (set + non-whitespace), else `else` (else branch optional). Inverted form `{?!VAR?then|else}`. Resolved both before and after `%var%` expansion.
 - `{plural <count>: form1|form2|form3}` — plural agreement (1.5.0): pick form by count's grammatical bucket. RU/UK/BE = 3 forms (one\|few\|many); EN-style default = 2 forms (one\|many). Count is `%var%` or literal integer (post-`expand_variables`). Form slot REJECTS nested spintax brackets `{` `}` `[` `]` — extract via `#set` first. Lenient at runtime: malformed constructs render verbatim with fullwidth braces (U+FF5B / U+FF5D) so a single bad block doesn't crash the page. Locale from template post meta `_spintax_locale` or site WP locale.
 - `/#...#/` — block comments (stripped)
@@ -248,6 +292,7 @@ git push origin vX.Y.Z         # → release.yml + wporg-deploy.yml fire in para
 ## Future work (post-2.0)
 
 - ACF / post-meta bindings ✅ **DELIVERED in 2.0.0** (see Bindings section).
+- WooCommerce integration — Phase 1 context vars ✅ **2.2.0**, Phase 2 pure Planner/TargetRegistry ✅ **2.3.0**. **Next: Phase 3 write targets** (`docs/spec-woocommerce-phase3.md`), then Phase 4 term targets / Phase 5 slugs (deferred).
 - ACF repeater / flexible_content row-level binding rendering (V2 — no trigger yet)
 - Block-editor inline editing of `per_post` source (V1 is metabox-only)
 - REST API surface for bindings (V1 admin-only)

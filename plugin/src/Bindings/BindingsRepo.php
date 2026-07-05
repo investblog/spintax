@@ -9,6 +9,7 @@ namespace Spintax\Bindings;
 
 defined( 'ABSPATH' ) || exit;
 
+use Spintax\Bindings\Target\TargetRegistry;
 use Spintax\Support\OptionKeys;
 use Spintax\Support\Validators;
 use WP_Error;
@@ -285,14 +286,10 @@ class BindingsRepo {
 			? $merged['status']
 			: 'any';
 
-		$kind                          = in_array( $merged['target']['kind'] ?? '', Defaults::target_kinds(), true )
-			? $merged['target']['kind']
+		$kind             = in_array( $merged['target']['kind'] ?? '', TargetRegistry::ids(), true )
+			? (string) $merged['target']['kind']
 			: 'acf_field';
-		$merged['target']['kind']      = $kind;
-		$merged['target']['key']       = sanitize_text_field( (string) ( $merged['target']['key'] ?? '' ) );
-		$merged['target']['field_key'] = 'acf_field' === $kind
-			? sanitize_text_field( (string) ( $merged['target']['field_key'] ?? '' ) )
-			: '';
+		$merged['target'] = TargetRegistry::get( $kind )->normalize_target( $merged['target'] );
 
 		$mode                            = in_array( $merged['source']['mode'] ?? '', Defaults::source_modes(), true )
 			? $merged['source']['mode']

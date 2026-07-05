@@ -72,6 +72,73 @@ class BindingApplierTest extends \WP_UnitTestCase {
 		$this->assertNotEmpty( get_post_meta( $this->post_id, $this->signature_key( $binding ), true ) );
 	}
 
+	// --- plan() array shape: the rendered_hash empty-vs-sha1('') distinction ---
+
+	/**
+	 * A missing source returns the pre-render blank tuple: rendered_hash is the
+	 * empty string, NOT sha1('').
+	 */
+	public function test_plan_rendered_hash_is_empty_for_source_not_found(): void {
+		$binding = $this->make_binding( array( 'source' => array( 'template_id' => 0 ) ) );
+		$plan    = $this->applier->plan( $binding, $this->post_id );
+
+		$this->assertSame( BindingApplier::SKIP_SOURCE_NOT_FOUND, $plan['result'] );
+		$this->assertSame( '', $plan['rendered_hash'] );
+		$this->assertFalse( $plan['would_write'] );
+	}
+
+	/**
+	 * A found source that renders to '' returns SKIP_EMPTY_RENDER whose
+	 * rendered_hash is sha1('') — distinct from the source-not-found blank.
+	 */
+	public function test_plan_rendered_hash_is_sha1_empty_for_empty_render(): void {
+		$empty_tpl = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Empty',
+				'post_content' => '{|}',
+			)
+		);
+		$binding = $this->make_binding( array( 'source' => array( 'template_id' => $empty_tpl ) ) );
+		$plan    = $this->applier->plan( $binding, $this->post_id );
+
+		$this->assertSame( BindingApplier::SKIP_EMPTY_RENDER, $plan['result'] );
+		$this->assertSame( sha1( '' ), $plan['rendered_hash'] );
+		$this->assertFalse( $plan['would_write'] );
+	}
+
+	/**
+	 * WROTE_EMPTY (regen + clear_on_empty on an empty render) reports sha1('')
+	 * and a blank write_value.
+	 */
+	public function test_plan_wrote_empty_has_sha1_empty_hash_and_blank_write_value(): void {
+		$empty_tpl = wp_insert_post(
+			array(
+				'post_type'    => TemplatePostType::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => 'Empty2',
+				'post_content' => '{|}',
+			)
+		);
+		$binding = $this->make_binding(
+			array(
+				'source'   => array( 'template_id' => $empty_tpl ),
+				'behavior' => array(
+					'regenerate_on_save'    => true,
+					'preserve_manual_edits' => false,
+					'clear_on_empty'        => true,
+				),
+			)
+		);
+		$plan = $this->applier->plan( $binding, $this->post_id );
+
+		$this->assertSame( BindingApplier::WROTE_EMPTY, $plan['result'] );
+		$this->assertSame( sha1( '' ), $plan['rendered_hash'] );
+		$this->assertSame( '', $plan['write_value'] );
+		$this->assertTrue( $plan['would_write'] );
+	}
+
 	public function test_auto_seed_skips_when_target_not_empty(): void {
 		update_post_meta( $this->post_id, 'spintax_target', 'pre-existing' );
 

@@ -9,6 +9,8 @@ namespace Spintax\Bindings;
 
 defined( 'ABSPATH' ) || exit;
 
+use Spintax\Bindings\Target\TargetRegistry;
+
 /**
  * Static factory methods for binding defaults (see spec §4.1).
  *
@@ -94,7 +96,7 @@ final class Defaults {
 	 * @return string[]
 	 */
 	public static function target_kinds(): array {
-		return array( 'acf_field', 'post_meta' );
+		return TargetRegistry::ids();
 	}
 
 	/**

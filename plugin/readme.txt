@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 7.0
-Stable tag: 2.2.2
+Stable tag: 2.3.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -223,6 +223,10 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 2.3.0 =
+* Internal (bindings architecture): the binding write-decision is now a pure function (`Planner`) fed a `PlanInput` DTO, and target-kind read/write/validation is dispatched through a `TargetRegistry` instead of inline `acf_field`/`post_meta` branches. **No behavior change** — all 13 binding outcome codes, and the Test-panel dry-run vs live apply, are byte-for-byte identical. Verified by a new 13-outcome table test, the entire existing binding suite passing unchanged, and a fresh-eyes contract audit of the diff. Groundwork for future target kinds; end users see no difference.
+* Tests: +27 (pure-Planner 13-outcome table, PlanCode helpers, and `plan()` array-shape locks). 577 PHPUnit tests.
+
 = 2.2.2 =
 * Security (hardening, data-derived context): post-context and ACF-sibling binding variables are now shielded the same way WooCommerce product values already were. The render engine can no longer re-interpret a record-sourced value (e.g. `%post_title%`, `%acf_<field>%`) as spintax — enumeration / permutation / conditional / plural / `%var%` — execute a nested `[spintax]`, or inject a `#include`. All three data-derived sources now share one `SpintaxShield` utility, so the "record data is content, not markup" rule holds everywhere (see the trust-level ADR in the repo's `docs/`).
 * Behavior note: a post or ACF field value that *contained* spintax and previously expanded now renders literally. This is intentional — data is data; author spintax in the template. Template body, `#set` locals, global variables, `spintax_render()` arguments and shortcode attributes are unaffected.
@@ -348,6 +352,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 2.3.0 =
+Internal bindings refactor (pure Planner + target registry). No behavior change — every binding outcome is byte-for-byte identical, verified by the full test suite passing unchanged plus a new 13-outcome table test and a contract audit. Safe upgrade; nothing to do.
 
 = 2.2.2 =
 Extends 2.2.1's product-value spintax shielding to post-context and ACF-sibling binding variables via a shared utility. Record-sourced values (post_title, acf_*) now render literally instead of being re-interpreted as spintax. Template / #set / global authoring is unchanged.

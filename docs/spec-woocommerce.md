@@ -412,6 +412,10 @@ Migrate `AcfFieldTarget` and `PostMetaTarget` out of `BindingApplier`'s inline b
 Goal: pre-generate into selected product fields via a **dedicated** target kind, on the pure
 Planner from Phase 2.
 
+> **Detailed mini-spec:** `docs/spec-woocommerce-phase3.md` (spec-first, two-PR delivery,
+> validation order, re-entrancy guard, rollback/restore, smoke matrix). The sketch below is
+> the original outline; the mini-spec supersedes it for implementation.
+
 ### 4.1 New `TargetKind`: `woocommerce_product_field`
 
 Allowed target keys (whitelist, hard-capped):

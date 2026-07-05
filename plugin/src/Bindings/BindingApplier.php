@@ -159,36 +159,53 @@ class BindingApplier {
 
 		$target = $this->target_for( $binding );
 
-		// Cheap facts, resolved in the historical order (spec §4.4 scope filter,
-		// §4.4.1 runtime ACF guard, then source resolution). `validate_runtime`
-		// and `resolve_source` are side-effect-free, so resolving them before
-		// the pure Planner decides is free and keeps the decision in one place.
-		// The expensive render is still deferred until the scope check passes.
+		// Resolve facts lazily in the historical gate order (spec §4.4 scope
+		// filter → §4.4.1 runtime ACF guard → source resolution), rejecting via
+		// the pure Planner after each stage. A later stage's read is skipped
+		// once an earlier gate rejects, so "a scope skip is cheap" — an
+		// out-of-scope post never pays for source resolution or the render.
+		// Each staged PlanInput leaves not-yet-resolved facts at their passing
+		// defaults, so scope_reject isolates that stage's gate.
 		$post              = get_post( $post_id );
 		$post_exists       = ( null !== $post );
 		$expected_type     = (string) ( $binding['post_type'] ?? '' );
 		$post_type_matches = $post_exists && ( '' === $expected_type || $post->post_type === $expected_type );
 		$status_filter     = (string) ( $binding['status'] ?? 'any' );
 		$status_in_scope   = $post_exists && ( 'publish' !== $status_filter || 'publish' === $post->post_status );
-		$runtime_code      = $target->validate_runtime( $binding );
-		$source            = $this->resolver->resolve_source( $binding, $post_id );
-		$source_found      = ! empty( $source['found'] );
 
-		$scope_input = new PlanInput(
-			post_exists: $post_exists,
-			post_type_matches: $post_type_matches,
-			status_in_scope: $status_in_scope,
-			target_runtime_valid: ( null === $runtime_code ),
-			target_runtime_code: $runtime_code,
-			source_found: $source_found
+		// Stage 1: scope (post / type / status).
+		$reject = $this->planner->scope_reject(
+			new PlanInput(
+				post_exists: $post_exists,
+				post_type_matches: $post_type_matches,
+				status_in_scope: $status_in_scope
+			)
 		);
-
-		$reject = $this->planner->scope_reject( $scope_input );
 		if ( null !== $reject ) {
 			return array_merge( $blank, array( 'result' => $reject ) );
 		}
 
-		// Expensive facts (only after the scope check clears).
+		// Stage 2: target runtime validity — only after scope clears.
+		$runtime_code = $target->validate_runtime( $binding );
+		$reject       = $this->planner->scope_reject(
+			new PlanInput(
+				target_runtime_valid: ( null === $runtime_code ),
+				target_runtime_code: $runtime_code
+			)
+		);
+		if ( null !== $reject ) {
+			return array_merge( $blank, array( 'result' => $reject ) );
+		}
+
+		// Stage 3: source resolution — only after runtime clears.
+		$source       = $this->resolver->resolve_source( $binding, $post_id );
+		$source_found = ! empty( $source['found'] );
+		$reject       = $this->planner->scope_reject( new PlanInput( source_found: $source_found ) );
+		if ( null !== $reject ) {
+			return array_merge( $blank, array( 'result' => $reject ) );
+		}
+
+		// Expensive facts (only after all cheap gates clear).
 		$rendered   = $this->render_source( $binding, $post_id, (string) $source['source'] );
 		$current    = $target->read( $binding, $post_id );
 		$stored_sig = (string) get_post_meta( $post_id, $this->signature_key( $binding ), true );

@@ -139,6 +139,30 @@ class BindingApplierTest extends \WP_UnitTestCase {
 		$this->assertTrue( $plan['would_write'] );
 	}
 
+	/**
+	 * "A scope skip is cheap": an out-of-scope post must reject before any
+	 * source resolution (no template get_post / per-post get_post_meta).
+	 */
+	public function test_out_of_scope_skip_does_not_resolve_source(): void {
+		$spy = new class() extends \Spintax\Bindings\BindingResolver {
+			public int $calls = 0;
+
+			public function resolve_source( array $binding, int $post_id ): array {
+				++$this->calls;
+				return parent::resolve_source( $binding, $post_id );
+			}
+		};
+
+		$applier = new BindingApplier( $spy );
+		// Post created in set_up is post_type 'post'; bind for 'page' → out of scope.
+		$binding = $this->make_binding( array( 'post_type' => 'page' ) );
+
+		$plan = $applier->plan( $binding, $this->post_id );
+
+		$this->assertSame( BindingApplier::SKIP_OUT_OF_SCOPE_TYPE, $plan['result'] );
+		$this->assertSame( 0, $spy->calls );
+	}
+
 	public function test_auto_seed_skips_when_target_not_empty(): void {
 		update_post_meta( $this->post_id, 'spintax_target', 'pre-existing' );
 

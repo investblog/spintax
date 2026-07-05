@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, content generation, templates, seo, dynamic content
 Requires at least: 6.2
 Tested up to: 7.0
-Stable tag: 2.3.0
+Stable tag: 2.3.1
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -223,6 +223,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 2.3.1 =
+* Internal (bindings): restore the "a scope skip is cheap" ordering in the 2.3.0 Planner refactor — an out-of-scope binding (wrong post type / status) now rejects *before* resolving the source, as it did pre-2.3.0. Return codes and outputs are unchanged; this only avoids a redundant template / per-post source read on out-of-scope dry-runs (Test panel / WP-CLI / defensive calls). No user-facing change.
+
 = 2.3.0 =
 * Internal (bindings architecture): the binding write-decision is now a pure function (`Planner`) fed a `PlanInput` DTO, and target-kind read/write/validation is dispatched through a `TargetRegistry` instead of inline `acf_field`/`post_meta` branches. **No behavior change** — all 13 binding outcome codes, and the Test-panel dry-run vs live apply, are byte-for-byte identical. Verified by a new 13-outcome table test, the entire existing binding suite passing unchanged, and a fresh-eyes contract audit of the diff. Groundwork for future target kinds; end users see no difference.
 * Tests: +27 (pure-Planner 13-outcome table, PlanCode helpers, and `plan()` array-shape locks). 577 PHPUnit tests.
@@ -352,6 +355,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 2.3.1 =
+Internal follow-up to 2.3.0: restores cheap out-of-scope skips in the bindings applier (no redundant source read on out-of-scope dry-runs). No behavior or output change. Safe upgrade.
 
 = 2.3.0 =
 Internal bindings refactor (pure Planner + target registry). No behavior change — every binding outcome is byte-for-byte identical, verified by the full test suite passing unchanged plus a new 13-outcome table test and a contract audit. Safe upgrade; nothing to do.

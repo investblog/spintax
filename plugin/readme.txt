@@ -1,6 +1,6 @@
 === Spintax ===
 Contributors: 301st
-Tags: spintax, content generation, templates, seo, dynamic content
+Tags: spintax, seo, woocommerce, acf, content generation
 Requires at least: 6.2
 Tested up to: 7.0
 Stable tag: 2.3.1
@@ -8,11 +8,13 @@ Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Spintax templates with ACF / post-meta bindings, Bulk Apply, Logs, and WP-CLI — generate dynamic content at scale on WordPress.
+Generate unique content at scale with spintax — bind templates to ACF & post-meta fields, pull WooCommerce product data, Bulk Apply, cron, WP-CLI.
 
 == Description ==
 
-Spintax is a content-generation toolkit for WordPress. Author reusable templates in spintax markup (enumerations, permutations, conditionals, plural agreement), then either embed them inline via shortcodes / PHP, or **bind them to ACF and post-meta fields so every matching post gets its own rendered variant on save, on a cron schedule, or on demand**. A built-in Logs page surfaces what each Bulk Apply / Run-now walk did; a WP-CLI surface covers staging-to-production sync.
+Spintax is a content-generation toolkit for WordPress that turns one template into unique, non-duplicate copy across your whole site. Author reusable templates in spintax markup (enumerations, permutations, conditionals, plural agreement), then either embed them inline via shortcodes / PHP — automatically picking up the **current WooCommerce product** on product pages — or **bind them to ACF and post-meta fields so every matching post gets its own rendered variant on save, on a cron schedule, or on demand**. A built-in Logs page surfaces what each Bulk Apply / Run-now walk did; a WP-CLI surface covers staging-to-production sync.
+
+Ideal for content managers and SEO specialists producing many similar-but-unique pages: product descriptions, category copy, location / landing pages, listing blurbs, and FAQ snippets.
 
 **Key features:**
 

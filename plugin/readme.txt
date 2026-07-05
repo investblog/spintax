@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, seo, woocommerce, acf, content generation
 Requires at least: 6.2
 Tested up to: 7.0
-Stable tag: 2.3.1
+Stable tag: 2.3.2
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -225,6 +225,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 2.3.2 =
+* Docs / listing: refreshed the WordPress.org description and tags — surface the ACF and WooCommerce integrations and lead with the core benefit (one template → unique, non-duplicate copy across the site). No code or behavior change.
+
 = 2.3.1 =
 * Internal (bindings): restore the "a scope skip is cheap" ordering in the 2.3.0 Planner refactor — an out-of-scope binding (wrong post type / status) now rejects *before* resolving the source, as it did pre-2.3.0. Return codes and outputs are unchanged; this only avoids a redundant template / per-post source read on out-of-scope dry-runs (Test panel / WP-CLI / defensive calls). No user-facing change.
 
@@ -357,6 +360,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 2.3.2 =
+WordPress.org listing refresh (description + tags). No code or behavior change.
 
 = 2.3.1 =
 Internal follow-up to 2.3.0: restores cheap out-of-scope skips in the bindings applier (no redundant source read on out-of-scope dry-runs). No behavior or output change. Safe upgrade.

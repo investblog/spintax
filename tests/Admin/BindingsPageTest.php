@@ -1113,6 +1113,46 @@ class BindingsPageTest extends \WP_UnitTestCase {
 		$this->assertStringNotContainsString( 'ACF field key', $result['message'] );
 	}
 
+	public function test_a_woocommerce_product_binding_saves_through_the_form(): void {
+		$this->fill_post_with_valid_meta_binding();
+		$_POST['target_kind']       = 'woocommerce_product_field';
+		$_POST['target_key']        = 'description';
+		$_POST['spintax_post_type'] = 'product';
+
+		$result = $this->call_handle_save();
+
+		$this->assertSame( 'success', $result['type'], $result['message'] );
+
+		$saved = array_values( ( new BindingsRepo() )->all() )[0];
+		$this->assertSame( 'woocommerce_product_field', $saved['target']['kind'] );
+		$this->assertSame( 'description', $saved['target']['key'] );
+		$this->assertSame( '', $saved['target']['field_key'], 'field_key is an ACF concept and must not persist here' );
+	}
+
+	public function test_the_form_refuses_a_product_field_outside_the_whitelist(): void {
+		$this->fill_post_with_valid_meta_binding();
+		$_POST['target_kind']       = 'woocommerce_product_field';
+		$_POST['target_key']        = 'regular_price';
+		$_POST['spintax_post_type'] = 'product';
+
+		$result = $this->call_handle_save();
+
+		$this->assertSame( 'error', $result['type'] );
+		$this->assertStringContainsString( 'Only these product fields', $result['message'] );
+	}
+
+	public function test_the_form_refuses_a_product_target_on_a_non_product_post_type(): void {
+		$this->fill_post_with_valid_meta_binding();
+		$_POST['target_kind']       = 'woocommerce_product_field';
+		$_POST['target_key']        = 'description';
+		$_POST['spintax_post_type'] = 'post';
+
+		$result = $this->call_handle_save();
+
+		$this->assertSame( 'error', $result['type'] );
+		$this->assertStringContainsString( 'Product post type', $result['message'] );
+	}
+
 	public function test_post_meta_target_raises_no_kind_specific_save_error(): void {
 		// The registry now dispatches a `validate_save()` for every kind. post_meta's returns null,
 		// and this proves the dispatch did not invent an error where there was none.

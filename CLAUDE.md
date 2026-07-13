@@ -8,7 +8,7 @@ Free WordPress plugin for spintax-based content generation. Target audience: con
 - **WP.org:** https://wordpress.org/plugins/spintax/
 - **Docs / playground:** https://spintax.net
 - **Author:** 301st (https://301.st)
-- **Current version:** 2.3.3
+- **Current version:** 2.4.0
 - **Status:** live on WordPress.org. Shipping surfaces: spintax engine (templates + shortcode + `spintax_render()`), **WooCommerce product context variables** (`%product_*%`, read-only, 2.2.0), bindings (ACF + post-meta targets with Bulk Apply / Run-now / cron triggers; decision engine is a pure `Planner` + `TargetRegistry` since 2.3.0), Logs page, WP-CLI `wp spintax bindings *`. Detailed release notes live in `plugin/readme.txt` changelog — don't duplicate them here. Reviewer-driven contracts that aren't obvious from the code live in the "Bindings" section below.
 - **Active roadmap:** WooCommerce integration. Phase 1 (context vars) SHIPPED 2.2.0; Phase 2 (pure Planner / TargetRegistry refactor) SHIPPED 2.3.0. **Next: Phase 3** = `woocommerce_product_field` write targets — spec-first mini-spec at `docs/spec-woocommerce-phase3.md` (not yet coded; two-PR delivery). Product framing: `docs/spec-woocommerce.md` + `docs/spec-woocommerce-discussion.md`.
 
@@ -152,8 +152,33 @@ deliberately excluded** (volatile → cache churn).
   (T2 source, ADR-0001). WooCommerce is optional — no fatals when inactive.
 - Latent (backlog): `locale` is not in the render cache key → multilingual plural collision risk.
 
-**Write targets (Phase 3, not yet coded).** `woocommerce_product_field` binding target kind
-(`description` / `short_description` via WC CRUD). Spec-first: `docs/spec-woocommerce-phase3.md`.
+**Write targets (Phase 3 — SHIPPED 2.4.0).** `woocommerce_product_field` is a `TargetKind` in the
+registry: a template renders into a product's `description` / `short_description`, per product,
+through the existing binding machinery (save_post p20, cron, Bulk Apply, manual-edit preservation).
+
+- **Whitelist of two, enforced twice.** Only `description` and `short_description`. Price, SKU and
+  stock are commerce data, not copy. Checked at save time (`validate_save`) *and* re-checked before
+  every write (`validate_runtime`), because `wp spintax bindings import` bypasses the admin form.
+- **WC CRUD only** — `wc_get_product()` → `set_description()` / `set_short_description()` → `save()`.
+  Never `wp_update_post()`/`$wpdb`: the fields map to `post_content`/`post_excerpt`, so a direct write
+  would appear to work while leaving WooCommerce's product cache and `wc_product_meta_lookup` stale
+  and skipping every `woocommerce_*` save hook. (HPOS is **not** the reason — that is order storage.)
+- **`Bindings\ReentrancyGuard`** — `$product->save()` fires `save_post`, the hook `SavePostTrigger`
+  listens on, so a regenerate-on-save binding would loop forever. The target enters the guard around
+  `save()` (released in a `finally`); the trigger stands down while it is up. Generic, not WC-specific.
+- **`TargetKind::validate_save()`** (the Phase-2 deferral, resolved) and **`validate_runtime()` now
+  takes `$post_id`** — without it a target cannot ask "is this post actually a product", and a binding
+  pointed at a non-product would be planned as a write that silently does nothing.
+- **2 new PlanCodes → 15**: `SKIP_WC_NOT_LOADED` (mirrors the ACF precedent — the save layer accepts a
+  WC binding while WC is off so it survives a deactivation cycle; generated copy is never reverted),
+  `SKIP_INVALID_WC_FIELD` (bad key, non-product post type, or a post WC won't resolve). Both `blocked`.
+- **`variables.expose_product_context`** (new per-binding flag) merges `%product_*%` into the binding
+  render via `WooCommerceProductContextSource::build_for_binding()` — no publish gate, deliberately:
+  a binding writes the product's own data into the product's own field, and drafts are exactly what
+  pre-generation is for. Values stay shielded (T2). Deviates from the spec, which called the context
+  vars "unrelated"; see the spec's status block for why that was wrong.
+
+Verified on real WooCommerce across the full 13-row matrix in `docs/spec-woocommerce-phase3.md` §6.
 
 ## Spintax syntax
 

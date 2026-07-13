@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, seo, woocommerce, acf, content generation
 Requires at least: 6.2
 Tested up to: 7.0
-Stable tag: 2.3.3
+Stable tag: 2.4.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -25,7 +25,8 @@ Ideal for content managers and SEO specialists producing many similar-but-unique
 * **Plural agreement** `{plural <count>: form1|form2|form3}` — pick grammatically correct noun form by count. RU/UK/BE 3-form (one|few|many), EN-style 2-form (one|many). First spintax engine with first-class plurals.
 * **Nested templates** — embed templates within templates via `#include` or `[spintax]`
 * **ACF / post-meta bindings (NEW in 2.0)** — configure once per post type, render Spintax templates into ACF text/textarea/wysiwyg fields or post-meta keys on every matching post. Auto-seed empty fields, preserve manual edits, Bulk Apply via Action Scheduler.
-* **WooCommerce product context (NEW in 2.2)** — on a single-product page, `[spintax]` / `spintax_render()` automatically expose the current product as `%product_name%`, `%product_sku%`, `%product_categories%`, `%product_attribute_<slug>%`, and more. Read-only: nothing is written to products, and volatile pricing is intentionally out of scope. WooCommerce is optional — the variables simply appear when a product context is present.
+* **WooCommerce product context (NEW in 2.2)** — on a single-product page, `[spintax]` / `spintax_render()` automatically expose the current product as `%product_name%`, `%product_sku%`, `%product_categories%`, `%product_attribute_<slug>%`, and more. Volatile pricing is intentionally out of scope. WooCommerce is optional — the variables simply appear when a product context is present.
+* **WooCommerce product-field bindings (NEW in 2.4)** — generate a product's **description** or **short description** from a template, per product, using that product's own SKU, categories and attributes. Only those two fields are writable; price, SKU and stock are commerce data and stay out of reach. Manual edits are preserved by default.
 * **Object cache** — rendered output cached via WP Object Cache API (Redis/Memcached ready)
 * **Cron regeneration** — optional scheduled cache refresh per template, plus per-binding cron walks
 * **WP-CLI** — `wp spintax bindings list|apply|test|export|import`
@@ -86,7 +87,23 @@ Yes, since 2.2. On a single-product page the plugin auto-detects the current pro
 
 Pricing (`%product_price%` and friends) is intentionally **not** exposed: it is volatile commerce data, not generated copy, and folding it into templates would churn the render cache on every price change.
 
-This release is **read-only** — the plugin never writes to product records. To target a specific product regardless of the current page, pass `[spintax slug="…" product_id="123"]`; any explicit variable you pass always overrides the auto-detected one. WooCommerce is optional: with it inactive, or on non-product pages, behavior is unchanged. Product loops/cards and writing generated copy into product fields are planned for later releases.
+To target a specific product regardless of the current page, pass `[spintax slug="…" product_id="123"]`; any explicit variable you pass always overrides the auto-detected one. WooCommerce is optional: with it inactive, or on non-product pages, behavior is unchanged.
+
+Since 2.4 the plugin can also **write** generated copy into a product — see the next question. Product loops and cards are still deferred.
+
+= Can Spintax write the product description itself? =
+
+Yes, since 2.4. Create a binding with the target kind **WooCommerce product field**, on the **Product** post type, and pick **Description** or **Short description**. Every matching product then gets its own rendered copy — seeded when the field is empty, or regenerated on save if you ask for that — through the same machinery as ACF and post-meta bindings: cron schedules, Bulk Apply, WP-CLI, and the Logs page.
+
+Turn on **Expose WooCommerce product data** in the binding's Variables tab and the template can use that product's own facts — `%product_name%`, `%product_sku%`, `%product_type%`, `%product_categories%`, `%product_tags%`, `%product_attribute_<slug>%` — so each product gets copy that is actually about *it*, not just a differently-worded version of the same sentence.
+
+Three deliberate limits:
+
+* **Only those two fields are writable.** Price, SKU, stock and sale dates are commerce data, not copy. A template cannot reach them — the whitelist is enforced when you save the binding and again before every write.
+* **Manual edits win.** With "Preserve manual edits" on (the default), a description a human has changed is never overwritten; the binding skips it and says so in the Logs.
+* **Writes go through WooCommerce.** Not straight into the database — so WooCommerce's own caches, lookup tables and save hooks stay consistent, and other plugins that listen for product saves still hear them.
+
+With WooCommerce deactivated, product bindings simply stop writing. Copy that was already generated stays where it is: by then it is the product's real description, and reverting it would destroy content.
 
 = What are ACF / post-meta bindings? =
 
@@ -235,6 +252,13 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 2.4.0 =
+* **New: WooCommerce product-field bindings.** Bind a Spintax template to a product's description or short description and have it seeded — or regenerated — per product, through the machinery you already use: save, cron, Bulk Apply, manual-edit preservation. Writes go through WooCommerce itself rather than straight into the database, so its caches, lookup tables and save hooks stay consistent.
+* **New: product data inside a binding.** Tick "Expose WooCommerce product data" and a template generating product copy can use `%product_name%`, `%product_sku%`, `%product_type%`, `%product_categories%`, `%product_tags%`, `%product_attribute_<slug>%` and more — so the copy can say something *true* about the product instead of merely varying its wording. Pricing stays out on purpose: it is volatile, and folding it into stored copy would churn on every price change.
+* **Only two fields are writable.** `description` and `short_description`, and nothing else. Price, SKU, stock and sale dates are commerce data, not copy — a template cannot reach them, at save time or at run time. "Preserve manual edits" remains on by default, so a regeneration will not destroy copy a shop owner wrote by hand.
+* Internal: the binding target contract gains `validate_save()`, so each target kind now owns both halves of its validation instead of scattering kind checks through the admin. Two new outcome codes (15 in total) cover WooCommerce being inactive and a product field that is not writable. A generic re-entrancy guard stops the loop a product write would otherwise cause — `$product->save()` fires the same hook the binding trigger listens on.
+* Tests: +38 (629 PHPUnit). Verified against real WooCommerce across the full scenario matrix: seeding, regeneration, manual-edit detection, clear-on-empty, per-product isolation, Bulk Apply walks, WooCommerce deactivation, and the save loop.
+
 = 2.3.3 =
 * Fixed (post-processing): a run of sentence punctuation is no longer split apart. `Wait... what?` came out as `Wait. . . What?`, `Wow!!!` as `Wow! ! !` and `Really?!` as `Really? !` — the "add a space after .!?" rule fired *between* the marks of a run. A run is now treated as one sentence end, in every language.
 * Fixed (post-processing): `mailto:` and `tel:` links survive rendering. `<a href="mailto:you@example.com">` was rewritten to `href="mailto: you@example.com"` — a broken link — because the address was shielded out from under its prefix and the leftover colon then got a space.
@@ -377,6 +401,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 2.4.0 =
+Adds WooCommerce product-field bindings: generate product descriptions and short descriptions from a template, per product, with that product's own SKU, categories and attributes available as variables. Only those two fields are writable — price, SKU and stock stay out of reach — and manual edits are preserved by default. Existing ACF and post-meta bindings are unaffected.
 
 = 2.3.3 =
 Post-processing fixes: repeated punctuation (`...`, `!!!`, `?!`) is no longer split apart, `mailto:` / `tel:` links are no longer broken, and Spanish `¿ ¡` sentences keep their capital. If a binding already wrote mangled text into a field, re-run Bulk Apply to regenerate it.

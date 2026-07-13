@@ -1,6 +1,30 @@
 # WooCommerce Phase 3 — product-field write targets (mini-spec)
 
-Status: DRAFT (spec-first; code follows in two PRs)
+Status: **SHIPPED in 2.4.0.** Three deliberate deviations from the plan below, each for a reason:
+
+1. **No gated dry-run release.** The plan had PR 1 ship to WordPress.org with writes switched off, to
+   let the dry-run "soak". A UI option that appears and then does nothing is a worse experience than
+   waiting, and with this plugin's install base the soak would have observed nobody. Both stages
+   landed on `main` and shipped together as one working feature. That also dissolves the two open
+   questions about gated-state admin copy and the flag mechanism: neither was needed.
+2. **The split moved to a better seam.** Instead of "validation, then writes", the two commits are
+   "change the locked contract" (`validate_save` on `TargetKind` — behaviour-preserving, and where a
+   regression would hide) and "add the new thing" (the WooCommerce target — purely additive). That is
+   the honest boundary for review.
+3. **Product context is exposed to bindings.** §0 called `%product_*%` "unrelated". It is the most
+   related thing there is: without it a template generating a product description sees `%post_title%`
+   and nothing else — it can vary its wording but cannot say anything true about the product. Added
+   as a per-binding `expose_product_context` flag, with a separate
+   `WooCommerceProductContextSource::build_for_binding()` that has no publish gate (a binding writes
+   the product's own data into the product's own field — nothing crosses a boundary, and drafts are
+   exactly what pre-generation is for).
+
+`validate_runtime()` also gained a `$post_id` parameter, which the plan missed: without it the target
+cannot ask "is this post actually a product", so a binding pointed at a non-product would have been
+*planned as a write*, the write would have silently done nothing, and the signature meta would have
+been stamped on a lie.
+
+Verified on real WooCommerce across the full §6 matrix (all 13 rows), including the save loop.
 Builds on: `docs/spec-woocommerce.md` §4 (superseded in detail here), the 2.3.0
 `TargetRegistry`/`TargetKind` architecture, `docs/adr-0001-runtime-var-trust-levels.md`.
 Scope: pre-generate Spintax output **into** WooCommerce product fields. This is the

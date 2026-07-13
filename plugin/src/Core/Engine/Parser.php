@@ -279,6 +279,18 @@ class Parser {
 			$text
 		);
 
+		// 1b. Shield: mailto:/tel: URIs (no // authority, so step 1 misses them).
+		// Must run before the email/domain passes — otherwise the address is
+		// carved out from under the prefix, leaving a bare 'mailto:'/'tel:' whose
+		// colon then gets a space injected, producing a malformed link.
+		$text = preg_replace_callback(
+			'~(?:mailto|tel):[^\s<>"\')\]]+~iu',
+			static function ( array $m ) use ( $store_with_trailing_punctuation ): string {
+				return $store_with_trailing_punctuation( $m[0], 'URI' );
+			},
+			$text
+		);
+
 		// 2. Shield: email addresses.
 		$text = preg_replace_callback(
 			'~[a-z0-9._%+\-]+@' . $domain_part . '\b~iu',
@@ -403,9 +415,22 @@ class Parser {
 		// Ensure space AFTER sentence-ending punctuation (.!?) with same rules.
 		$text = preg_replace( '/([.!?])(?!\d)(?!\s|$|<)/u', '$1 ', $text );
 
-		// 8. Capitalise first letter (skip leading HTML tags).
+		// 7a. Sentence openers: Spanish OPENS a question/exclamation with an inverted mark, so the
+		// mark binds to the word it opens ("¿ qué" becomes "¿qué"). Runs BEFORE capitalisation, so
+		// the passes below see the real first letter instead of a space.
+		$text = preg_replace( '/([¿¡])\s+/u', '$1', $text );
+
+		// 8-11. Capitalisation.
+		// A sentence may begin with a SENTENCE OPENER (¿ or ¡) — the only punctuation in any
+		// European language that opens rather than closes. The capitalisers below upper-case the
+		// first CHARACTER after a boundary, and an inverted mark has no uppercase form, so without
+		// the optional `[¿¡]?` every Spanish question silently kept a lowercase first letter.
+		// The opener set is deliberately narrow: quotes and brackets both open AND close, and
+		// capitalising after them would mangle list markers ("Elige. (a) primero").
+
+		// 8. Capitalise first letter (skip leading HTML tags and a sentence opener).
 		$text = preg_replace_callback(
-			'/^(\s*(?:<[^>]+>\s*)*)(\p{Ll})/u',
+			'/^(\s*(?:<[^>]+>\s*)*[¿¡]?\s*)(\p{Ll})/u',
 			static fn( array $m ): string => $m[1] . mb_strtoupper( $m[2], 'UTF-8' ),
 			$text
 		);
@@ -414,7 +439,7 @@ class Parser {
 		// Handles punctuation followed by optional HTML tags before the letter.
 		// For example: "text. Next" and "text.</p><p>next".
 		$text = preg_replace_callback(
-			'/([.!?…])(\s*(?:<\/?[^>]+>\s*)*)(\p{Ll})/u',
+			'/([.!?…])(\s*(?:<\/?[^>]+>\s*)*[¿¡]?\s*)(\p{Ll})/u',
 			static fn( array $m ): string => $m[1] . $m[2] . mb_strtoupper( $m[3], 'UTF-8' ),
 			$text
 		);
@@ -422,14 +447,14 @@ class Parser {
 		// 10. Capitalise after block-level HTML tags.
 		// Covers p, h1-h6, li, blockquote, div, td, th.
 		$text = preg_replace_callback(
-			'/(<\/?(?:p|h[1-6]|li|blockquote|div|td|th)[^>]*>\s*)(\p{Ll})/ui',
+			'/(<\/?(?:p|h[1-6]|li|blockquote|div|td|th)[^>]*>\s*[¿¡]?\s*)(\p{Ll})/ui',
 			static fn( array $m ): string => $m[1] . mb_strtoupper( $m[2], 'UTF-8' ),
 			$text
 		);
 
 		// 11. Capitalise after line breaks.
 		$text = preg_replace_callback(
-			'/(\n\s*)(\p{Ll})/u',
+			'/(\n\s*[¿¡]?\s*)(\p{Ll})/u',
 			static fn( array $m ): string => $m[1] . mb_strtoupper( $m[2], 'UTF-8' ),
 			$text
 		);

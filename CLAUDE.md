@@ -252,7 +252,7 @@ npm run test:php           # PHPUnit — all tests must pass
 npm run lint:php           # PHPCS — 0 errors, 0 warnings
 ```
 
-**If the diff touches `src/Core/Engine/` or `src/Core/Render/`, also run the cross-engine golden corpus.** It is the only gate that binds this engine to `@spintax/core`, it lives in the *other* repo, and **no CI runs it** — which is exactly how three post-process defects survived into 2.3.2 (a Spanish fix shipped here with zero PHP-side tests, its only guard sitting in that corpus). No local PHP needed; run from **PowerShell** (Git Bash mangles the container paths):
+**If the diff touches `src/Core/Engine/` or `src/Core/Render/`, run the cross-engine golden corpus locally before pushing.** CI enforces it too — the `conformance` job runs it on every push and `build` depends on it — but finding a parity break in 30 seconds locally beats finding it after the push. No local PHP needed; run from **PowerShell** (Git Bash mangles the container paths):
 
 ```powershell
 docker run --rm -v "W:\Projects\spintax-js:/js" -w /js/packages/conformance/php composer:2 install
@@ -260,7 +260,11 @@ docker run --rm -v "W:\Projects\spintax-js:/js" -v "W:\projects\spintax:/spintax
   -w /js/packages/conformance/php -e SPINTAX_PLUGIN_SRC=/spintax/plugin/src php:8.2-cli vendor/bin/phpunit
 ```
 
-Green = 107 tests, 1 known skip (`neutralize`, a deliberate TS-only divergence). A change that alters engine output must land in **all three engines** (here, `@spintax/core`, the OpenCart port) plus a corpus fixture — a unit test in one engine binds only that engine.
+Green = 107 tests, 1 known skip (`neutralize`, a deliberate TS-only divergence).
+
+The corpus is the **only** machine check binding this engine to `@spintax/core`, the `spintax/core` Composer package and the OpenCart port. It used to be a manual gate, and that is exactly how three post-process defects reached users in the 2.3.2 window — a Spanish fix shipped here with zero PHP-side tests, its only guard sitting in another repository's corpus that nothing here ran. Both directions are now wired: this repo's CI runs the corpus against this engine, and `spintax-js`'s CI runs a changed corpus against both PHP engines, so a fixture cannot land there without them agreeing.
+
+A change that alters engine output still has to land in **every engine** plus a corpus fixture — a unit test in one engine binds only that engine.
 
 ## Release gates (MANDATORY before tagging `vX.Y.Z`)
 

@@ -180,7 +180,18 @@ Lean option 1 unless a user actually hits the "added new legacy data after first
 
 ### Gap: the cross-engine golden corpus runs in no CI
 
-**Status:** open — surfaced by the 2.3.3 post-process work (2026-07-13).
+**Status:** ✅ **CLOSED 2026-07-14.** Both directions are wired, so neither side can drift alone:
+- this repo — the `conformance` job in `ci.yml` checks out `investblog/spintax-js` and runs its
+  WP-free runner against `plugin/src` on every push (107 tests, ~30s, no WordPress and no MySQL).
+  `build` depends on it, so a parity break blocks the ZIP the release pipeline ships;
+- `spintax-js` — the `php-parity` job runs a **changed** corpus against both PHP engines (this
+  plugin and the `spintax/core` Composer package), so a fixture cannot land there unless the engines
+  it binds already satisfy it. The coupling is deliberate: land the PHP change first, then the corpus.
+
+The entry is kept because the reasoning below is the reason the gate exists, and it is worth not
+re-deriving.
+
+**Originally filed:** open — surfaced by the 2.3.3 post-process work (2026-07-13).
 
 **Problem.** The engine now exists in three implementations: this plugin, `@spintax/core` (`W:\Projects\spintax-js`) and the OpenCart port. The only machine check that they agree is the shared golden corpus — `packages/conformance/fixtures/*.json` in the spintax-js repo, driven through *this* engine by `packages/conformance/php`. **No CI runs it**, in either repo. It is a manual gate, which in practice means it runs when someone remembers to run it.
 

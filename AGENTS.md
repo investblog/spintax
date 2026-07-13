@@ -18,15 +18,19 @@ npm run test:php     # PHPUnit
 npm run lint:php     # PHPCS
 ```
 
-**If you touched the engine** (`plugin/src/Core/Engine/`, `plugin/src/Core/Render/`) there is a
-third gate, and **no CI runs it**: the shared cross-engine golden corpus. This engine is ported into
-two other projects, and the corpus is the only machine check that all three agree. An engine change
-is not finished until it lands in every engine *and* gains a corpus **fixture** — a unit test in one
-engine binds only that engine. That gap is exactly how three post-process defects reached users
-(punctuation runs split apart in every language, broken `mailto:` links, Spanish sentences losing
-their capital). Recipe and rationale: CLAUDE.md → "Pre-push checklist".
+**If you touched the engine** (`plugin/src/Core/Engine/`, `plugin/src/Core/Render/`) there is a third
+gate: the shared cross-engine golden corpus. CI enforces it (the `conformance` job, and `build`
+depends on it) — run it locally first anyway, it takes 30 seconds. The same engine exists in three
+other projects, and the corpus is the only machine check that they agree. An engine change is not
+finished until it lands in every engine *and* gains a corpus **fixture** — a unit test in one engine
+binds only that engine. That gap is exactly how three post-process defects reached users (punctuation
+runs split apart in every language, broken `mailto:` links, Spanish sentences losing their capital).
+Recipe and rationale: CLAUDE.md → "Pre-push checklist".
 
-- `@spintax/core` (TS / npm) — `W:\Projects\spintax-js`. Feature work there goes through **PRs**.
+- `spintax/core` (Composer) — `W:\projects\spintax-php`, MIT, the engine extracted. The plugin is
+  slated to consume it (see investblog/spintax#10).
+- `@spintax/core` (TS / npm) — `W:\Projects\spintax-js`. Feature work there goes through **PRs**. It
+  also hosts the corpus, and its CI runs a changed corpus against both PHP engines.
 - OpenCart port — `W:\projects\spintax-opencart`. Its kernel is a byte-identical copy of
   `plugin/src/Core/Engine`, enforced by its own `PortIntegrityTest`.
 

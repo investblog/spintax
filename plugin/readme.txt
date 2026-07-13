@@ -199,6 +199,16 @@ Not in 2.0; bindings are admin-only. The `wp spintax bindings` WP-CLI surface co
 
 Yes. After activating Spintax 2.0, a dismissible admin banner points to **Tools → Spintax Migration**. The wizard scans for predecessor data, shows a per-row preview, and creates bindings deduped by `(post type, target field)`. Per-post sources and variables are copied non-destructively — the old plugin's data stays in place until you delete it.
 
+= Can I use the same engine outside WordPress? =
+
+Yes — it is published as a standalone open-source library, so a template you author here renders identically elsewhere:
+
+* **PHP:** `composer require spintax/core` — https://packagist.org/packages/spintax/core
+* **JavaScript / TypeScript:** `npm i @spintax/core` — https://www.npmjs.com/package/@spintax/core
+* **OpenCart 3.x:** a separate extension built on the same engine.
+
+Both libraries are MIT-licensed and dependency-free. They are held to a shared golden corpus — one set of fixtures every engine must reproduce, enforced in continuous integration — so "renders identically" is a verified guarantee rather than an intention. Handy when a headless front end, a CLI job, or a non-WordPress site has to produce the same copy as your WordPress pages.
+
 == Screenshots ==
 
 1. Template editor with spintax markup and live preview.

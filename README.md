@@ -129,11 +129,25 @@ npm run version:set -- X.Y.Z   # Bump version in plugin header, SPINTAX_VERSION,
 
 Release flow: bump version → commit → push to `main` (CI runs lint + tests + ZIP build) → smoke-test the user-facing surface that changed → tag `vX.Y.Z` (triggers a GitHub Release plus an SVN push to WordPress.org).
 
+## The same engine, outside WordPress
+
+The spintax engine this plugin runs is published on its own, so the templates you author here render
+identically elsewhere. All of them are held to a **shared golden corpus** — one set of fixtures every
+engine must reproduce, enforced in CI — so this is a verified guarantee rather than an intention.
+
+| | install | use it for |
+| --- | --- | --- |
+| **PHP** | [`composer require spintax/core`](https://packagist.org/packages/spintax/core) | any PHP app — Laravel, Symfony, a CLI, a cron job |
+| **JavaScript / TypeScript** | [`npm i @spintax/core`](https://www.npmjs.com/package/@spintax/core) | Node, edge workers, the browser |
+| **OpenCart 3.x** | [Spintax SEO](https://github.com/investblog/spintax-opencart) | product / category copy and SEO URLs |
+
 ## Links
 
 - **WordPress.org plugin page:** https://wordpress.org/plugins/spintax/
 - **Documentation hub:** https://spintax.net/docs/
 - **Live playground:** https://spintax.net/play/
+- **PHP engine (MIT):** https://github.com/investblog/spintax-php
+- **JS/TS engine (MIT):** https://github.com/investblog/spintax-js
 
 ## License
 

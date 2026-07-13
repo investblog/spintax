@@ -8,7 +8,7 @@ Free WordPress plugin for spintax-based content generation. Target audience: con
 - **WP.org:** https://wordpress.org/plugins/spintax/
 - **Docs / playground:** https://spintax.net
 - **Author:** 301st (https://301.st)
-- **Current version:** 2.3.1
+- **Current version:** 2.3.3
 - **Status:** live on WordPress.org. Shipping surfaces: spintax engine (templates + shortcode + `spintax_render()`), **WooCommerce product context variables** (`%product_*%`, read-only, 2.2.0), bindings (ACF + post-meta targets with Bulk Apply / Run-now / cron triggers; decision engine is a pure `Planner` + `TargetRegistry` since 2.3.0), Logs page, WP-CLI `wp spintax bindings *`. Detailed release notes live in `plugin/readme.txt` changelog — don't duplicate them here. Reviewer-driven contracts that aren't obvious from the code live in the "Bindings" section below.
 - **Active roadmap:** WooCommerce integration. Phase 1 (context vars) SHIPPED 2.2.0; Phase 2 (pure Planner / TargetRegistry refactor) SHIPPED 2.3.0. **Next: Phase 3** = `woocommerce_product_field` write targets — spec-first mini-spec at `docs/spec-woocommerce-phase3.md` (not yet coded; two-PR delivery). Product framing: `docs/spec-woocommerce.md` + `docs/spec-woocommerce-discussion.md`.
 
@@ -20,7 +20,8 @@ Free WordPress plugin for spintax-based content generation. Target audience: con
 - **Runtime-var trust levels (T1/T2 shielding):** `docs/adr-0001-runtime-var-trust-levels.md`
 - **WooCommerce:** `docs/spec-woocommerce.md` (engineering) + `docs/spec-woocommerce-discussion.md` (product) + `docs/spec-woocommerce-phase3.md` (write-targets mini-spec)
 - **Release protocol:** `docs/release-checklist.md`; **backlog:** `docs/backlog.md`
-- **OpenCart port (Planner/TargetRegistry design origin):** `W:\projects\spintax-opencart`
+- **Cross-engine parity corpus (`@spintax/core`, the npm/TS port):** `W:\Projects\spintax-js` — `packages/conformance/fixtures/*.json` is the **shared golden corpus**, and `packages/conformance/php` drives it through *this* engine. It is the only thing binding the two engines together, and **it runs in no CI** (see the pre-push checklist).
+- **OpenCart port (Planner/TargetRegistry design origin):** `W:\projects\spintax-opencart` — its kernel is a byte-identical port of `plugin/src/Core/Engine` + `Core/Render` (guarded there by `PortIntegrityTest`), so an engine fix here needs mirroring there.
 - **Old WP plugin (buggy, for reference only):** `C:\Users\Admin\Local Sites\testcom\app\public\wp-content\plugins\nested-spintax-for-acf`
 - **Java spintax engine (algorithm reference):** `W:\spintax-java`
 - **Project structure template:** `W:\Projects\wpci` (images-sync-for-cloudflare, approved on WP.org)
@@ -186,15 +187,13 @@ GTW-original primitives plus plugin extensions (`{?…?}` conditionals since 1.4
 
 Order matters — incorrect sequencing causes domain/email corruption.
 
-1. **Shield** URLs, emails, bare domains (ASCII+punycode+IDN), decimals, multi-dotted abbreviations (`т.д.`), single-token abbreviations from a curated whitelist (`соц.`, `Mr.`, `Inc.`, …) → placeholders
+1. **Shield** URLs → **`mailto:`/`tel:` URIs** → emails → bare domains (ASCII+punycode+IDN) → decimals → multi-dotted abbreviations (`т.д.`) → single-token abbreviations from a curated whitelist (`соц.`, `Mr.`, `Inc.`, …) → placeholders. **`mailto:`/`tel:` must be shielded before the email/domain passes** — they have no `//` authority, so the URL pass misses them, and if the address is carved out from under the prefix the leftover colon gets a space: `href="mailto: you@example.com"`, a broken link (2.3.3).
 2. **Collapse** duplicate spaces/tabs
 3. **Remove** whitespace before punctuation
-4. **Add** space after `,;:` and `.!?` where missing
-5. **Capitalise** first letter (skip leading HTML tags)
-6. **Capitalise** after `.!?…` (through HTML tags)
-7. **Capitalise** after block-level HTML tags (`<p>`, `<h1>`–`<h6>`, `<li>`, `<div>`, etc.)
-8. **Capitalise** after line breaks
-9. **Restore** placeholders
+4. **Add** space after `,;:` and after a **run** of `.!?` — `([.!?]+)(?![.!?])`. `...`, `?!` and `!!!` are ONE sentence end, not several, so the space goes after the whole run and never inside it. **A greedy `+` alone does not work**: it backtracks *into* the run to satisfy the lookaheads and yields `Wow!! !`. The `(?![.!?])` guard is what completes the run — and it is the portable shape, since JS has no possessive quantifiers and `@spintax/core` must match byte-for-byte (2.3.3).
+5. **Bind** sentence openers to the word they open (`¿ qué` → `¿qué`), deliberately before capitalisation so the passes below see a letter rather than a space (2.3.3)
+6. **Capitalise** at four sites — start of text, after `.!?…`, after a block-level HTML tag (`<p>`, `<h1>`–`<h6>`, `<li>`, `<div>`, etc.), and after a line break — each looking through the shared **`$lead`**: any run of HTML tags, sentence openers (`¿` `¡`) and whitespace, in any order. The lead is what carries the capital through `¡¿Qué haces?!` (two openers — RAE's question-exclamation) and `<p>¿<a href="/ayuda">Necesitas ayuda</a>?</p>` (a tag *after* the opener). The opener **set** stays deliberately narrow: quotes and brackets both open AND close, so capitalising after them would rewrite list markers (`Elige una. (a) primero`). A corpus fixture locks that (2.3.3).
+7. **Restore** placeholders
 
 ## Global variables
 
@@ -252,6 +251,16 @@ Run ALL of these locally. Zero errors AND zero warnings required:
 npm run test:php           # PHPUnit — all tests must pass
 npm run lint:php           # PHPCS — 0 errors, 0 warnings
 ```
+
+**If the diff touches `src/Core/Engine/` or `src/Core/Render/`, also run the cross-engine golden corpus.** It is the only gate that binds this engine to `@spintax/core`, it lives in the *other* repo, and **no CI runs it** — which is exactly how three post-process defects survived into 2.3.2 (a Spanish fix shipped here with zero PHP-side tests, its only guard sitting in that corpus). No local PHP needed; run from **PowerShell** (Git Bash mangles the container paths):
+
+```powershell
+docker run --rm -v "W:\Projects\spintax-js:/js" -w /js/packages/conformance/php composer:2 install
+docker run --rm -v "W:\Projects\spintax-js:/js" -v "W:\projects\spintax:/spintax" `
+  -w /js/packages/conformance/php -e SPINTAX_PLUGIN_SRC=/spintax/plugin/src php:8.2-cli vendor/bin/phpunit
+```
+
+Green = 107 tests, 1 known skip (`neutralize`, a deliberate TS-only divergence). A change that alters engine output must land in **all three engines** (here, `@spintax/core`, the OpenCart port) plus a corpus fixture — a unit test in one engine binds only that engine.
 
 ## Release gates (MANDATORY before tagging `vX.Y.Z`)
 

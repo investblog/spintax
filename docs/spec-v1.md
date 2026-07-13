@@ -371,10 +371,12 @@ The stage uses a placeholder-shielding strategy: URLs, emails, bare domains, dec
 Shielded in this order:
 
 1. Full URLs with protocol (`https://example.com/path?q=1`)
-2. Email addresses (`user@domain.com`)
-3. Bare domains — ASCII, punycode (`xn--...`) and IDN (`домен.рф`), including subdomains (`sub.domain.co.uk`). TLD must contain at least one letter to exclude pure numbers.
-4. Decimal numbers (`3.14`, `100.5`)
-5. Short abbreviations — sequences of 1–2 letter words followed by periods (`т.д.`, `и т.п.`, `т.е.`)
+2. `mailto:` / `tel:` URIs — they have no `//` authority, so the URL pass above misses them. They must be shielded **before** the email/domain passes: otherwise the address is carved out from under its prefix, and the leftover colon then receives a space, producing a broken `href="mailto: user@domain.com"` (2.3.3)
+3. Email addresses (`user@domain.com`)
+4. Bare domains — ASCII, punycode (`xn--...`) and IDN (`домен.рф`), including subdomains (`sub.domain.co.uk`). TLD must contain at least one letter to exclude pure numbers.
+5. Decimal numbers (`3.14`, `100.5`)
+6. Short abbreviations — sequences of 1–2 letter words followed by periods (`т.д.`, `и т.п.`, `т.е.`)
+7. Single-token abbreviations from a curated whitelist (`соц.`, `эл.`, `Mr.`, `Inc.`, …) — rule 6 needs two dotted groups, so these would otherwise read as a sentence end
 
 #### 7.3.2 Corrections
 
@@ -383,11 +385,9 @@ Applied in this order after shielding:
 1. Collapse duplicate spaces and tabs (not newlines)
 2. Remove whitespace before punctuation (`,;:!?.`)
 3. Ensure space after comma, semicolon, colon — unless followed by digit, whitespace, end-of-string or HTML tag
-4. Ensure space after sentence-ending punctuation (`.!?`) — same exclusions
-5. Capitalise first letter of text, skipping leading HTML tags
-6. Capitalise after sentence-ending punctuation (`.!?…`), looking through closing/opening HTML tags
-7. Capitalise after block-level HTML tags (`<p>`, `<h1>`–`<h6>`, `<li>`, `<blockquote>`, `<div>`, `<td>`, `<th>`)
-8. Capitalise after line breaks
+4. Ensure space after a **run** of sentence-ending punctuation (`.!?`) — same exclusions. The run is matched whole and must be complete (`([.!?]+)(?![.!?])`): `...`, `?!` and `!!!` are ONE sentence end, not several, so the space belongs after the run and never inside it. A greedy `+` alone is **not** sufficient — it backtracks *into* the run to satisfy the lookaheads and yields `Wow!! !` (2.3.3)
+5. Bind sentence openers to the word they open (`¿ qué` → `¿qué`). Deliberately before capitalisation, so the passes below see a real first letter instead of a space (2.3.3)
+6. Capitalise, at four sites: start of text, after sentence-ending punctuation (`.!?…`), after a block-level HTML tag (`<p>`, `<h1>`–`<h6>`, `<li>`, `<blockquote>`, `<div>`, `<td>`, `<th>`), and after a line break. All four look through the same **lead** — any run of HTML tags, sentence openers (`¿` `¡`) and whitespace, in any order. The lead is what carries the capital through `¡¿Qué haces?!` (two openers — RAE's question-exclamation) and `<p>¿<a href="/ayuda">Necesitas ayuda</a>?</p>` (a tag *after* the opener) (2.3.3)
 
 #### 7.3.3 Restore
 
@@ -398,6 +398,7 @@ All placeholders are replaced back with original values.
 - Heavy natural-language normalisation
 - Abbreviation-aware sentence boundary detection beyond the short-word heuristic
 - Fixing missing spaces inside template content that was authored without them (e.g. separator `, а` without trailing space is a template issue, not a post-processing issue)
+- Widening the sentence-opener set beyond `¿` and `¡`. Quotes and brackets both open **and** close, so capitalising after them would rewrite list markers (`Elige una. (a) primero` → `(A) primero`). The narrowness is the contract; a corpus fixture locks it.
 
 ### 7.4 Runtime Error Behavior
 

@@ -5,9 +5,15 @@
 	colors="true"
 >
 	<testsuites>
+		<!--
+			Suffix is "Test.php", not ".php": PHPUnit *includes* every file it matches, so a plain
+			".php" suffix executes any helper or scratch script that happens to sit in tests/ —
+			render-preview.php wrote a file on every run, and bootstrap.php needed an explicit
+			<exclude> to stay out of the suite. Matching only real test files removes that whole class
+			of surprise.
+		-->
 		<testsuite name="plugin">
-			<directory suffix=".php">./tests</directory>
-			<exclude>./tests/bootstrap.php</exclude>
+			<directory suffix="Test.php">./tests</directory>
 		</testsuite>
 	</testsuites>
 	<php>

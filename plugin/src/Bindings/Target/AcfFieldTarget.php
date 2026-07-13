@@ -89,6 +89,57 @@ final class AcfFieldTarget implements TargetKind {
 	}
 
 	/**
+	 * Validate the ACF target at save time — Tier 5 of the reserved-key guard (spec §4.6, 2.0.1).
+	 *
+	 * Lifted verbatim from `BindingsPage::validate_acf_field_key()` when Phase 3 added
+	 * `validate_save` to the interface; the messages and their order are unchanged, because the
+	 * first error an editor sees is part of the contract.
+	 *
+	 * - `field_key` must be present. ACF's `update_field()` needs the stable key, not the name.
+	 * - When ACF is loaded, the key must resolve to a field whose `name` matches `target.key`.
+	 *   A mismatched pair would route writes to whatever field the key actually belongs to.
+	 * - When ACF is NOT loaded, the save is allowed: the applier re-checks at write time and skips.
+	 *   That is deliberate — a binding must survive an ACF deactivation cycle.
+	 *
+	 * @param array<string, mixed> $binding Binding as submitted.
+	 * @return string|null Error message, or null when valid.
+	 */
+	public function validate_save( array $binding ): ?string {
+		$key       = (string) ( $binding['target']['key'] ?? '' );
+		$field_key = (string) ( $binding['target']['field_key'] ?? '' );
+
+		if ( '' === $field_key ) {
+			return __( 'ACF field key is required for ACF targets. Pick a field from the dropdown or paste the field key (e.g. field_5f8a1234abcd).', 'spintax' );
+		}
+
+		if ( ! function_exists( 'acf_get_field' ) ) {
+			return null;
+		}
+
+		$field = acf_get_field( $field_key );
+		if ( ! is_array( $field ) || empty( $field['name'] ) ) {
+			return sprintf(
+				/* translators: %s: ACF field key entered by the user */
+				__( 'ACF field key "%s" was not found. Confirm the field exists in an ACF field group.', 'spintax' ),
+				$field_key
+			);
+		}
+
+		$resolved_name = (string) $field['name'];
+		if ( $resolved_name !== $key ) {
+			return sprintf(
+				/* translators: 1: ACF field key, 2: actual field name behind that key, 3: field name the user typed */
+				__( 'ACF field key "%1$s" points to field "%2$s", not "%3$s". The field name and field key must match.', 'spintax' ),
+				$field_key,
+				$resolved_name,
+				$key
+			);
+		}
+
+		return null;
+	}
+
+	/**
 	 * Sanitise the ACF target sub-array (keeps `field_key`).
 	 *
 	 * @param array<string, mixed> $target The raw `binding.target` array.

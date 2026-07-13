@@ -61,6 +61,22 @@ final class PostMetaTarget implements TargetKind {
 	}
 
 	/**
+	 * Post meta needs no kind-specific save validation.
+	 *
+	 * Not because it is unguarded — its guard simply runs earlier. The wp_posts-column check
+	 * (Tier 3: refuse `post_title`, `post_content`, …) lives in the admin's kind-agnostic guard,
+	 * which fires BEFORE the empty-key check. Moving it here would push it after, and the editor
+	 * would start seeing a different first error. That ordering is the contract; leave it alone.
+	 *
+	 * @param array<string, mixed> $binding Binding payload (unused).
+	 * @return string|null Always null.
+	 */
+	public function validate_save( array $binding ): ?string {
+		unset( $binding );
+		return null;
+	}
+
+	/**
 	 * Sanitise the post-meta target sub-array (`field_key` forced empty).
 	 *
 	 * @param array<string, mixed> $target The raw `binding.target` array.

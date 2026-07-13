@@ -1065,4 +1065,61 @@ class BindingsPageTest extends \WP_UnitTestCase {
 		// Second invocation must return null — transient was deleted.
 		$this->assertNull( $reflection->invoke( $this->page ) );
 	}
+
+	// =========================================================================
+	// First-error precedence — the reason Phase 2 deferred `TargetKind::validate_save`
+	// =========================================================================
+	//
+	// Save validation runs in a fixed order: kind-agnostic reserved-key guard (Tiers 1-3) →
+	// post type → empty key → the kind's own `validate_save()`. Phase 3 moved the ACF field-key
+	// check out of the page and behind the registry, and the whole risk of doing so was that the
+	// FIRST message an editor sees would silently change. These lock the order, per kind.
+
+	public function test_reserved_key_guard_outranks_the_missing_post_type_error(): void {
+		$this->fill_post_with_valid_meta_binding();
+		$_POST['target_key']        = '_wp_page_template'; // Tier 1: WordPress-internal.
+		$_POST['spintax_post_type'] = '';                  // Also invalid, but it is checked later.
+
+		$result = $this->call_handle_save();
+
+		$this->assertSame( 'error', $result['type'] );
+		$this->assertStringContainsString( 'WordPress-internal meta key', $result['message'] );
+	}
+
+	public function test_wp_posts_column_guard_stays_ahead_of_the_kind_check(): void {
+		// Tier 3 lives in the kind-agnostic guard, NOT in PostMetaTarget::validate_save. Moving it
+		// into the target would push it behind the empty-key check and change what the editor sees
+		// first. Proven by leaving the post type empty: the column error must still win.
+		$this->fill_post_with_valid_meta_binding();
+		$_POST['target_key']        = 'post_title';
+		$_POST['spintax_post_type'] = '';
+
+		$result = $this->call_handle_save();
+
+		$this->assertSame( 'error', $result['type'] );
+		$this->assertStringContainsString( 'wp_posts column', $result['message'] );
+	}
+
+	public function test_empty_key_error_outranks_the_acf_field_key_error(): void {
+		$this->fill_post_with_valid_meta_binding();
+		$_POST['target_kind']      = 'acf_field';
+		$_POST['target_key']       = '';
+		$_POST['target_field_key'] = ''; // Both are wrong; the generic message must come first.
+
+		$result = $this->call_handle_save();
+
+		$this->assertSame( 'error', $result['type'] );
+		$this->assertStringContainsString( 'Target field key is required', $result['message'] );
+		$this->assertStringNotContainsString( 'ACF field key', $result['message'] );
+	}
+
+	public function test_post_meta_target_raises_no_kind_specific_save_error(): void {
+		// The registry now dispatches a `validate_save()` for every kind. post_meta's returns null,
+		// and this proves the dispatch did not invent an error where there was none.
+		$this->fill_post_with_valid_meta_binding();
+
+		$result = $this->call_handle_save();
+
+		$this->assertSame( 'success', $result['type'], $result['message'] );
+	}
 }

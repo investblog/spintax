@@ -16,6 +16,7 @@ defined( 'ABSPATH' ) || exit;
 use Spintax\Bindings\BindingsRepo;
 use Spintax\Bindings\BulkApply;
 use Spintax\Bindings\Defaults;
+use Spintax\Bindings\Target\TargetRegistry;
 use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Core\Settings\SettingsRepository;
 use Spintax\Support\Capabilities;
@@ -522,9 +523,14 @@ class BindingsPage {
 		if ( '' === $key ) {
 			return $this->form_error( $data, $existing_id, __( 'Target field key is required.', 'spintax' ), self::TAB_SOURCE_TARGET );
 		}
-		$acf_error = $this->validate_acf_field_key( $kind, $key, $data['target']['field_key'] );
-		if ( null !== $acf_error ) {
-			return $this->form_error( $data, $existing_id, $acf_error, self::TAB_SOURCE_TARGET );
+		// Kind-specific save validation, dispatched through the registry instead of an
+		// `if ( 'acf_field' === $kind )` branch. It sits at exactly the position the inline ACF
+		// field-key check used to occupy, so the first error an editor sees is unchanged for ACF
+		// and post_meta — that ordering is the contract Phase 2 refused to disturb. An unknown kind
+		// resolves to null here and is coerced to post_meta at persist time, as before.
+		$kind_error = TargetRegistry::get( $kind )?->validate_save( $data );
+		if ( null !== $kind_error ) {
+			return $this->form_error( $data, $existing_id, $kind_error, self::TAB_SOURCE_TARGET );
 		}
 		if ( 'template' === $data['source']['mode'] && $data['source']['template_id'] <= 0 ) {
 			return $this->form_error(
@@ -649,57 +655,6 @@ class BindingsPage {
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- nonce verified in handle_actions(); sanitized via Validators::sanitize_spintax() which is the spintax-aware sanitiser.
 		$raw = isset( $_POST['variables_overrides'] ) ? wp_unslash( $_POST['variables_overrides'] ) : '';
 		return Validators::sanitize_spintax( (string) $raw );
-	}
-
-	/**
-	 * Apply Tier 5 of the reserved-key guard: ACF field_key validation
-	 * (spec §4.6, added in 2.0.1).
-	 *
-	 * When `kind = acf_field`:
-	 *  - `field_key` must be non-empty (UI hint: "Required for ACF
-	 *    targets").
-	 *  - If ACF is loaded, `acf_get_field( $field_key )` must resolve
-	 *    to a field whose `name` matches `$key` exactly. A mismatched
-	 *    key/name pair would silently route `update_field()` writes to
-	 *    whatever field the key actually belongs to.
-	 *
-	 * @param string $kind      Target kind.
-	 * @param string $key       Target key (field name).
-	 * @param string $field_key Stable ACF field key (e.g. field_xxx).
-	 * @return string|null Error message, or null if the target is valid.
-	 */
-	private function validate_acf_field_key( string $kind, string $key, string $field_key ): ?string {
-		if ( 'acf_field' !== $kind ) {
-			return null;
-		}
-		if ( '' === $field_key ) {
-			return __( 'ACF field key is required for ACF targets. Pick a field from the dropdown or paste the field key (e.g. field_5f8a1234abcd).', 'spintax' );
-		}
-		if ( ! function_exists( 'acf_get_field' ) ) {
-			// ACF inactive at save time. Phase 2 applier re-checks at write
-			// time and skips if ACF can't find the field. Allow the save so
-			// the configuration survives an ACF deactivation/reactivation.
-			return null;
-		}
-		$field = acf_get_field( $field_key );
-		if ( ! is_array( $field ) || empty( $field['name'] ) ) {
-			return sprintf(
-				/* translators: %s: ACF field key entered by the user */
-				__( 'ACF field key "%s" was not found. Confirm the field exists in an ACF field group.', 'spintax' ),
-				$field_key
-			);
-		}
-		$resolved_name = (string) $field['name'];
-		if ( $resolved_name !== $key ) {
-			return sprintf(
-				/* translators: 1: ACF field key, 2: actual field name behind that key, 3: field name the user typed */
-				__( 'ACF field key "%1$s" points to field "%2$s", not "%3$s". The field name and field key must match.', 'spintax' ),
-				$field_key,
-				$resolved_name,
-				$key
-			);
-		}
-		return null;
 	}
 
 	/**

@@ -175,3 +175,17 @@ Lean option 1 unless a user actually hits the "added new legacy data after first
 **Fix (at implementation time).** Fold the effective locale into the cache key — e.g. include it in `get_context_hash()`'s hashed payload, or pass it into `CacheManager::build_key()` alongside `template_id` / `version` / `context_hash`. Keep it cheap; locale is a single short string. Add a regression test: same template + same runtime vars + two locales → two cache entries.
 
 **Trigger:** first multilingual/plural WooCommerce (or any multilingual plurals) signal, or bundle into the Phase 2 bindings refactor if the cache-key surface is being touched anyway.
+
+---
+
+### Gap: the cross-engine golden corpus runs in no CI
+
+**Status:** open — surfaced by the 2.3.3 post-process work (2026-07-13).
+
+**Problem.** The engine now exists in three implementations: this plugin, `@spintax/core` (`W:\Projects\spintax-js`) and the OpenCart port. The only machine check that they agree is the shared golden corpus — `packages/conformance/fixtures/*.json` in the spintax-js repo, driven through *this* engine by `packages/conformance/php`. **No CI runs it**, in either repo. It is a manual gate, which in practice means it runs when someone remembers to run it.
+
+The cost is not hypothetical. The Spanish sentence-opener fix shipped to WordPress.org in the 2.3.2 window with **zero PHP-side tests** — its only guard was a fixture in the *other* repository's corpus, which this repo's CI never executes. Reviewing that commit afterwards turned up three live defects: sentence-punctuation runs being split from the inside in every language (`Wait... what?` → `Wait. . . What?`), broken `mailto:` / `tel:` hrefs, and an opener lead too narrow for `¡¿Qué haces?!` or `<p>¿<a …>`. A corpus run would have caught each one the moment a fixture existed. CLAUDE.md's pre-push checklist and `docs/release-checklist.md` now name the gate — but a checklist is a reminder, not an enforcement.
+
+**Fix (at implementation time).** Add a `conformance` job to `ci.yml`: check out `investblog/spintax-js` (public), `composer install` in `packages/conformance/php`, then run PHPUnit with `SPINTAX_PLUGIN_SRC` pointed at this checkout's `plugin/src`. No WordPress and no MySQL are needed — the Core engine is pure PHP — so it is a ~30-second job on a stock PHP runner. Scope it to changes under `plugin/src/Core/` if the minutes matter. The mirror job belongs in spintax-js too (drive the corpus through a checked-out plugin), so that neither engine can drift on its own.
+
+**Trigger:** just do it — it is one CI job, and the failure mode it prevents has already reached users once.

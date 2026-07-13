@@ -50,7 +50,22 @@ interface TargetKind {
 	 * @param array<string, mixed> $binding Binding payload.
 	 * @return string|null A PlanCode SKIP_* when unusable, or null when valid.
 	 */
-	public function validate_runtime( array $binding ): ?string;
+	/**
+	 * Validate the target at APPLY time, and return a machine outcome the Planner can act on.
+	 *
+	 * Runs at stage 2 of the applier's gate order — after scope, before the source is resolved and
+	 * before anything renders — so a target that cannot be written never pays for the work.
+	 *
+	 * The post id is part of the question, not decoration: a kind may need to confirm that *this
+	 * post* is a thing it can write to. Returning null here is a promise that `write()` will
+	 * actually write; a kind that discovers otherwise inside `write()` has already let the Planner
+	 * report a write that never happened, and the signature meta will have been stamped on a lie.
+	 *
+	 * @param array<string, mixed> $binding Binding payload.
+	 * @param int                  $post_id The post being applied to.
+	 * @return string|null A PlanCode SKIP_* when the target is unusable, or null when it is ready.
+	 */
+	public function validate_runtime( array $binding, int $post_id ): ?string;
 
 	/**
 	 * Validate the target at SAVE time, in the admin, and explain the problem to a human.

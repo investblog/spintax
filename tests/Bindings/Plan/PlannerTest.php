@@ -24,6 +24,8 @@ class PlannerTest extends \WP_UnitTestCase {
 			'out_of_scope_status'                           => array( new PlanInput( status_in_scope: false ), PlanCode::SKIP_OUT_OF_SCOPE_STATUS ),
 			'acf_not_loaded'                                => array( new PlanInput( target_runtime_valid: false, target_runtime_code: PlanCode::SKIP_ACF_NOT_LOADED ), PlanCode::SKIP_ACF_NOT_LOADED ),
 			'invalid_acf_field'                             => array( new PlanInput( target_runtime_valid: false, target_runtime_code: PlanCode::SKIP_INVALID_ACF_FIELD ), PlanCode::SKIP_INVALID_ACF_FIELD ),
+			'wc_not_loaded'                                 => array( new PlanInput( target_runtime_valid: false, target_runtime_code: PlanCode::SKIP_WC_NOT_LOADED ), PlanCode::SKIP_WC_NOT_LOADED ),
+			'invalid_wc_field'                              => array( new PlanInput( target_runtime_valid: false, target_runtime_code: PlanCode::SKIP_INVALID_WC_FIELD ), PlanCode::SKIP_INVALID_WC_FIELD ),
 			'source_not_found'                              => array( new PlanInput( source_found: false ), PlanCode::SKIP_SOURCE_NOT_FOUND ),
 			// Path 1 (regenerate_on_save).
 			'regen cold-start empty target → seeded'        => array( new PlanInput( regenerate_on_save: true, preserve_manual_edits: true, stored_signature: null, current_target: '', rendered: 'x' ), PlanCode::WROTE_SEEDED ),

@@ -186,7 +186,7 @@ class BindingApplier {
 		}
 
 		// Stage 2: target runtime validity — only after scope clears.
-		$runtime_code = $target->validate_runtime( $binding );
+		$runtime_code = $target->validate_runtime( $binding, $post_id );
 		$reject       = $this->planner->scope_reject(
 			new PlanInput(
 				target_runtime_valid: ( null === $runtime_code ),

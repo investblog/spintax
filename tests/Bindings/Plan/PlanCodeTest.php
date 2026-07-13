@@ -9,8 +9,9 @@ class PlanCodeTest extends \WP_UnitTestCase {
 
 	public function test_all_returns_thirteen_unique_codes(): void {
 		$all = PlanCode::all();
-		$this->assertCount( 13, $all );
-		$this->assertCount( 13, array_unique( $all ) );
+		// 13 through 2.3.x; 15 since 2.4.0 added the two WooCommerce guards.
+		$this->assertCount( 15, $all );
+		$this->assertCount( 15, array_unique( $all ) );
 	}
 
 	public function test_is_write_only_for_write_codes(): void {

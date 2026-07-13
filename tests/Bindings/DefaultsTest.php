@@ -46,7 +46,13 @@ class DefaultsTest extends \WP_UnitTestCase {
 	}
 
 	public function test_enum_helpers_return_known_values(): void {
-		$this->assertSame( array( 'acf_field', 'post_meta' ), Defaults::target_kinds() );
+		// The shipping allow-list, in order. `woocommerce_product_field` joined it in 2.4.0 — a
+		// binding target kind is a persisted value, so this list growing is a contract event, not
+		// an implementation detail, and it is asserted rather than derived.
+		$this->assertSame(
+			array( 'acf_field', 'post_meta', 'woocommerce_product_field' ),
+			Defaults::target_kinds()
+		);
 		$this->assertSame( array( 'template', 'per_post' ), Defaults::source_modes() );
 		$this->assertSame( array( 'any', 'publish' ), Defaults::statuses() );
 		$this->assertSame( array( 'disabled', 'hourly', 'twicedaily', 'daily' ), Defaults::cron_schedules() );

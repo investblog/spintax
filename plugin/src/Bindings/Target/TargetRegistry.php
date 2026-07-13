@@ -15,7 +15,8 @@ defined( 'ABSPATH' ) || exit;
  * `BindingApplier` (read/write/validate) and `BindingsRepo::normalize`
  * (allow-list + per-kind normalisation).
  *
- * A future Phase 3 WooCommerce write target is one entry here.
+ * The WooCommerce product-field target (2.4.0) is one entry here — which was the bet Phase 2 made,
+ * and it paid: the write path needed a descriptor, not a new branch in five call sites.
  */
 final class TargetRegistry {
 
@@ -33,8 +34,9 @@ final class TargetRegistry {
 	 */
 	private static function build(): array {
 		return array(
-			'acf_field' => new AcfFieldTarget(),
-			'post_meta' => new PostMetaTarget(),
+			'acf_field'                 => new AcfFieldTarget(),
+			'post_meta'                 => new PostMetaTarget(),
+			'woocommerce_product_field' => new WooCommerceProductFieldTarget(),
 		);
 	}
 

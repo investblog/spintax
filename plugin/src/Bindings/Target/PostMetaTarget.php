@@ -53,10 +53,11 @@ final class PostMetaTarget implements TargetKind {
 	 * Post meta needs no runtime validation.
 	 *
 	 * @param array<string, mixed> $binding Binding payload (unused).
+	 * @param int                  $post_id Target post id (unused).
 	 * @return string|null Always null.
 	 */
-	public function validate_runtime( array $binding ): ?string {
-		unset( $binding );
+	public function validate_runtime( array $binding, int $post_id ): ?string {
+		unset( $binding, $post_id );
 		return null;
 	}
 

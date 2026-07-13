@@ -66,10 +66,16 @@ final class AcfFieldTarget implements TargetKind {
 	 * rather than fall back to raw post-meta). Field deleted / key reassigned /
 	 * name mismatch → SKIP_INVALID_ACF_FIELD.
 	 *
+	 * The post id is irrelevant here: an ACF field key is global, so a key that resolves for one
+	 * post resolves for all of them.
+	 *
 	 * @param array<string, mixed> $binding Binding payload.
+	 * @param int                  $post_id Target post id (unused).
 	 * @return string|null PlanCode SKIP_* when unusable, or null when valid.
 	 */
-	public function validate_runtime( array $binding ): ?string {
+	public function validate_runtime( array $binding, int $post_id ): ?string {
+		unset( $post_id );
+
 		if ( ! function_exists( 'acf_get_field' ) ) {
 			return PlanCode::SKIP_ACF_NOT_LOADED;
 		}

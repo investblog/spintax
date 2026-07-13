@@ -11,6 +11,7 @@ defined( 'ABSPATH' ) || exit;
 
 use Spintax\Bindings\BindingApplier;
 use Spintax\Bindings\BindingsRepo;
+use Spintax\Bindings\ReentrancyGuard;
 use Spintax\Core\PostType\TemplatePostType;
 use WP_Post;
 
@@ -101,6 +102,15 @@ class SavePostTrigger {
 			return true;
 		}
 		if ( $post_id <= 0 ) {
+			return true;
+		}
+
+		// A target is mid-write on this post, and its write goes through a host API that re-enters
+		// the save cycle — `$product->save()` in WooCommerce's case, which fires the very hook we
+		// are standing in. Without this, a regenerate-on-save product binding would apply, save,
+		// re-enter, apply, save, forever. The guard is set and released by the target itself, so
+		// this stays true only for the duration of one write.
+		if ( ReentrancyGuard::is_active( $post_id ) ) {
 			return true;
 		}
 

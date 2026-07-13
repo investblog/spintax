@@ -32,6 +32,8 @@ final class PlanCode {
 	public const SKIP_OUT_OF_SCOPE_STATUS  = 'skip_out_of_scope_status';
 	public const SKIP_ACF_NOT_LOADED       = 'skip_acf_not_loaded';
 	public const SKIP_INVALID_ACF_FIELD    = 'skip_invalid_acf_field';
+	public const SKIP_WC_NOT_LOADED        = 'skip_wc_not_loaded';
+	public const SKIP_INVALID_WC_FIELD     = 'skip_invalid_wc_field';
 
 	/**
 	 * The three codes that mean a write happened / would happen.
@@ -53,6 +55,8 @@ final class PlanCode {
 		self::SKIP_SOURCE_NOT_FOUND,
 		self::SKIP_INVALID_ACF_FIELD,
 		self::SKIP_ACF_NOT_LOADED,
+		self::SKIP_INVALID_WC_FIELD,
+		self::SKIP_WC_NOT_LOADED,
 	);
 
 	/**
@@ -75,6 +79,8 @@ final class PlanCode {
 			self::SKIP_OUT_OF_SCOPE_STATUS,
 			self::SKIP_ACF_NOT_LOADED,
 			self::SKIP_INVALID_ACF_FIELD,
+			self::SKIP_WC_NOT_LOADED,
+			self::SKIP_INVALID_WC_FIELD,
 		);
 	}
 

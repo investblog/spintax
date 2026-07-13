@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        php: ['8.0', '8.1', '8.2', '8.3']
+        php: ['8.0', '8.1', '8.2', '8.3', '8.4']
     steps:
       - uses: actions/checkout@v4
 
@@ -98,10 +98,49 @@ jobs:
       - name: Run PHPUnit
         run: composer run test
 
+  conformance:
+    name: Cross-engine corpus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The golden corpus is the contract that binds this engine to @spintax/core (TypeScript), the
+      # `spintax/core` Composer package, and the OpenCart port: one set of fixtures every engine must
+      # reproduce. It is checked out rather than vendored — a copy would drift, and a drifting
+      # contract is not a contract.
+      #
+      # This gate used to be manual, and that is precisely how three post-process defects reached
+      # users: the Spanish sentence-opener fix shipped with zero PHP-side tests because its only
+      # guard lived in another repository's corpus, which nothing here ever ran. A checklist is a
+      # reminder; this is an enforcement.
+      - name: Check out the golden corpus and its runner
+        uses: actions/checkout@v4
+        with:
+          repository: investblog/spintax-js
+          path: .corpus
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring
+          coverage: none
+          tools: composer
+
+      - name: Install the runner
+        run: composer install --no-progress --prefer-dist
+        working-directory: .corpus/packages/conformance/php
+
+      - name: Run the corpus against this engine
+        run: vendor/bin/phpunit
+        working-directory: .corpus/packages/conformance/php
+        env:
+          SPINTAX_PLUGIN_SRC: ${{ github.workspace }}/plugin/src
+
   build:
     name: Build ZIP
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [lint, test, conformance]
     steps:
       - uses: actions/checkout@v4
 

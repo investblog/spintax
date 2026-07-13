@@ -412,8 +412,12 @@ class Parser {
 		// digit, whitespace, end, or tag. Placeholders (\x00) are allowed;
 		// they will be restored later and need the space before them.
 		$text = preg_replace( '/([,;:])(?!\d)(?!\s|$|<)/u', '$1 ', $text );
-		// Ensure space AFTER sentence-ending punctuation (.!?) with same rules.
-		$text = preg_replace( '/([.!?])(?!\d)(?!\s|$|<)/u', '$1 ', $text );
+		// Ensure space AFTER sentence-ending punctuation (.!?) with same rules. The class matches a
+		// RUN of marks, and the run must be complete (`(?![.!?])`): "..." and "?!" are ONE sentence
+		// end, not several, so the space belongs after the run and never inside it. The guard is what
+		// forces that — a greedy `+` on its own still backtracks INTO the run to satisfy the
+		// lookaheads, which turns "Wow!!!" into "Wow!! !" and "Wait... what" into "Wait.. . what".
+		$text = preg_replace( '/([.!?]+)(?![.!?])(?!\d)(?!\s|$|<)/u', '$1 ', $text );
 
 		// 7a. Sentence openers: Spanish OPENS a question/exclamation with an inverted mark, so the
 		// mark binds to the word it opens ("¿ qué" becomes "¿qué"). Runs BEFORE capitalisation, so
@@ -421,25 +425,28 @@ class Parser {
 		$text = preg_replace( '/([¿¡])\s+/u', '$1', $text );
 
 		// 8-11. Capitalisation.
-		// A sentence may begin with a SENTENCE OPENER (¿ or ¡) — the only punctuation in any
-		// European language that opens rather than closes. The capitalisers below upper-case the
-		// first CHARACTER after a boundary, and an inverted mark has no uppercase form, so without
-		// the optional `[¿¡]?` every Spanish question silently kept a lowercase first letter.
-		// The opener set is deliberately narrow: quotes and brackets both open AND close, and
-		// capitalising after them would mangle list markers ("Elige. (a) primero").
+		// Between a sentence boundary and the first letter there can be a RUN of HTML tags, SENTENCE
+		// OPENERS (¿ ¡ — Spanish is the only European language whose punctuation OPENS a sentence)
+		// and whitespace, in any order and any number. Two shapes the earlier rule missed:
+		// "¡¿Qué haces?!" (RAE's question-exclamation) opens with TWO marks, and
+		// "<p>¿<a href="/ayuda">Necesitas ayuda</a>?</p>" puts a tag AFTER the opener.
+		// The capitalisers upper-case the first CHARACTER after the boundary, and an inverted mark
+		// has no uppercase form, so whatever $lead fails to cover silently keeps a lowercase first
+		// letter. The opener set stays deliberately narrow: quotes and brackets both open AND close,
+		// and capitalising after them would mangle list markers ("Elige una. (a) primero").
+		$lead = '(?:<[^>]+>|[¿¡]|\s)*';
 
-		// 8. Capitalise first letter (skip leading HTML tags and a sentence opener).
+		// 8. Capitalise first letter (skip leading HTML tags and sentence openers).
 		$text = preg_replace_callback(
-			'/^(\s*(?:<[^>]+>\s*)*[¿¡]?\s*)(\p{Ll})/u',
+			'/^(' . $lead . ')(\p{Ll})/u',
 			static fn( array $m ): string => $m[1] . mb_strtoupper( $m[2], 'UTF-8' ),
 			$text
 		);
 
 		// 9. Capitalise after sentence-ending punctuation.
-		// Handles punctuation followed by optional HTML tags before the letter.
-		// For example: "text. Next" and "text.</p><p>next".
+		// For example: "text. Next", "text.</p><p>next" and "Hola. ¿<em>Qué</em> tal?".
 		$text = preg_replace_callback(
-			'/([.!?…])(\s*(?:<\/?[^>]+>\s*)*[¿¡]?\s*)(\p{Ll})/u',
+			'/([.!?…])(' . $lead . ')(\p{Ll})/u',
 			static fn( array $m ): string => $m[1] . $m[2] . mb_strtoupper( $m[3], 'UTF-8' ),
 			$text
 		);
@@ -447,14 +454,14 @@ class Parser {
 		// 10. Capitalise after block-level HTML tags.
 		// Covers p, h1-h6, li, blockquote, div, td, th.
 		$text = preg_replace_callback(
-			'/(<\/?(?:p|h[1-6]|li|blockquote|div|td|th)[^>]*>\s*[¿¡]?\s*)(\p{Ll})/ui',
+			'/(<\/?(?:p|h[1-6]|li|blockquote|div|td|th)[^>]*>' . $lead . ')(\p{Ll})/ui',
 			static fn( array $m ): string => $m[1] . mb_strtoupper( $m[2], 'UTF-8' ),
 			$text
 		);
 
 		// 11. Capitalise after line breaks.
 		$text = preg_replace_callback(
-			'/(\n\s*[¿¡]?\s*)(\p{Ll})/u',
+			'/(\n' . $lead . ')(\p{Ll})/u',
 			static fn( array $m ): string => $m[1] . mb_strtoupper( $m[2], 'UTF-8' ),
 			$text
 		);

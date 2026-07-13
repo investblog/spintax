@@ -575,6 +575,118 @@ class ParserTest extends \WP_UnitTestCase {
 	}
 
 	// =========================================================================
+	// post_process — sentence openers (Spanish) and punctuation runs
+	// =========================================================================
+
+	public function test_post_process_capitalises_after_sentence_opener(): void {
+		$parser = $this->make_first();
+		// An inverted mark has no uppercase form, so a capitaliser that upper-cases the first
+		// CHARACTER after a boundary silently leaves the real first letter alone.
+		$this->assertSame( '¿Cómo estás?', $parser->post_process( '¿cómo estás?' ) );
+		$this->assertSame( '¡Genial!', $parser->post_process( '¡genial!' ) );
+	}
+
+	public function test_post_process_capitalises_after_opener_following_sentence_end(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Hola. ¿Cómo estás? ¡Genial!',
+			$parser->post_process( 'hola. ¿cómo estás? ¡genial!' )
+		);
+	}
+
+	public function test_post_process_opener_binds_to_the_word_it_opens(): void {
+		$parser = $this->make_first();
+		// The spacing pass has to run BEFORE capitalisation, or the capitaliser sees a space.
+		$this->assertSame(
+			'Hola. ¿Qué tal? ¡Genial!',
+			$parser->post_process( 'Hola. ¿ qué tal ? ¡ genial !' )
+		);
+	}
+
+	public function test_post_process_capitalises_after_opener_in_block_tag(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'<p>¿Cómo estás?</p><p>¡Genial!</p>',
+			$parser->post_process( '<p>¿cómo estás?</p><p>¡genial!</p>' )
+		);
+	}
+
+	public function test_post_process_capitalises_after_opener_on_new_line(): void {
+		$parser = $this->make_first();
+		$this->assertSame( "Hola.\n¿Cómo estás?", $parser->post_process( "Hola.\n¿cómo estás?" ) );
+	}
+
+	public function test_post_process_capitalises_through_double_sentence_opener(): void {
+		$parser = $this->make_first();
+		// "¡¿Qué haces?!" is RAE's form for a sentence that is both question and exclamation, so the
+		// lead has to allow more than one opener — and the closing "?!" run must survive intact.
+		$this->assertSame( '¡¿Qué haces?!', $parser->post_process( '¡¿qué haces?!' ) );
+		$this->assertSame( '¿¡Qué haces!?', $parser->post_process( '¿¡qué haces!?' ) );
+	}
+
+	public function test_post_process_capitalises_through_opener_and_inline_tag(): void {
+		$parser = $this->make_first();
+		// The opened word is routinely wrapped in markup, which puts a tag AFTER the opener.
+		$this->assertSame(
+			'¿<strong>Cómo</strong> estás?',
+			$parser->post_process( '¿<strong>cómo</strong> estás?' )
+		);
+		$this->assertSame(
+			'<p>¿<a href="/ayuda">Necesitas ayuda</a>?</p>',
+			$parser->post_process( '<p>¿<a href="/ayuda">necesitas ayuda</a>?</p>' )
+		);
+	}
+
+	public function test_post_process_keeps_the_space_before_a_mid_sentence_opener(): void {
+		$parser = $this->make_first();
+		// A comma does not end a sentence: no capital, and the space before "¿" is correct Spanish.
+		$this->assertSame( 'Hola, ¿qué tal?', $parser->post_process( 'Hola, ¿qué tal?' ) );
+	}
+
+	public function test_post_process_opener_set_excludes_quotes_and_brackets(): void {
+		$parser = $this->make_first();
+		// Quotes and brackets both open AND close, so capitalising after them would rewrite list
+		// markers ("(a) primero" -> "(A) primero"). Guards the narrowness of the opener set.
+		$this->assertSame( 'Elige una. (a) primero', $parser->post_process( 'Elige una. (a) primero' ) );
+		$this->assertSame( 'Он сказал. "привет"', $parser->post_process( 'он сказал. "привет"' ) );
+	}
+
+	public function test_post_process_keeps_sentence_punctuation_runs_intact(): void {
+		$parser = $this->make_first();
+		// "..." and "?!" are ONE sentence end, not several. The space-after-punctuation rule used to
+		// fire between the marks and shred the copy: "Wow! ! !", "Wait. . . what".
+		$this->assertSame( 'Wait... What?', $parser->post_process( 'wait... what?' ) );
+		$this->assertSame( 'Wow!!!', $parser->post_process( 'wow!!!' ) );
+		$this->assertSame( 'Really?! Yes.', $parser->post_process( 'really?! yes.' ) );
+		$this->assertSame( 'Что?! Не может быть!!', $parser->post_process( 'Что?! Не может быть!!' ) );
+	}
+
+	public function test_post_process_spaces_a_punctuation_run_when_the_next_word_touches_it(): void {
+		$parser = $this->make_first();
+		// The space belongs AFTER the run, never inside it.
+		$this->assertSame( 'Wait... What?', $parser->post_process( 'wait...what?' ) );
+	}
+
+	public function test_post_process_shields_mailto_uri_in_href(): void {
+		$parser = $this->make_first();
+		// "mailto:" has no // authority, so the URL pass misses it and the EMAIL pass used to carve
+		// the address out from under the prefix — then "space after a colon" split the href into
+		// "mailto: support@…", a broken link.
+		$this->assertSame(
+			'<a href="mailto:support@example.com">Write us</a>',
+			$parser->post_process( '<a href="mailto:support@example.com">write us</a>' )
+		);
+	}
+
+	public function test_post_process_shields_tel_uri(): void {
+		$parser = $this->make_first();
+		$this->assertSame(
+			'Llama al tel:+34-900-000-000 hoy',
+			$parser->post_process( 'llama al tel:+34-900-000-000 hoy' )
+		);
+	}
+
+	// =========================================================================
 	// #include directives
 	// =========================================================================
 

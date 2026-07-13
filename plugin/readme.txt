@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, seo, woocommerce, acf, content generation
 Requires at least: 6.2
 Tested up to: 7.0
-Stable tag: 2.3.2
+Stable tag: 2.3.3
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -225,6 +225,13 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 2.3.3 =
+* Fixed (post-processing): a run of sentence punctuation is no longer split apart. `Wait... what?` came out as `Wait. . . What?`, `Wow!!!` as `Wow! ! !` and `Really?!` as `Really? !` — the "add a space after .!?" rule fired *between* the marks of a run. A run is now treated as one sentence end, in every language.
+* Fixed (post-processing): `mailto:` and `tel:` links survive rendering. `<a href="mailto:you@example.com">` was rewritten to `href="mailto: you@example.com"` — a broken link — because the address was shielded out from under its prefix and the leftover colon then got a space.
+* Fixed (post-processing): Spanish sentence openers. `¿` and `¡` open a sentence, and the capitaliser upper-cases the first *character* after a sentence end — an inverted mark, which has no uppercase form — so every Spanish question quietly kept a lowercase first letter. Openers now carry the capital through, including `¡¿Qué haces?!` (two marks) and `<p>¿<a href="/ayuda">Necesitas ayuda</a>?</p>` (an opener followed by markup).
+* Bindings note: text already generated into an ACF / post-meta field keeps the old rendering until the binding runs again — re-run Bulk Apply to regenerate it.
+* Tests: +13 post-processing cases (591 PHPUnit). The same three fixes ship in `@spintax/core` and are locked by the shared cross-engine corpus, so both engines stay byte-identical.
+
 = 2.3.2 =
 * Docs / listing: refreshed the WordPress.org description and tags — surface the ACF and WooCommerce integrations and lead with the core benefit (one template → unique, non-duplicate copy across the site). No code or behavior change.
 
@@ -361,6 +368,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Upgrade Notice ==
 
+= 2.3.3 =
+Post-processing fixes: repeated punctuation (`...`, `!!!`, `?!`) is no longer split apart, `mailto:` / `tel:` links are no longer broken, and Spanish `¿ ¡` sentences keep their capital. If a binding already wrote mangled text into a field, re-run Bulk Apply to regenerate it.
+
 = 2.3.2 =
 WordPress.org listing refresh (description + tags). No code or behavior change.
 
@@ -380,7 +390,7 @@ Security hardening for 2.2.0's WooCommerce context variables: closes a same-requ
 Read-only WooCommerce product context variables (`%product_name%`, `%product_categories%`, `%product_attribute_<slug>%`, and more) in `[spintax]` / `spintax_render()` on single-product pages; each product caches its own variant. Pricing excluded. WooCommerce optional; non-product sites unchanged.
 
 = 2.1.1 =
-Bindings UX polish: Bulk Apply disables with a tooltip when Action Scheduler is missing, the stale-source banner promotes Run-now in that case, the ACF picker no longer empties out after a selection, and clean Run-now walks write a Logs entry so the success notice's CTA always has something to show.
+Bindings UX polish: Bulk Apply disables with a tooltip when Action Scheduler is missing, the stale-source banner promotes Run-now instead, the ACF picker keeps its selection, and clean Run-now walks write a Logs entry so the success notice's CTA has something to show.
 
 = 2.1.0 =
 Admin UX overhaul. New Logs page closes the "check logs" gap. Bindings form is now three keyboard-friendly tabs with a real ACF combobox. TTL fields use presets. Stale banner + trigger warning + Run-now sync button on the list. No data migration; recommended for binding users.

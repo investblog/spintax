@@ -17,6 +17,7 @@ use Spintax\Bindings\Target\TargetRegistry;
 use Spintax\Core\Render\Renderer;
 use Spintax\Core\Variables\AcfSiblingsSource;
 use Spintax\Core\Variables\PostContextSource;
+use Spintax\Core\Variables\WooCommerceProductContextSource;
 use Spintax\Support\OptionKeys;
 
 /**
@@ -80,6 +81,13 @@ class BindingApplier {
 	private AcfSiblingsSource $acf_siblings;
 
 	/**
+	 * WooCommerce product-context variable source.
+	 *
+	 * @var WooCommerceProductContextSource
+	 */
+	private WooCommerceProductContextSource $product_context;
+
+	/**
 	 * Render pipeline.
 	 *
 	 * @var Renderer
@@ -96,22 +104,25 @@ class BindingApplier {
 	/**
 	 * Constructor — accepts optional collaborators for unit tests.
 	 *
-	 * @param BindingResolver|null   $resolver     Source resolver.
-	 * @param PostContextSource|null $post_context Post-context variable source.
-	 * @param Renderer|null          $renderer     Render pipeline.
-	 * @param AcfSiblingsSource|null $acf_siblings ACF sibling-field variable source.
+	 * @param BindingResolver|null                 $resolver     Source resolver.
+	 * @param PostContextSource|null               $post_context Post-context variable source.
+	 * @param Renderer|null                        $renderer        Render pipeline.
+	 * @param AcfSiblingsSource|null               $acf_siblings    ACF sibling-field variable source.
+	 * @param WooCommerceProductContextSource|null $product_context Product-context variable source.
 	 */
 	public function __construct(
 		?BindingResolver $resolver = null,
 		?PostContextSource $post_context = null,
 		?Renderer $renderer = null,
-		?AcfSiblingsSource $acf_siblings = null
+		?AcfSiblingsSource $acf_siblings = null,
+		?WooCommerceProductContextSource $product_context = null
 	) {
-		$this->resolver     = $resolver ?? new BindingResolver();
-		$this->post_context = $post_context ?? new PostContextSource();
-		$this->renderer     = $renderer ?? new Renderer();
-		$this->acf_siblings = $acf_siblings ?? new AcfSiblingsSource();
-		$this->planner      = new Planner();
+		$this->resolver        = $resolver ?? new BindingResolver();
+		$this->post_context    = $post_context ?? new PostContextSource();
+		$this->renderer        = $renderer ?? new Renderer();
+		$this->acf_siblings    = $acf_siblings ?? new AcfSiblingsSource();
+		$this->product_context = $product_context ?? new WooCommerceProductContextSource();
+		$this->planner         = new Planner();
 	}
 
 	/**
@@ -315,6 +326,13 @@ class BindingApplier {
 		$runtime_vars = array();
 		if ( ! empty( $binding['variables']['expose_post_context'] ) ) {
 			$runtime_vars = $this->post_context->build( $post_id );
+		}
+		if ( ! empty( $binding['variables']['expose_product_context'] ) ) {
+			// Layered over post context on purpose: `%product_name%` is the more specific fact when
+			// both describe the same thing. Without this, a template generating a product
+			// description could only see `%post_title%` — it could vary its wording, but it could
+			// not say anything true about the product it was describing.
+			$runtime_vars = array_merge( $runtime_vars, $this->product_context->build_for_binding( $post_id ) );
 		}
 		if ( ! empty( $binding['variables']['expose_acf_siblings'] ) ) {
 			// ACF siblings layer over post-context vars: later layers win

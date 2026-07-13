@@ -622,4 +622,71 @@ class BindingApplierTest extends \WP_UnitTestCase {
 		$this->assertSame( '', get_post_meta( $this->post_id, 'spintax_target', true ) );
 		$this->assertSame( '', get_post_meta( $this->post_id, $this->signature_key( $binding ), true ) );
 	}
+
+	// --- Product context (2.4.0) ---
+	//
+	// A binding generating product copy needs the product's own facts. Without them a template can
+	// vary its wording but cannot say anything TRUE about the thing it is describing — it would see
+	// %post_title% and nothing else. The source itself is tested in its own file; these two assert
+	// the applier honours the flag, and only the flag.
+
+	/**
+	 * A product-context source that answers without WooCommerce being installed.
+	 */
+	private function stub_product_context(): \Spintax\Core\Variables\WooCommerceProductContextSource {
+		return new class() extends \Spintax\Core\Variables\WooCommerceProductContextSource {
+			/**
+			 * @param int $product_id Product id.
+			 * @return array<string, string>
+			 */
+			public function build_for_binding( int $product_id ): array {
+				return array( 'product_sku' => 'SKU-' . $product_id );
+			}
+		};
+	}
+
+	public function test_product_context_reaches_the_render_when_the_flag_is_on(): void {
+		$applier = new BindingApplier( null, null, null, null, $this->stub_product_context() );
+
+		wp_update_post(
+			array(
+				'ID'           => $this->template_id,
+				'post_content' => 'Buy %product_sku% today',
+			)
+		);
+
+		$binding = $this->make_binding(
+			array( 'variables' => array( 'expose_product_context' => true ) )
+		);
+
+		$applier->apply( $binding, $this->post_id );
+
+		$this->assertSame(
+			'Buy SKU-' . $this->post_id . ' today',
+			get_post_meta( $this->post_id, 'spintax_target', true )
+		);
+	}
+
+	public function test_product_context_stays_out_when_the_flag_is_off(): void {
+		$applier = new BindingApplier( null, null, null, null, $this->stub_product_context() );
+
+		wp_update_post(
+			array(
+				'ID'           => $this->template_id,
+				'post_content' => 'Buy %product_sku% today',
+			)
+		);
+
+		$binding = $this->make_binding(
+			array( 'variables' => array( 'expose_product_context' => false ) )
+		);
+
+		$applier->apply( $binding, $this->post_id );
+
+		// Unresolved variables render literally — the proof that nothing was merged in.
+		$this->assertSame(
+			'Buy %product_sku% today',
+			get_post_meta( $this->post_id, 'spintax_target', true )
+		);
+	}
 }

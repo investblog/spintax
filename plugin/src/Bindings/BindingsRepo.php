@@ -299,9 +299,10 @@ class BindingsRepo {
 			? max( 0, (int) ( $merged['source']['template_id'] ?? 0 ) )
 			: 0;
 
-		$merged['variables']['expose_post_context'] = ! empty( $merged['variables']['expose_post_context'] );
-		$merged['variables']['expose_acf_siblings'] = ! empty( $merged['variables']['expose_acf_siblings'] );
-		$merged['variables']['overrides']           = Validators::sanitize_spintax( (string) ( $merged['variables']['overrides'] ?? '' ) );
+		$merged['variables']['expose_post_context']    = ! empty( $merged['variables']['expose_post_context'] );
+		$merged['variables']['expose_product_context'] = ! empty( $merged['variables']['expose_product_context'] );
+		$merged['variables']['expose_acf_siblings']    = ! empty( $merged['variables']['expose_acf_siblings'] );
+		$merged['variables']['overrides']              = Validators::sanitize_spintax( (string) ( $merged['variables']['overrides'] ?? '' ) );
 
 		$merged['triggers']['save_post']     = ! empty( $merged['triggers']['save_post'] );
 		$merged['triggers']['acf_save_post'] = false; // V1 ignores; pinned to false until V2.

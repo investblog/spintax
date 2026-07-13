@@ -133,6 +133,44 @@ class WooCommerceProductContextSource {
 	}
 
 	/**
+	 * Build the map for a product a binding is writing INTO — no publish gate.
+	 *
+	 * The gate in `build()` exists for the front end, where `[spintax product_id="123"]` would let an
+	 * author read a draft product they were never served. That threat does not exist here, and the
+	 * difference is worth being precise about rather than reusing the same method and hoping:
+	 *
+	 *  - **Nothing is disclosed.** A binding writes the product's own SKU, categories and attributes
+	 *    into the product's own description. The data never crosses a product boundary, and it never
+	 *    reaches a visitor who was not already being served that product.
+	 *  - **Drafts are the point.** Pre-generation exists so copy is ready *before* a product is
+	 *    published. A publish gate here would refuse to seed exactly the products that need seeding,
+	 *    and the field would sit empty until someone published a product with no description.
+	 *
+	 * Values are shielded like every other data-derived source (T2, ADR-0001), so a SKU containing
+	 * `{a|b}` renders as text rather than executing as spintax.
+	 *
+	 * @param int $product_id Product being written to.
+	 * @return array<string, string> Empty when WooCommerce is inactive or the id is not a product.
+	 */
+	public function build_for_binding( int $product_id ): array {
+		if ( $product_id <= 0 || ! ( $this->is_available )() ) {
+			return array();
+		}
+
+		$memo_key = 'binding:' . $product_id;
+		if ( isset( $this->memo[ $memo_key ] ) ) {
+			return $this->memo[ $memo_key ];
+		}
+
+		$product = ( $this->resolve_product )( $product_id );
+		$map     = is_object( $product ) ? $this->map( $product ) : array();
+
+		$this->memo[ $memo_key ] = $map;
+
+		return $map;
+	}
+
+	/**
 	 * Read a resolved product's post status.
 	 *
 	 * @param object $product WC_Product-like object.

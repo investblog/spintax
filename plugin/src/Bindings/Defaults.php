@@ -70,9 +70,10 @@ final class Defaults {
 				'template_id' => 0,
 			),
 			'variables' => array(
-				'expose_post_context' => true,
-				'expose_acf_siblings' => false,
-				'overrides'           => '',
+				'expose_post_context'    => true,
+				'expose_product_context' => false,
+				'expose_acf_siblings'    => false,
+				'overrides'              => '',
 			),
 			'triggers'  => array(
 				'save_post'     => true,

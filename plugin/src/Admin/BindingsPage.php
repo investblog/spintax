@@ -490,9 +490,10 @@ class BindingsPage {
 				'template_id' => isset( $_POST['source_template_id'] ) ? (int) $_POST['source_template_id'] : 0,
 			),
 			'variables' => array(
-				'expose_post_context' => ! empty( $_POST['expose_post_context'] ),
-				'expose_acf_siblings' => ! empty( $_POST['expose_acf_siblings'] ),
-				'overrides'           => $this->sanitize_overrides_input(),
+				'expose_post_context'    => ! empty( $_POST['expose_post_context'] ),
+				'expose_product_context' => ! empty( $_POST['expose_product_context'] ),
+				'expose_acf_siblings'    => ! empty( $_POST['expose_acf_siblings'] ),
+				'overrides'              => $this->sanitize_overrides_input(),
 			),
 			'triggers'  => array(
 				'save_post' => ! empty( $_POST['trigger_save_post'] ),
@@ -1159,6 +1160,18 @@ class BindingsPage {
 							<input type="checkbox" name="expose_acf_siblings" value="1" <?php checked( ! empty( $b['variables']['expose_acf_siblings'] ) ); ?> />
 							<?php esc_html_e( 'Expose ACF sibling fields as %acf_<name>% (ACF targets only)', 'spintax' ); ?>
 						</label>
+						<?php if ( function_exists( 'wc_get_product' ) ) : ?>
+							<br/>
+							<label>
+								<input type="checkbox" name="expose_product_context" value="1" <?php checked( ! empty( $b['variables']['expose_product_context'] ) ); ?> />
+								<?php esc_html_e( 'Expose WooCommerce product data (products only)', 'spintax' ); ?>
+							</label>
+							<p class="description">
+								<?php esc_html_e( '%product_name%, %product_sku%, %product_type%, %product_stock_status%, %product_categories%, %product_tags%, %product_short_description%, and one %product_attribute_<slug>% per attribute.', 'spintax' ); ?>
+								<br/>
+								<?php esc_html_e( 'Without this, a template generating product copy can only see the title — it can vary its wording, but it cannot say anything true about the product. Pricing is deliberately excluded: it is volatile, and folding it into a stored render would churn on every price change.', 'spintax' ); ?>
+							</p>
+						<?php endif; ?>
 					</td>
 				</tr>
 				<tr>

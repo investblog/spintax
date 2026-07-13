@@ -133,6 +133,41 @@ class WooCommerceProductContextSourceTest extends \WP_UnitTestCase {
 		$this->assertSame( array(), $source->build( 7 ) );
 	}
 
+	public function test_the_binding_path_has_no_publish_gate_and_that_is_the_point(): void {
+		// The gate on `build()` protects the front end, where `[spintax product_id="123"]` would let
+		// an author read a draft product they were never served. A binding is the opposite case: it
+		// writes the product's OWN data into the product's OWN description, so nothing crosses a
+		// boundary — and pre-generation exists precisely so the copy is ready BEFORE publication. A
+		// gate here would refuse to seed exactly the products that need seeding.
+		$source = new WooCommerceProductContextSource(
+			static fn(): bool => true,
+			fn( int $id ) => $this->fake_product( array( 'id' => $id, 'status' => 'draft' ) )
+		);
+
+		$map = $source->build_for_binding( 7 );
+
+		$this->assertNotSame( array(), $map, 'a draft product must still expose its context to its own binding' );
+		$this->assertSame( '7', $map['product_id'] );
+	}
+
+	public function test_the_binding_path_is_empty_without_woocommerce(): void {
+		$source = new WooCommerceProductContextSource(
+			static fn(): bool => false,
+			fn( int $id ) => $this->fake_product( array( 'id' => $id ) )
+		);
+
+		$this->assertSame( array(), $source->build_for_binding( 7 ) );
+	}
+
+	public function test_the_binding_path_is_empty_when_the_post_is_not_a_product(): void {
+		$source = new WooCommerceProductContextSource(
+			static fn(): bool => true,
+			static fn( int $id ) => false
+		);
+
+		$this->assertSame( array(), $source->build_for_binding( 7 ) );
+	}
+
 	public function test_explicit_product_id_allows_published_product(): void {
 		$source = new WooCommerceProductContextSource(
 			static fn(): bool => true,

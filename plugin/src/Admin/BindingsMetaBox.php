@@ -98,11 +98,16 @@ class BindingsMetaBox {
 			$meta_key = OptionKeys::META_BINDING_SOURCE_PREFIX . $target_key;
 			$value    = (string) get_post_meta( $post->ID, $meta_key, true );
 
-			$label = 'acf_field' === $target_kind
+			if ( 'acf_field' === $target_kind ) {
 				/* translators: %s: ACF field name */
-				? sprintf( __( 'ACF field: %s', 'spintax' ), $target_key )
+				$label = sprintf( __( 'ACF field: %s', 'spintax' ), $target_key );
+			} elseif ( 'woocommerce_product_field' === $target_kind ) {
+				/* translators: %s: product field name (description / short_description) */
+				$label = sprintf( __( 'Product field: %s', 'spintax' ), $target_key );
+			} else {
 				/* translators: %s: post-meta key */
-				: sprintf( __( 'Post meta: %s', 'spintax' ), $target_key );
+				$label = sprintf( __( 'Post meta: %s', 'spintax' ), $target_key );
+			}
 
 			$field_id = 'spintax-binding-source-' . sanitize_html_class( $id );
 			?>

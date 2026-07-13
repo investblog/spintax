@@ -772,7 +772,15 @@ class BindingsPage {
 					<div style="color:#646970;">&rarr;</div>
 					<div>
 						<span style="color:#646970;text-transform:uppercase;font-size:11px;font-weight:600;display:block;"><?php esc_html_e( 'Target', 'spintax' ); ?></span>
-						<code><?php echo esc_html( ( 'acf_field' === $kind ? 'acf:' : 'meta:' ) . $key ); ?></code>
+						<?php
+						$kind_prefix = 'acf:';
+						if ( 'post_meta' === $kind ) {
+							$kind_prefix = 'meta:';
+						} elseif ( 'woocommerce_product_field' === $kind ) {
+							$kind_prefix = 'product:';
+						}
+						?>
+						<code><?php echo esc_html( $kind_prefix . $key ); ?></code>
 					</div>
 					<div>
 						<span style="color:#646970;text-transform:uppercase;font-size:11px;font-weight:600;display:block;"><?php esc_html_e( 'Triggers', 'spintax' ); ?></span>
@@ -971,37 +979,77 @@ class BindingsPage {
 				</tr>
 			</table>
 
+			<?php
+			$current_kind  = (string) ( $b['target']['kind'] ?? '' );
+			$current_key   = (string) ( $b['target']['key'] ?? '' );
+			$current_fkey  = (string) ( $b['target']['field_key'] ?? '' );
+			$is_acf        = ( 'acf_field' === $current_kind );
+			$is_post_meta  = ( 'post_meta' === $current_kind );
+			$is_wc         = ( 'woocommerce_product_field' === $current_kind );
+			$display_label = '' !== $current_key
+				? $current_key . ( '' !== $current_fkey ? ' (' . $current_fkey . ')' : '' )
+				: '';
+
+			// Offer the product target when WooCommerce is here — and also when this binding already
+			// uses it, even if WooCommerce is currently switched off. Dropping the radio in that case
+			// would silently rewrite the binding's kind on the next save, which is a data loss
+			// dressed up as tidiness.
+			$show_wc_kind = function_exists( 'wc_get_product' ) || $is_wc;
+			?>
 			<h3><?php esc_html_e( 'Target field', 'spintax' ); ?></h3>
 			<table class="form-table" role="presentation">
 				<tr>
 					<th scope="row"><?php esc_html_e( 'Kind', 'spintax' ); ?></th>
 					<td>
 						<label>
-							<input type="radio" name="target_kind" value="acf_field" <?php checked( $b['target']['kind'] ?? '', 'acf_field' ); ?> />
+							<input type="radio" name="target_kind" value="acf_field" <?php checked( $current_kind, 'acf_field' ); ?> />
 							<?php esc_html_e( 'ACF field', 'spintax' ); ?>
 						</label>
 						&nbsp;
 						<label>
-							<input type="radio" name="target_kind" value="post_meta" <?php checked( $b['target']['kind'] ?? '', 'post_meta' ); ?> />
+							<input type="radio" name="target_kind" value="post_meta" <?php checked( $current_kind, 'post_meta' ); ?> />
 							<?php esc_html_e( 'Post meta', 'spintax' ); ?>
 						</label>
+						<?php if ( $show_wc_kind ) : ?>
+							&nbsp;
+							<label>
+								<input type="radio" name="target_kind" value="woocommerce_product_field" <?php checked( $current_kind, 'woocommerce_product_field' ); ?> />
+								<?php esc_html_e( 'WooCommerce product field', 'spintax' ); ?>
+							</label>
+						<?php endif; ?>
+						<?php if ( $is_wc && ! function_exists( 'wc_get_product' ) ) : ?>
+							<p class="description">
+								<strong><?php esc_html_e( 'WooCommerce is not active.', 'spintax' ); ?></strong>
+								<?php esc_html_e( 'This binding is kept as configured and will simply not write until WooCommerce is back. Already-generated product copy stays exactly where it is.', 'spintax' ); ?>
+							</p>
+						<?php endif; ?>
 					</td>
 				</tr>
-				<?php
-				$current_kind  = (string) ( $b['target']['kind'] ?? '' );
-				$current_key   = (string) ( $b['target']['key'] ?? '' );
-				$current_fkey  = (string) ( $b['target']['field_key'] ?? '' );
-				$is_acf        = ( 'acf_field' === $current_kind );
-				$is_post_meta  = ( 'post_meta' === $current_kind );
-				$display_label = '' !== $current_key
-					? $current_key . ( '' !== $current_fkey ? ' (' . $current_fkey . ')' : '' )
-					: '';
-				?>
 				<tr>
 					<th scope="row">
 						<label for="spintax-target-key"><?php esc_html_e( 'Field name / meta key', 'spintax' ); ?></label>
 					</th>
 					<td>
+						<?php
+						// A fixed two-option select, not a discovery field: the writable set is a hard
+						// whitelist of two, and a search box over it would imply otherwise. It carries
+						// no `name` — the JS copies the choice into the canonical `target_key` input
+						// below, exactly as the ACF combobox does, so the submitted payload still has
+						// precisely one field by that name.
+						?>
+						<select id="spintax-wc-field" class="spintax-wc-field" <?php echo $is_wc ? '' : 'hidden'; ?>>
+							<option value=""><?php esc_html_e( '— Select a product field —', 'spintax' ); ?></option>
+							<option value="description" <?php selected( $current_key, 'description' ); ?>>
+								<?php esc_html_e( 'Description — the long product copy', 'spintax' ); ?>
+							</option>
+							<option value="short_description" <?php selected( $current_key, 'short_description' ); ?>>
+								<?php esc_html_e( 'Short description — the excerpt beside the price', 'spintax' ); ?>
+							</option>
+						</select>
+						<p class="description spintax-wc-field-help" <?php echo $is_wc ? '' : 'hidden'; ?>>
+							<?php esc_html_e( 'These two are the only product fields Spintax writes. Price, SKU and stock are commerce data, not copy, and stay out of reach on purpose. Writes go through WooCommerce itself, so its caches and lookup tables stay consistent.', 'spintax' ); ?>
+						</p>
+
 						<div class="spintax-acf-combobox" data-spintax-acf-combobox <?php echo $is_acf ? '' : 'hidden'; ?>>
 							<input
 								type="search"
@@ -1033,9 +1081,9 @@ class BindingsPage {
 							class="regular-text"
 							value="<?php echo esc_attr( $current_key ); ?>"
 							autocomplete="off"
-							<?php echo $is_acf ? 'hidden' : ''; ?>
+							<?php echo ( $is_acf || $is_wc ) ? 'hidden' : ''; ?>
 						/>
-						<p class="description spintax-target-key-help" <?php echo $is_acf ? 'hidden' : ''; ?>>
+						<p class="description spintax-target-key-help" <?php echo ( $is_acf || $is_wc ) ? 'hidden' : ''; ?>>
 							<?php esc_html_e( 'Start typing to pick from detected post-meta keys, or paste an exact key (e.g. _my_meta).', 'spintax' ); ?>
 						</p>
 					</td>
@@ -1192,6 +1240,18 @@ class BindingsPage {
 							<input type="checkbox" name="behavior_clear_on_empty" value="1" <?php checked( ! empty( $b['behavior']['clear_on_empty'] ) ); ?> />
 							<?php esc_html_e( 'Clear target when template renders to empty', 'spintax' ); ?>
 						</label>
+
+						<?php
+						// The same two switches mean something heavier on a product than on a meta
+						// key: the target is copy a customer reads, and a shop owner may have written
+						// it by hand. Say so where the choice is made, not in a changelog.
+						?>
+						<div class="notice notice-warning inline spintax-wc-behavior-warning" <?php echo $is_wc ? '' : 'hidden'; ?>>
+							<p>
+								<strong><?php esc_html_e( 'This target writes into your catalogue.', 'spintax' ); ?></strong>
+								<?php esc_html_e( '"Regenerate on every save" overwrites the product copy customers read, and "Clear target when template renders to empty" erases it. Leave "Preserve manual edits" on — it is what stops a regeneration from destroying copy a human wrote.', 'spintax' ); ?>
+							</p>
+						</div>
 					</td>
 				</tr>
 			</table>

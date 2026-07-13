@@ -321,6 +321,22 @@
 		} );
 	}
 
+	function $wcField() {
+		return $( '#spintax-wc-field' );
+	}
+
+	function hideWcField() {
+		$wcField().attr( 'hidden', 'hidden' );
+		$( '.spintax-wc-field-help, .spintax-wc-behavior-warning' ).attr( 'hidden', 'hidden' );
+	}
+
+	// Mirror the product-field select into the named input the server actually reads.
+	// Called on load as well, so switching to this kind mid-edit cannot submit a stale
+	// key left over from whatever the previous kind had typed.
+	function syncWcField() {
+		$( '#spintax-target-key' ).val( ( $wcField().val() || '' ).toString() );
+	}
+
 	function refreshSuggestions() {
 		clearSuggestions();
 		var kind = kindValue();
@@ -329,6 +345,7 @@
 			$acfCombo().removeAttr( 'hidden' );
 			$( '#spintax-target-key, .spintax-target-key-help' ).attr( 'hidden', 'hidden' );
 			$( '.spintax-target-field-key-row' ).removeAttr( 'hidden' );
+			hideWcField();
 			loadAcfFields();
 		} else if ( kind === 'post_meta' ) {
 			// Plain post-meta path keeps the legacy text+datalist UI;
@@ -339,13 +356,28 @@
 			$( '#spintax-target-key, .spintax-target-key-help' ).removeAttr( 'hidden' );
 			setAcfFieldKey( '' );
 			$( '.spintax-target-field-key-row' ).attr( 'hidden', 'hidden' );
+			hideWcField();
 			loadMetaKeys();
+		} else if ( kind === 'woocommerce_product_field' ) {
+			// A hard whitelist of two: nothing to discover, nothing to search. The
+			// select carries no name — its value is copied into the canonical
+			// `target_key` input, so the payload keeps exactly one field by that name
+			// and there is never a second one competing for it.
+			$acfCombo().attr( 'hidden', 'hidden' );
+			comboHide();
+			setAcfFieldKey( '' );
+			$( '.spintax-target-field-key-row' ).attr( 'hidden', 'hidden' );
+			$( '#spintax-target-key, .spintax-target-key-help' ).attr( 'hidden', 'hidden' );
+			$wcField().removeAttr( 'hidden' );
+			$( '.spintax-wc-field-help, .spintax-wc-behavior-warning' ).removeAttr( 'hidden' );
+			syncWcField();
 		}
 	}
 
 	function bindForm() {
 		$( '#spintax-post-type' ).on( 'change', refreshSuggestions );
 		$( 'input[name="target_kind"]' ).on( 'change', refreshSuggestions );
+		$wcField().on( 'change', syncWcField );
 
 		// Fire once on load to reflect the current state on edit screens.
 		refreshSuggestions();

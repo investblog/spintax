@@ -178,6 +178,20 @@ Lean option 1 unless a user actually hits the "added new legacy data after first
 
 ---
 
+### The binding Test panel discloses any post's context to a CAP holder, regardless of what they can view
+
+**Status:** accepted for now — surfaced by the 2.4.0 security review; **pre-existing since Phase 2**, widened (not introduced) by the WooCommerce write target.
+
+**Problem.** `BindingsAjax::test_binding()` and `wp spintax bindings test` run `BindingApplier::plan()` and return the rendered **preview** to the caller. Render can pull in three data-derived sources — `PostContextSource`, `AcfSiblingsSource`, and (2.4.0) `WooCommerceProductContextSource::build_for_binding()` — none of which gates on the target's status or on the caller's ability to view that target. So a `manage_spintax_templates` holder (a stock Editor by default, who does **not** get WooCommerce product caps) can dry-run a binding against a draft/private post or product ID they cannot open in wp-admin and read its fields — `%post_title%`, an ACF field value, or a product's `%product_sku%` / `%product_short_description%` / `%product_attribute_*%` — back out of the Test panel. Dry-run only (no write), and the write path itself discloses nothing (it writes into the target's own field, which the same user still cannot read). But the project treats "reading a non-published product's context" as a boundary — that is exactly why `build()` has a publish gate for the front-end `[spintax product_id=…]` case — and the Test panel sidesteps it.
+
+**Why the obvious fix is wrong.** Gating `build_for_binding()` on publish status would break the whole point of the write target: pre-generating a draft product's description **before** it is published. With the map gated off, `%product_sku%` would render literally and that broken copy would be written into the draft. The write path genuinely needs the ungated map; it is only the *reflection back to the caller* that leaks.
+
+**Fix (at implementation time).** Gate the disclosure at the Test-panel layer, uniformly across all three sources rather than per-source: in `test_binding()` (and the CLI `test`), require `current_user_can( 'edit_post', $target_id )` before returning the rendered preview — a user testing a binding against a post/product they cannot edit has no business seeing its rendered content. This closes the WC case and the pre-existing post/ACF case in one place, and leaves the write path (cron / save_post / Bulk Apply, which run in userless or already-authorised contexts) untouched. Add a regression test per source: a CAP user without edit rights on a draft target gets an authorisation error, not a preview.
+
+**Trigger:** any report of Test-panel data disclosure, or the next time `BindingsAjax` / the Test panel is touched. Low urgency (CAP defaults to trusted editor/admin roles, dry-run only), but it is a real boundary and should not be rediscovered as a "Woo leak".
+
+---
+
 ### Gap: the cross-engine golden corpus runs in no CI
 
 **Status:** ✅ **CLOSED 2026-07-14.** Both directions are wired, so neither side can drift alone:

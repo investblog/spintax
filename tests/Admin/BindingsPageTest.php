@@ -5,6 +5,7 @@ namespace Spintax\Tests\Admin;
 use Spintax\Admin\BindingsAjax;
 use Spintax\Admin\BindingsPage;
 use Spintax\Bindings\BindingsRepo;
+use Spintax\Bindings\Defaults;
 use Spintax\Bindings\BulkApply;
 use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Support\Capabilities;
@@ -1111,6 +1112,37 @@ class BindingsPageTest extends \WP_UnitTestCase {
 		$this->assertSame( 'error', $result['type'] );
 		$this->assertStringContainsString( 'Target field key is required', $result['message'] );
 		$this->assertStringNotContainsString( 'ACF field key', $result['message'] );
+	}
+
+	public function test_product_context_checkbox_survives_a_render_while_woocommerce_is_inactive(): void {
+		// The suite runs without WooCommerce, which is exactly the hazard: a binding whose
+		// `expose_product_context` flag is already set must still render the checkbox, or the browser
+		// cannot submit it on the next save and the stored `true` is overwritten with `false` — a
+		// regenerate-on-save product binding then replaces product-aware copy with title-only copy.
+		$this->assertFalse( function_exists( 'wc_get_product' ), 'this test asserts behaviour with WooCommerce absent' );
+
+		$binding = array_replace_recursive(
+			Defaults::binding(),
+			array(
+				'target'    => array( 'kind' => 'woocommerce_product_field', 'key' => 'description' ),
+				'post_type' => 'product',
+				'variables' => array( 'expose_product_context' => true ),
+			)
+		);
+
+		$reflection = new \ReflectionMethod( BindingsPage::class, 'render_form' );
+		$reflection->setAccessible( true );
+
+		ob_start();
+		$reflection->invoke( $this->page, $binding );
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'name="expose_product_context"', $html );
+		$this->assertMatchesRegularExpression(
+			'/name="expose_product_context"[^>]*checked/',
+			$html,
+			'the set flag must render as checked so it round-trips through a re-save'
+		);
 	}
 
 	public function test_a_woocommerce_product_binding_saves_through_the_form(): void {

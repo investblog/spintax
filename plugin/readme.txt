@@ -403,7 +403,7 @@ Templates and their rendered output are stored entirely within your WordPress da
 == Upgrade Notice ==
 
 = 2.4.0 =
-Adds WooCommerce product-field bindings: generate product descriptions and short descriptions from a template, per product, with that product's own SKU, categories and attributes available as variables. Only those two fields are writable — price, SKU and stock stay out of reach — and manual edits are preserved by default. Existing ACF and post-meta bindings are unaffected.
+New: WooCommerce product-field bindings. Generate a product's description or short description from a template, per product, using that product's own SKU, categories and attributes. Only those two fields are writable, and manual edits are preserved by default. Existing bindings are unaffected.
 
 = 2.3.3 =
 Post-processing fixes: repeated punctuation (`...`, `!!!`, `?!`) is no longer split apart, `mailto:` / `tel:` links are no longer broken, and Spanish `¿ ¡` sentences keep their capital. If a binding already wrote mangled text into a field, re-run Bulk Apply to regenerate it.

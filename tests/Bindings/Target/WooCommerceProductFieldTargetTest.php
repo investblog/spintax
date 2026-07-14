@@ -239,6 +239,20 @@ class WooCommerceProductFieldTargetTest extends \WP_UnitTestCase {
 		$this->assertSame( 'old description', $product->description );
 	}
 
+	public function test_write_refuses_a_key_outside_the_whitelist_at_the_sink(): void {
+		// Defense in depth: `write()` is only reached after validate_runtime clears the key, but that
+		// is an invariant of the applier's gate order. If a future reorder — or a direct caller —
+		// ever handed `write()` a bad key, the `else` branch would silently overwrite the description.
+		// The sink refuses it itself, so the invariant does not depend on the caller.
+		$product = $this->fake_product();
+		$target  = $this->target( $product );
+
+		$target->write( $this->binding( 'regular_price' ), 42, '9.99' );
+
+		$this->assertSame( 'old description', $product->description, 'an unknown key must not fall through to set_description' );
+		$this->assertSame( 0, $product->saves, 'and nothing is committed' );
+	}
+
 	// ── the save loop ────────────────────────────────────────────────────────
 
 	public function test_the_reentrancy_guard_is_up_while_save_runs(): void {

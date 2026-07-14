@@ -12,10 +12,10 @@ defined( 'ABSPATH' ) || exit;
 /**
  * The flat set of outcome codes a binding apply can produce (spec §4.4).
  *
- * Single source of truth for the 13 string values. `BindingApplier` exposes
- * these same values as class constants (aliased to here) for back-compat with
- * existing consumers, logs, WP-CLI output and telemetry — do not change the
- * strings.
+ * Single source of truth for the string values (13 through 2.3.x, 15 since the
+ * 2.4.0 WooCommerce guards). `BindingApplier` exposes these same values as class
+ * constants (aliased to here) for back-compat with existing consumers, logs,
+ * WP-CLI output and telemetry — do not change the strings.
  */
 final class PlanCode {
 

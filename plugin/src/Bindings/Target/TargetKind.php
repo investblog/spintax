@@ -45,12 +45,6 @@ interface TargetKind {
 	public function write( array $binding, int $post_id, string $value ): void;
 
 	/**
-	 * Verify the target is usable at apply time.
-	 *
-	 * @param array<string, mixed> $binding Binding payload.
-	 * @return string|null A PlanCode SKIP_* when unusable, or null when valid.
-	 */
-	/**
 	 * Validate the target at APPLY time, and return a machine outcome the Planner can act on.
 	 *
 	 * Runs at stage 2 of the applier's gate order — after scope, before the source is resolved and

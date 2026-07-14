@@ -94,7 +94,7 @@ class BindingsRepo {
 		if ( null !== $dup ) {
 			return new WP_Error(
 				'spintax_bindings_duplicate',
-				__( 'Another binding already targets this field on this post type. ACF and post-meta bindings on the same field name collide because they write to the same database row.', 'spintax' )
+				__( 'Another binding already targets this field on this post type. A target can have only one binding. (ACF and post-meta bindings on the same field name collide even across kinds, because they share the same wp_postmeta row.)', 'spintax' )
 			);
 		}
 
@@ -151,7 +151,7 @@ class BindingsRepo {
 		if ( null !== $dup && $dup['id'] !== $id ) {
 			return new WP_Error(
 				'spintax_bindings_duplicate',
-				__( 'Another binding already targets this field on this post type. ACF and post-meta bindings on the same field name collide because they write to the same database row.', 'spintax' )
+				__( 'Another binding already targets this field on this post type. A target can have only one binding. (ACF and post-meta bindings on the same field name collide even across kinds, because they share the same wp_postmeta row.)', 'spintax' )
 			);
 		}
 

@@ -7,7 +7,7 @@ use Spintax\Bindings\Plan\PlanCode;
 
 class PlanCodeTest extends \WP_UnitTestCase {
 
-	public function test_all_returns_thirteen_unique_codes(): void {
+	public function test_all_returns_the_full_set_of_unique_codes(): void {
 		$all = PlanCode::all();
 		// 13 through 2.3.x; 15 since 2.4.0 added the two WooCommerce guards.
 		$this->assertCount( 15, $all );
@@ -29,6 +29,10 @@ class PlanCodeTest extends \WP_UnitTestCase {
 		$this->assertSame( 'blocked', PlanCode::category( PlanCode::SKIP_SOURCE_NOT_FOUND ) );
 		$this->assertSame( 'blocked', PlanCode::category( PlanCode::SKIP_INVALID_ACF_FIELD ) );
 		$this->assertSame( 'blocked', PlanCode::category( PlanCode::SKIP_ACF_NOT_LOADED ) );
+		// The 2.4.0 WooCommerce guards. The spec makes this a contract clause — it drives the Bulk
+		// Apply "N failed" telemetry and the stale-badge gate — so it is pinned, not just coded.
+		$this->assertSame( 'blocked', PlanCode::category( PlanCode::SKIP_WC_NOT_LOADED ) );
+		$this->assertSame( 'blocked', PlanCode::category( PlanCode::SKIP_INVALID_WC_FIELD ) );
 		$this->assertSame( 'skip', PlanCode::category( PlanCode::SKIP_TARGET_NONEMPTY ) );
 		$this->assertSame( 'skip', PlanCode::category( PlanCode::SKIP_MANUAL_EDIT_DETECTED ) );
 		$this->assertSame( 'skip', PlanCode::category( PlanCode::SKIP_OUT_OF_SCOPE_TYPE ) );
@@ -52,5 +56,7 @@ class PlanCodeTest extends \WP_UnitTestCase {
 		$this->assertSame( PlanCode::SKIP_OUT_OF_SCOPE_STATUS, BindingApplier::SKIP_OUT_OF_SCOPE_STATUS );
 		$this->assertSame( PlanCode::SKIP_ACF_NOT_LOADED, BindingApplier::SKIP_ACF_NOT_LOADED );
 		$this->assertSame( PlanCode::SKIP_INVALID_ACF_FIELD, BindingApplier::SKIP_INVALID_ACF_FIELD );
+		$this->assertSame( PlanCode::SKIP_WC_NOT_LOADED, BindingApplier::SKIP_WC_NOT_LOADED );
+		$this->assertSame( PlanCode::SKIP_INVALID_WC_FIELD, BindingApplier::SKIP_INVALID_WC_FIELD );
 	}
 }

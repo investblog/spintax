@@ -1160,7 +1160,17 @@ class BindingsPage {
 							<input type="checkbox" name="expose_acf_siblings" value="1" <?php checked( ! empty( $b['variables']['expose_acf_siblings'] ) ); ?> />
 							<?php esc_html_e( 'Expose ACF sibling fields as %acf_<name>% (ACF targets only)', 'spintax' ); ?>
 						</label>
-						<?php if ( function_exists( 'wc_get_product' ) ) : ?>
+						<?php
+						// Show the checkbox when WooCommerce is here — OR when this binding already has
+						// the flag set, even if WooCommerce is currently off. Without that second clause
+						// the row would not render while WC is inactive, the next save would read the
+						// absent checkbox as `false`, and array_replace_recursive would overwrite a
+						// stored `true`: a regenerate-on-save product binding would then quietly replace
+						// product-aware copy with %post_title%-only copy. Same data-loss the kind radio
+						// guards against one section up with `|| $is_wc`; the checkbox was asymmetric.
+						$show_product_ctx = function_exists( 'wc_get_product' ) || ! empty( $b['variables']['expose_product_context'] );
+						?>
+						<?php if ( $show_product_ctx ) : ?>
 							<br/>
 							<label>
 								<input type="checkbox" name="expose_product_context" value="1" <?php checked( ! empty( $b['variables']['expose_product_context'] ) ); ?> />

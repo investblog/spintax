@@ -27,8 +27,8 @@ use Spintax\Support\OptionKeys;
  * fed a `PlanInput` DTO; this class only resolves the I/O facts, calls the
  * planner, and assembles the return array. Target-kind read/write/validation is
  * dispatched through `Spintax\Bindings\Target\TargetRegistry` rather than inline
- * `kind` branches. The 13 return codes, `apply()`→string and `plan()`→array
- * shapes are unchanged.
+ * `kind` branches. The return codes (13 through 2.3.x, 15 since the 2.4.0
+ * WooCommerce guards), `apply()`→string and `plan()`→array shapes are unchanged.
  *
  * Three paths:
  *  - When `regenerate_on_save` is ON: overwrite the target on every
@@ -58,6 +58,8 @@ class BindingApplier {
 	public const SKIP_OUT_OF_SCOPE_STATUS  = PlanCode::SKIP_OUT_OF_SCOPE_STATUS;
 	public const SKIP_ACF_NOT_LOADED       = PlanCode::SKIP_ACF_NOT_LOADED;
 	public const SKIP_INVALID_ACF_FIELD    = PlanCode::SKIP_INVALID_ACF_FIELD;
+	public const SKIP_WC_NOT_LOADED        = PlanCode::SKIP_WC_NOT_LOADED;
+	public const SKIP_INVALID_WC_FIELD     = PlanCode::SKIP_INVALID_WC_FIELD;
 
 	/**
 	 * Source resolver.

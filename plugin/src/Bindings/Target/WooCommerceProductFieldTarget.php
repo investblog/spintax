@@ -114,6 +114,14 @@ final class WooCommerceProductFieldTarget implements TargetKind {
 	 * @param string               $value   Rendered value to write.
 	 */
 	public function write( array $binding, int $post_id, string $value ): void {
+		// Enforce the whitelist at the sink, not only upstream. Today `write()` is only ever reached
+		// after `validate_runtime()` has cleared the key — but that is an invariant held by the
+		// applier's gate order, and a future reorder, or a direct caller, must not be able to turn an
+		// unknown key into a description overwrite (the `else` branch below would do exactly that).
+		if ( ! in_array( $this->field( $binding ), self::FIELDS, true ) ) {
+			return;
+		}
+
 		$product = $this->product( $post_id );
 		if ( null === $product ) {
 			return;

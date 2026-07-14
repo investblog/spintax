@@ -291,6 +291,99 @@ class BindingsAjaxTest extends \WP_Ajax_UnitTestCase {
 		$this->assertSame( '', get_post_meta( $post_id, 'target_field', true ) );
 	}
 
+	// ----- test_binding preview permission gate (2.4.0 security review) -----
+	//
+	// The dry-run reflects the binding's RENDER back to the caller, and a render can pull in the
+	// target's own data (post fields, ACF siblings, product data). So a `manage_spintax_templates`
+	// holder must not be able to preview a post they could not otherwise view — a stock Editor has
+	// the plugin CAP but cannot see another user's draft, or a draft product's fields. `read_post`
+	// is the exact "may this user see THIS post's content" gate.
+
+	/**
+	 * A low-privilege user who holds the plugin capability but not broad editing rights — the shape
+	 * of the threat (CAP is grantable to any role by an admin).
+	 */
+	private function cap_only_user(): int {
+		$uid  = self::factory()->user->create( array( 'role' => 'subscriber' ) );
+		$user = new \WP_User( $uid );
+		$user->add_cap( Capabilities::CAP );
+		return $uid;
+	}
+
+	public function test_test_binding_refuses_preview_of_a_post_the_user_cannot_read(): void {
+		$author_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		$draft_id  = self::factory()->post->create(
+			array(
+				'post_type'   => 'post',
+				'post_status' => 'draft',
+				'post_author' => $author_id,
+			)
+		);
+		$binding = $this->create_test_binding();
+
+		wp_set_current_user( $this->cap_only_user() );
+		$this->set_nonce();
+		$_REQUEST['binding_id'] = $binding['id'];
+		$_POST['binding_id']    = $binding['id'];
+		$_REQUEST['post_id']    = $draft_id;
+		$_POST['post_id']       = $draft_id;
+
+		$resp = $this->dispatch( 'spintax_test_binding' );
+
+		$this->assertFalse( $resp['success'] );
+		$this->assertStringContainsString( 'permission to preview', $resp['data']['message'] );
+		$this->assertArrayNotHasKey( 'rendered_preview', (array) $resp['data'], 'no rendered content may leak on refusal' );
+	}
+
+	public function test_test_binding_allows_preview_of_a_published_post_for_a_cap_user(): void {
+		// A published post is public on the front end, so previewing it discloses nothing new.
+		$post_id = self::factory()->post->create(
+			array(
+				'post_type'   => 'post',
+				'post_status' => 'publish',
+			)
+		);
+		$binding = $this->create_test_binding();
+
+		wp_set_current_user( $this->cap_only_user() );
+		$this->set_nonce();
+		$_REQUEST['binding_id'] = $binding['id'];
+		$_POST['binding_id']    = $binding['id'];
+		$_REQUEST['post_id']    = $post_id;
+		$_POST['post_id']       = $post_id;
+
+		$resp = $this->dispatch( 'spintax_test_binding' );
+
+		$this->assertTrue( $resp['success'] );
+		$this->assertArrayHasKey( 'rendered_preview', $resp['data'] );
+	}
+
+	public function test_test_binding_still_lets_an_editor_preview_a_draft(): void {
+		// The gate must not break the legitimate workflow: an editor who CAN edit the draft (here,
+		// their own) still gets the preview. Only content they cannot view is refused.
+		$editor_id = self::factory()->user->create( array( 'role' => 'editor' ) );
+		$draft_id  = self::factory()->post->create(
+			array(
+				'post_type'   => 'post',
+				'post_status' => 'draft',
+				'post_author' => $editor_id,
+			)
+		);
+		$binding = $this->create_test_binding();
+
+		wp_set_current_user( $editor_id );
+		$this->set_nonce();
+		$_REQUEST['binding_id'] = $binding['id'];
+		$_POST['binding_id']    = $binding['id'];
+		$_REQUEST['post_id']    = $draft_id;
+		$_POST['post_id']       = $draft_id;
+
+		$resp = $this->dispatch( 'spintax_test_binding' );
+
+		$this->assertTrue( $resp['success'] );
+		$this->assertArrayHasKey( 'rendered_preview', $resp['data'] );
+	}
+
 	// ----- dismiss_admin_notice (added in 2.1.0) -----
 
 	public function test_dismiss_admin_notice_writes_user_meta(): void {

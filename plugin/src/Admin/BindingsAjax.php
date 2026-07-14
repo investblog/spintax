@@ -332,6 +332,21 @@ class BindingsAjax {
 			wp_send_json_error( array( 'message' => __( 'Post not found.', 'spintax' ) ), 404 );
 		}
 
+		// The preview reflects the binding's RENDER back to the caller, and a render can pull in a
+		// target's own data — post fields, ACF siblings, or (2.4.0) WooCommerce product data. So the
+		// dry-run must not become a way to read content the caller could not otherwise see: a
+		// `manage_spintax_templates` holder is a stock Editor by default, who cannot view a draft
+		// product's SKU / short description. `read_post` is exactly "may this user see THIS post's
+		// content" — public posts pass for everyone; drafts/private/products map through their own
+		// edit capabilities. The write path needs no such gate (it never echoes the data back, and
+		// runs in userless cron / Bulk Apply contexts); this is only about the reflection.
+		if ( ! current_user_can( 'read_post', $post_id ) ) {
+			wp_send_json_error(
+				array( 'message' => __( 'You do not have permission to preview this post.', 'spintax' ) ),
+				403
+			);
+		}
+
 		$plan = $this->applier->plan( $binding, $post_id );
 
 		wp_send_json_success(

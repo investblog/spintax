@@ -112,25 +112,29 @@ Hence a roll-once mechanism must remain expressible. It becomes `#def`.
 
 ## 2. Carve-outs and limits (state them; do not let them be discovered)
 
-**2.1 Deferred constructs.** Today Stage 4b skips values containing `{?` or `{plural ` because those
-may reference variables defined on other lines and must stay deferred to Stages 6a–6d. `#def` keeps
-that carve-out: a `#def` value carrying a conditional or a plural is **not** rolled once — it is
-substituted and resolved in the body, i.e. it behaves as a macro. This is a real hole in `#def`'s
-promise and must be documented, plus diagnosed (§4).
+**2.1 A `#def` value is rendered as a miniature body, once.** The earlier draft carved out values
+containing `{?` / `{plural ` (inherited from Stage 4b) and values whose brackets arrive through
+another variable, and diagnosed both as holes in the promise. Both carve-outs dissolve once the roll
+stage is placed correctly (§3.1): with the full variable context assembled, a `#def` value can be run
+through the same passes the body gets — conditionals, plurals, enumerations, permutations — and the
+result held. The mental model is one sentence: **a `#def` value is rendered once, as if it were a
+tiny template, and the output is frozen for every reference.** No carve-outs, nothing to diagnose.
 
-**2.2 Brackets arriving through another variable.** `#def` rolls the brackets *literally present* in
-its own value. `#def %a% = %b%` where `%b%` is a `#set` holding `{x|y}` does not roll once — the
-enumeration reaches the body through substitution and rerolls per reference. Resolve `#def` values in
-dependency order so a `#def` referencing another `#def` works; a `#def` referencing a `#set` macro
-cannot be made to roll and is diagnosed.
+`#include` is the exception: it resolves at Stage 9, after everything here, and is **not** permitted
+inside a `#def` value (§4, `def.include-in-value`).
 
-**2.3 Name collisions.** A name defined by both `#set` and `#def`, or twice by either, is a
-validation error — not last-wins. Silent precedence between two directives with opposite semantics is
-exactly the class of bug this spec exists to remove.
+**2.2 Name collisions must be caught before the map flattens them.** `Parser::extract_set_directives`
+writes `$variables[$name] = $m[2]` (`Parser.php:99-110`), so a duplicate is already lost by the time
+anyone can see it — last-wins, silently. Adding `extract_def_directives()` on the same pattern would
+inherit that, and produce the worst outcome: the validator reports an error while the renderer
+happily proceeds on last-wins. Contract: the **raw directive scan preserves every occurrence with its
+line number**; the validator is built from that list; the renderer must not silently continue past a
+collision on an already-validated path. This applies to `#set`/`#set` duplicates too, which are
+silently last-wins today.
 
-**2.4 Recursion.** `#def` values resolve with the same recursion + cycle guards `expand_variables`
-already applies, and the existing `variable.self-reference` / `variable.circular-reference`
-diagnostics extend to `#def`.
+**2.3 Recursion.** `#def` values resolve in dependency order with the recursion + cycle guards
+`expand_variables` already applies; the existing `variable.self-reference` /
+`variable.circular-reference` diagnostics extend to `#def`.
 
 ---
 
@@ -138,18 +142,75 @@ diagnostics extend to `#def`.
 
 ### Plugin (`plugin/src/Core/`)
 
+### 3.1 Where the roll stage goes — and what context it sees
+
+This is the load-bearing detail the first draft got wrong by saying "a roll stage where 4b was".
+Stage 4b sits at `Renderer.php:246-262`, i.e. **before** Stage 5 assembles the context
+(`:264-269`) and before runtime variables merge. A `#def` placed there would see neither globals nor
+runtime, so `#def %x% = %product_name% {a|b}` would freeze a literal `%product_name%`.
+
+Decisions:
+
+- **`#def` sees the full context: globals, runtime, `#set` macros, and earlier `#def` values.** The
+  roll stage therefore runs **after** Stage 5, not where 4b was.
+- **Precedence is unchanged: runtime > local > global** (`RenderContext.php:15, :72-74`). A runtime
+  variable with the same name as a `#def` overrides it, exactly as it overrides a `#set` today. The
+  roll then never happens for that name — the runtime value wins, and it is data, not a template.
+- **A `#def` referencing a `#set` macro freezes it.** `#def %a% = %b%` with `#set %b% = {x|y}`
+  expands `%b%` inside the `#def` value, rolls the enumeration there, and holds the result. This is
+  what dissolves the old §2.2 carve-out, and it is the intuitive reading: the author asked for this
+  value to be fixed.
+- **Order within the roll stage** mirrors the body: expand `%var%` → conditionals → plurals →
+  enumerations → permutations. Dependency order across several `#def` lines, with the cycle guard.
+
 1. **Delete Stage 4b** (`Render/Renderer.php:246-262`). `#set` values go into the context raw.
 2. **Add `#def` extraction** in `Engine/Parser.php` alongside `extract_set_directives()`. Mirror the
    existing regex exactly — `'/^[ \t]*#def[ \t]+%(\w+)%[ \t]*=[ \t]*(.*?)[ \t]*$/mu'`, name
    lowercased. **Do not use `\s`**: it consumes newlines and swallows the next directive as the value
    of an empty one. `Parser.php:102-107` carries a four-line comment about this and
    `test_extract_set_directives_empty_value_does_not_swallow_next` locks it.
-3. **Add a roll stage** where 4b was: for each `#def` value, skip if it contains `{?` or `{plural `
-   (§2.1), otherwise run `resolve_enumerations()` then `resolve_permutations()`. Resolve in
-   dependency order with a depth cap (§2.2, §2.4).
-4. Stage 5 merges `#def` values into the local layer beside `#set`, same precedence.
+3. **Add the roll stage after Stage 5** (§3.1), not where 4b was. Each `#def` value is rendered once
+   against the assembled context and the result replaces the raw value in the local layer.
+4. **Align the validator grammar with the parser grammar** — see §3.2. Do this for `#set` in the same
+   change, or `#def` will duplicate an existing divergence.
 5. Nothing else in the pipeline moves. Stage order (6a cond → 6b expand → 6c cond → 6d plural →
    7 enum → 8 perm → 9 include/shortcode → 10 post-process → 11 sanitize) is unchanged.
+
+### 3.2 The validator and the parser disagree about `#set` today — fix before duplicating it
+
+`Engine/Validator.php:147` matches `'/^#set\s+%(\w+)%\s*=\s*(.+)$/u'`; `Engine/Parser.php:107`
+matches `'/^[ \t]*#set[ \t]+%(\w+)%[ \t]*=[ \t]*(.*?)[ \t]*$/mu'`. Two differences, and the second is
+a live defect, verified:
+
+```
+'#set %x% ='    parser: matches, value=''      validator: NO MATCH → "Malformed #set directive"
+'#set %x% = '   parser: matches, value=''      validator: matches, value=' '
+```
+
+An empty `#set` value is a supported case — `ParserTest` locks it via
+`test_extract_set_directives_empty_value_does_not_swallow_next` — yet the editor reports it as
+malformed unless the author happens to leave a trailing space. That is a real bug today, independent
+of this spec.
+
+Contract going forward: **the validator grammar mirrors the parser grammar for both directives** —
+`[ \t]` rather than `\s`, and `(.*?)` rather than `(.+)` so empty values validate. The same applies
+to the globals textarea path (`Admin/SettingsPage.php:363-365`) and to every port. Adding `#def` on
+the current pattern would give the project four regexes to keep in sync instead of two; there should
+be one shared grammar definition per engine, referenced by both.
+
+### 3.3 `#def` is allowed everywhere `#set` is — decided, not deferred
+
+The globals textarea (`Admin/SettingsPage.php:338-344`) and per-binding overrides
+(`Admin/BindingsPage.php:1188-1192`) are real user surfaces for `#set`, parsed by
+`Parser::extract_set_directives` through `Validators`. Leaving this open would make §1's claim of
+"same scope layering" false in the only two places a non-developer actually types a directive.
+
+`#def` is accepted in both. That means parse, save-validation, help text and the placeholder examples
+move together in the same change — four touch points per surface, not one. Costed here so it is not
+discovered mid-implementation.
+
+Note the interaction with §3.1: a global `#def` rolls once per render of *each* template that
+references it, not once per site. It is a variable, not a cached constant.
 
 ### `spintax/core` (`W:\projects\spintax-php`)
 
@@ -180,9 +241,25 @@ New codes. A verdict change is breaking under the npm spec's §0.1, so these rid
 | Code | Fires when | Level |
 |---|---|---|
 | `def.malformed` | `#def` line without `=`, mirroring `set.malformed` | error |
-| `def.duplicate-name` | the same name defined twice, or by both `#set` and `#def` (§2.3) | error |
-| `def.not-rolled` | a `#def` value contains `{?` / `{plural ` (§2.1) or resolves through a `#set` macro (§2.2) — the roll-once promise does not hold | warning |
-| `plural.count-macro` | a `{plural %v%: …}` count slot references a `#set` (macro) variable whose value contains `{` or `[` | error |
+| `def.duplicate-name` | the same name defined twice, or by both `#set` and `#def` (§2.2) | error |
+| `def.include-in-value` | `#include` inside a `#def` value — resolves at Stage 9, cannot be rolled (§2.1) | error |
+| `plural.count-macro` | a `{plural %v%: …}` count slot resolves, **transitively**, to a `#set` macro carrying `{` or `[` | error |
+
+`def.not-rolled` from the first draft is gone: §2.1 removed the carve-outs it was meant to report.
+
+**`plural.count-macro` must be dependency-aware, not literal.** Checking only whether the named
+variable's own value contains a bracket misses the chain:
+
+```
+#set %m% = {1|4|9}
+#set %n% = %m%
+{plural %n%: a|b|c}
+```
+
+`%n%` holds no bracket, yet the count is macro-tainted and the render breaks exactly as if it did.
+The diagnostic must propagate taint through `#set` → `#set` references to a fixed point: a name is
+tainted if its value contains `{`/`[` **or** references a tainted name. A `#def` is always untainted —
+it is frozen before the plural pass — which is what makes it the fix the diagnostic points at.
 
 `plural.count-macro` is the lint that replaces what collapse-once used to fix implicitly. It is the
 diagnostic that tells a casino-style template author "this counter needs `#def`".
@@ -205,30 +282,50 @@ locale-blind".
 `validate/variable-circular-reference`. None of them would have caught the 2.2.0 change in either
 direction.
 
-`docs/spec-npm-engine.md:157-163` explains why — an enumeration-valued `#set` cannot be an
-exact-output cross-engine gate, because RNG selection is not part of the parity contract — and
-prescribes the workaround: **RNG-free values**. That workaround was never turned into a fixture.
-Do it here.
+**The all-identical-alternatives idea from the first draft does not work, and the reason is worth
+keeping.** `#def %x% = {a|a|a}` + `%x%-%x%` → `a-a` — but so does `#set %x% = {a|a|a}`. The fixture
+is deterministic and says nothing: it passes under both semantics, and would pass against an engine
+implementing `#def` as a plain alias of `#set`. It is the same trap as the literal `#def %n% = 5`,
+one level subtler.
 
-| Fixture | Template | Pins |
-|---|---|---|
-| `set/macro-multi-reference` | `#set %x% = {a\|a\|a}` + `%x%-%x%` → `a-a` | `#set` substitutes at every reference (all-identical alternatives make it deterministic) |
-| `set/macro-permutation` | `#set %x% = [<sep=-> a\|a]` + `%x%` | `#set` does not roll permutations either |
-| `def/roll-once-enumeration` | `#def %x% = {a\|a\|a}` + `%x%-%x%` | `#def` holds one value |
-| `def/roll-once-permutation` | `#def %x% = [<sep=-> a\|a]` + `%x%-%x%` | roll-once covers permutations, the asymmetry is gone |
-| `validate/def-malformed` | `#def %x% no equals` | `def.malformed` |
-| `validate/def-duplicate-name` | `#set %x% = a` + `#def %x% = b` | `def.duplicate-name` |
-| `validate/plural-count-macro` | `#set %n% = {1\|4\|9}` + `{plural %n%: a\|b\|c}` | `plural.count-macro` |
+**But the corpus can pin this properly, because it has seeded RNG.**
+`packages/conformance/fixtures/render-rng-selection.json` already carries `"rng": {"sequence": [1,1]}`,
+`"rng": "first"` and `"rng": "last"` fixtures, with notes explaining draw-by-draw which index each
+pass consumes. That is exactly the instrument this needs: the semantic difference between macro and
+roll-once **is a difference in how many draws the render consumes**, so a seeded sequence
+distinguishes them deterministically and cross-engine.
 
-The genuinely random case — that two references to a `#set` pool *can* differ — is a within-engine
-structural test, not a corpus fixture. Keep it as unit tests in each engine, the same split the BCS
-change used for strict-vs-lenient.
+This does make the fixtures depend on draw *count* and *order*, a stronger contract than output
+equality. That is deliberate: draw-order parity is already pinned by the existing `enum/*` and
+`perm/*` RNG fixtures, and it is precisely the property that would silently drift if one engine
+rolled `#def` in a different place in the pipeline.
 
-**Use all-identical alternatives, not literals.** "RNG-free value" is satisfied by `#def %n% = 5`,
-but a literal proves nothing about `#def`: there is no bracket, so no resolver runs and the fixture
-would pass against an engine that implements `#def` as a plain alias of `#set`. `{a|a|a}` and
-`[<sep=-> a|a]` are equally deterministic *and* actually drive the roll path. Literals belong in the
-fixtures only as the negative control.
+| Fixture | Template | RNG | Expect | Pins |
+|---|---|---|---|---|
+| `set/macro-multi-reference` | `#set %x% = {a\|b}` + `%x%-%x%` | `sequence: [0,1]` | `a-b` | `#set` resolves per reference — two draws |
+| `def/roll-once-enumeration` | `#def %x% = {a\|b}` + `%x%-%x%` | `sequence: [0,1]` | `a-a` | `#def` resolves once — one draw, held; the second draw is never consumed |
+| `def/roll-once-permutation` | `#def %x% = [<sep=-> a\|b]` + `%x%\|%x%` | `sequence` pinned per the existing `perm/*` convention | both sides identical | roll-once covers permutations — the bracket asymmetry is gone |
+| `set/macro-permutation` | `#set %x% = [<sep=-> a\|b]` + `%x%\|%x%` | as above, two shuffles | the two sides may differ | `#set` does not roll permutations either — the pair with the row above is what makes each meaningful |
+| `def/sees-runtime-context` | `#def %x% = %name%-{a\|b}` + runtime `name=Acme` | `sequence: [0]` | `Acme-a` twice | §3.1 — `#def` resolves against the full context, not a pre-Stage-5 one |
+Validation fixtures (no RNG needed): `validate/def-malformed` (`#def %x% no equals` →
+`def.malformed`), `validate/def-duplicate-name` (`#set %x% = a` + `#def %x% = b` →
+`def.duplicate-name`), `validate/plural-count-macro` — and a **chained** variant, `#set %m% = {1|4|9}`
++ `#set %n% = %m%` + `{plural %n%: …}`, which is the case a literal check misses (§4).
+
+`validate/set-empty-value` also belongs here, pinning that an empty `#set` value is *valid* — the
+divergence in §3.2 exists because nothing asserted it.
+
+**What stays in unit tests.** That two references to a `#set` pool *can* differ under a real RNG is a
+statistical claim, not a fixture; keep it per engine. The seeded fixtures above pin the mechanism;
+the unit tests pin that the mechanism is reached with a live RNG. Same split the BCS change used for
+strict-vs-lenient.
+
+**Reviewer note worth preserving:** the first draft claimed these fixtures "pin multi-reference
+semantics" when its chosen values could not distinguish the two engines' behaviour. If the seeded-RNG
+approach turns out not to hold cross-engine — draw order is a stronger contract than this project has
+previously leaned on — then the honest fallback is the reviewer's: keep only smoke and validation
+fixtures in the corpus, pin semantics per engine, and **do not describe the corpus as pinning it**.
+Overstating what a gate covers is how 2.2.0 flipped the semantics unnoticed in the first place.
 
 ---
 
@@ -317,11 +414,8 @@ say exactly that, and `plural.count-macro` finds the sites for them.
 
 1. **Plugin version — 3.0.0 or 2.6.0?** 3.0.0 is honest about a semantics change; 2.6.0 matches the
    precedent set two weeks ago by the BCS release, which was also breaking. Recommend 3.0.0.
-2. **Is `def.not-rolled` a warning or an error?** §2.1 and §2.2 are real holes in the promise. A
-   warning documents them; an error forbids the shapes outright and keeps `#def` honest. Recommend
-   warning for §2.1 (conditionals are a legitimate deferred case) and error for §2.2.
-3. **Does `#def` belong in the globals textarea and per-binding overrides?** No reason to forbid it,
-   but the help text and the `Validators` parsing path both assume "a raw `#set` block".
+2. ~~**Is `def.not-rolled` a warning or an error?**~~ **Resolved** — the diagnostic no longer exists.
+   Placing the roll stage after Stage 5 (§3.1) removed both carve-outs it was meant to report.
 4. **How many WP.org installs adopted collapse-once in the fourteen-day window?** Unknown, and it
    decides whether the Upgrade Notice needs migration instructions or just a changelog line.
 5. **Does the OpenCart port ship in lockstep or trail?** Its release route is independent and its

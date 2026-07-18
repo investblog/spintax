@@ -175,6 +175,14 @@ Decisions:
   graph through `#set` values to a fixed point. Found in the `spintax-php` implementation by review,
   fixed in `25ddca4`, and **every port must carry it** — it is not visible from the semantics alone.
 
+- **The alias map is every macro value the roll can see, not just local `#set`.** Same defect one
+  layer out, found on the second review pass: a global or runtime `%s% = %a%` pointing at a local
+  `#def %a%` is as real a dependency as a local `#set` doing it, and as invisible. Build the graph
+  from globals + `#set` + runtime, **minus the definition names themselves** — a `#def` shadows a
+  global of the same name, and hopping through the shadowed value computes the wrong graph.
+- **Name comparison is case-insensitive at every gate.** `%var%` references are, so an override
+  check that uses raw array keys will let `#def %x%` beat a caller-supplied `X`.
+
 **The convenience API counts as surface.** `spintax-php` exposes `Parser::process()`, a subset
 pipeline. Reimplementing its `#set` extractor on top of the combined directive scan made it strip
 `#def` lines while returning no value for them, so a template silently lost its definition and
@@ -194,6 +202,35 @@ not resolve.
    change, or `#def` will duplicate an existing divergence.
 5. Nothing else in the pipeline moves. Stage order (6a cond → 6b expand → 6c cond → 6d plural →
    7 enum → 8 perm → 9 include/shortcode → 10 post-process → 11 sanitize) is unchanged.
+
+### 3.1a A pre-existing hole the roll stage exposes: host constructs inside variable values
+
+Not part of the `#set`/`#def` contract, but it surfaces during this work and every engine carries
+it. Host constructs (the plugin's `[spintax …]`; whatever a host registers as protected) are
+shielded **once**, before the body is processed. Anything arriving afterwards — via a `#set`, a
+global, a runtime variable, or a frozen `#def` — meets the permutation resolver unprotected, which
+reads `[spintax slug="x"]` as a single-element permutation, strips the brackets, and delivers inert
+text to the nested-render hook.
+
+Verified in `spintax-php`: body, `#def`, `#set` and global sources were checked, and the three
+non-body ones all failed identically. So it predates `#def` by as long as both features have
+existed; the roll stage merely added a second entrance and made review look.
+
+Fix, applied in `31ecde3`: a **second shield pass immediately after variable expansion** (placed
+there, not later, so a construct arriving via a variable skips as few passes as a body one does),
+plus shielding definition values across their roll. Both share one placeholder map so a single
+restore covers every pass.
+
+**No corpus fixture can cover this** — the protect list is a host seam and is empty in a host-free
+run, which is exactly why nothing caught it. Each engine needs its own regression test; the one
+written here is a four-case provider (body / `#def` / `#set` / global) whose point is that all four
+agree.
+
+Security note for the plugin, worth stating before someone asks: this does **not** widen anything.
+A variable can now carry a `[spintax …]` through to the nested-render hook, but data-derived (T2)
+values are entity-encoded by `SpintaxShield` before reaching the engine, so a value containing a
+live shortcode can only come from a markup-authoring (T1) source already trusted to write one — per
+`docs/adr-0001-runtime-var-trust-levels.md`.
 
 ### 3.2 The validator and the parser disagree about `#set` today — fix before duplicating it
 

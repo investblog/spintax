@@ -1,9 +1,10 @@
 # `#set` / `#def` — variable expansion semantics (spec)
 
 Status: **IN PROGRESS.** Decisions taken: plugin ships as **3.0.0**, the OpenCart port ships **in
-lockstep**, delivery starts with `spintax/core`. Step 1 is underway — the engine half landed on
-`spintax-php` main (`062bd9a`, 175 tests green including the 138-fixture corpus, verified on the PHP
-8.0 floor); its validator diagnostics are next. Nothing is released until the corpus lands last.
+lockstep**, delivery starts with `spintax/core`. **Step 1 is complete** on `spintax-php` main —
+engine (`062bd9a`), two rounds of review fixes (`25ddca4`, `31ecde3`), validator (`93d4699`); 211
+tests green on PHP 8.2 and the 8.0 floor, corpus included. **Step 2 is the plugin.** Nothing is
+released until the corpus lands last.
 
 Supersedes the `#set` collapse-once behaviour introduced in 2.2.0
 (`13ac84a`, Renderer Stage 4b). Spans four engines plus the shared corpus and the public site, so it
@@ -298,6 +299,7 @@ New codes. A verdict change is breaking under the npm spec's §0.1, so these rid
 |---|---|---|
 | `def.malformed` | `#def` line without `=`, mirroring `set.malformed` | error |
 | `def.duplicate-name` | the same name defined twice, or by both `#set` and `#def` (§2.2) | error |
+| ↳ | **Confirmed 2026-07-19: this also covers `#set` + `#set`, which is silently last-wins today.** That is a verdict *tightening* beyond the original scope — a template that validates now stops validating — so it is a breaking diagnostic change and rides this release rather than a later one. **Every engine must agree**, or the corpus fixture will split the matrix the moment it lands in step 3. | |
 | `def.include-in-value` | `#include` inside a `#def` value — resolves at Stage 9, cannot be rolled (§2.1) | error |
 | `plural.count-macro` | a `{plural %v%: …}` count slot resolves, **transitively**, to a `#set` macro carrying `{` or `[` | error |
 
@@ -319,6 +321,28 @@ it is frozen before the plural pass — which is what makes it the fix the diagn
 
 `plural.count-macro` is the lint that replaces what collapse-once used to fix implicitly. It is the
 diagnostic that tells a casino-style template author "this counter needs `#def`".
+
+**Known limit, by construction.** The validator is handed global variable *names*, never their
+values, so taint cannot propagate through a global: a count referencing one is not flagged. Static
+analysis cannot see that far. This is why the runtime consequence (block silently dropped) is pinned
+by an engine test rather than left to the linter.
+
+**A second piece of advice flipped, and it is scattered.** "Forms must not contain nested brackets —
+extract via `#set` first" was **correct under collapse-once** (the `#set` froze to literal text) and
+is **wrong under a macro**: the value is substituted verbatim and puts the brackets straight back
+into the form slot, raising the very error it was meant to avoid. Verified both ways:
+
+```
+#set %syn% = {штука|вещь}   {plural 2: %syn%|штуки|штук}  →  ｛plural 2: ｛штука|вещь｝|…｝
+#def %syn% = {штука|вещь}   {plural 2: %syn%|штуки|штук}  →  штуки
+```
+
+The inventory in §6 missed this because it searched for places that *define* `#set`, not places that
+*advise* it. The advice lives in at least nine places across four repos, including **runtime error
+messages users see**: `PluralFormError` docblocks, the `Plurals` class docblock, the exception
+message in `Plurals` (PHP ×3 engines), the TS diagnostic at `packages/core/src/internal/render.ts`,
+`CLAUDE.md`, `docs/backlog.md`, and the OpenCart `dist/` copies. Fixed in `spintax-php`; every other
+engine must fix its own, and the message is byte-parity material in `Plurals.php`.
 
 **Blocker for the plugin half.** The plugin's validator is currently dead code on this path:
 `Engine/Validator.php:26` defaults `$locale = ''` and `:245-246` skips locale-dependent checks when

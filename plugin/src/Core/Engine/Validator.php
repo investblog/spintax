@@ -224,7 +224,7 @@ class Validator {
 	 * spintax brackets `{` `}` `[` `]`.
 	 *
 	 * Arity check (only when locale provided): form count must match the
-	 * locale family (3 for ru/uk/be, 2 for en/es/pt/de/...). Empty locale
+	 * locale family (3 for ru/uk/be + sr/hr/bs, 2 for en/es/pt/de/...). Empty locale
 	 * skips arity — useful when the validator runs without locale context
 	 * and wants to surface only structural issues.
 	 *

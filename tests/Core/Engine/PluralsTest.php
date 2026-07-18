@@ -154,6 +154,96 @@ class PluralsTest extends \WP_UnitTestCase {
 		$this->assertSame( 3, $this->plurals->plural_arity( 'be' ) );
 	}
 
+	public function test_arity_sr_is_3(): void {
+		$this->assertSame( 3, $this->plurals->plural_arity( 'sr' ) );
+	}
+
+	public function test_arity_hr_is_3(): void {
+		$this->assertSame( 3, $this->plurals->plural_arity( 'hr' ) );
+	}
+
+	public function test_arity_bs_is_3(): void {
+		$this->assertSame( 3, $this->plurals->plural_arity( 'bs' ) );
+	}
+
+	/**
+	 * Script and region subtags carry no plural grammar — every Serbian tag
+	 * normalises to `sr`. The suffix + new-locale pairing is what is untested
+	 * elsewhere; `normalize_base_lang` itself did not change.
+	 */
+	public function test_arity_sr_script_and_region_subtags_are_3(): void {
+		foreach ( array( 'sr-Latn', 'sr-Cyrl', 'sr_RS', 'sr-Latn-RS', 'SR' ) as $tag ) {
+			$this->assertSame(
+				3,
+				$this->plurals->plural_arity( $this->plurals->normalize_base_lang( $tag ) ),
+				"Expected arity 3 for locale tag {$tag}"
+			);
+		}
+	}
+
+	/**
+	 * `sat` is the probe because all three BCS buckets differ: 1 sat / 2 sata /
+	 * 5 sati. The tempting `bonus|bonusa|bonusa` collapses few and other, so it
+	 * would pass against a broken rule.
+	 */
+	public function test_plural_for_sr_buckets(): void {
+		$forms = array( 'sat', 'sata', 'sati' );
+		$this->assertSame( 'sat', $this->plurals->plural_for( 'sr', 1, $forms ) );
+		$this->assertSame( 'sata', $this->plurals->plural_for( 'sr', 2, $forms ) );
+		$this->assertSame( 'sati', $this->plurals->plural_for( 'sr', 5, $forms ) );
+		$this->assertSame( 'sati', $this->plurals->plural_for( 'sr', 11, $forms ) );
+		$this->assertSame( 'sata', $this->plurals->plural_for( 'sr', 22, $forms ) );
+		$this->assertSame( 'sati', $this->plurals->plural_for( 'sr', 0, $forms ) );
+	}
+
+	/**
+	 * Three-digit counts: mod100 must beat mod10, and the 11-trap has to hold
+	 * past 100 (101 is `one`, 111 is not).
+	 */
+	public function test_plural_for_hr_buckets_past_two_digits(): void {
+		$forms = array( 'sat', 'sata', 'sati' );
+		$this->assertSame( 'sat', $this->plurals->plural_for( 'hr', 101, $forms ) );
+		$this->assertSame( 'sati', $this->plurals->plural_for( 'hr', 111, $forms ) );
+		$this->assertSame( 'sata', $this->plurals->plural_for( 'hr', 102, $forms ) );
+		$this->assertSame( 'sati', $this->plurals->plural_for( 'bs', 112, $forms ) );
+	}
+
+	/**
+	 * The breaking half of adding BCS, asserted directly: a 2-form Croatian
+	 * template was valid before these locales joined the 3-form family, and is
+	 * an arity error after.
+	 */
+	public function test_hr_2_form_construct_throws_arity_error(): void {
+		$this->expectException( PluralArityError::class );
+		$this->plurals->apply( 'ima {plural 3: kolačić|kolačići}', 'hr' );
+	}
+
+	public function test_sr_2_form_construct_throws_arity_error(): void {
+		$this->expectException( PluralArityError::class );
+		$this->plurals->apply( 'ima {plural 3: kolačić|kolačići}', 'sr' );
+	}
+
+	public function test_bs_2_form_construct_throws_arity_error(): void {
+		$this->expectException( PluralArityError::class );
+		$this->plurals->apply( 'ima {plural 3: kolačić|kolačići}', 'bs' );
+	}
+
+	/**
+	 * Same break on the production path, which does NOT throw: the block goes
+	 * to output verbatim in fullwidth braces. This is what a stale 2-form BCS
+	 * template actually does to live content, so it is pinned deliberately.
+	 */
+	public function test_lenient_hr_2_form_construct_renders_verbatim(): void {
+		$this->assertSame(
+			"ima \u{FF5B}plural 3: kolačić|kolačići\u{FF5D}",
+			$this->plurals->apply(
+				'ima {plural 3: kolačić|kolačići}',
+				'hr',
+				array( 'lenient' => true )
+			)
+		);
+	}
+
 	public function test_arity_en_is_2(): void {
 		$this->assertSame( 2, $this->plurals->plural_arity( 'en' ) );
 	}

@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, seo, woocommerce, acf, content generation
 Requires at least: 6.2
 Tested up to: 7.0
-Stable tag: 2.4.0
+Stable tag: 2.5.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -22,7 +22,7 @@ Ideal for content managers and SEO specialists producing many similar-but-unique
 * **Permutations** `[<config>a|b|c]` — pick N elements, shuffle, join with custom separators
 * **Variables** `%var%` — global, local (`#set`), and shortcode-level variable scopes
 * **Conditionals** `{?VAR?then|else}` — render a branch based on whether a variable is set (also `{?!VAR?then}` inverted)
-* **Plural agreement** `{plural <count>: form1|form2|form3}` — pick grammatically correct noun form by count. RU/UK/BE 3-form (one|few|many), EN-style 2-form (one|many). First spintax engine with first-class plurals.
+* **Plural agreement** `{plural <count>: form1|form2|form3}` — pick grammatically correct noun form by count. RU/UK/BE and SR/HR/BS 3-form (one|few|many), EN-style 2-form (one|many). Other languages fall back to the 2-form rule, so `pl`, `cs`, `sk`, `sl` and `bg` are bucketed by a rule that is not theirs rather than rejected. First spintax engine with first-class plurals.
 * **Nested templates** — embed templates within templates via `#include` or `[spintax]`
 * **ACF / post-meta bindings (NEW in 2.0)** — configure once per post type, render Spintax templates into ACF text/textarea/wysiwyg fields or post-meta keys on every matching post. Auto-seed empty fields, preserve manual edits, Bulk Apply via Action Scheduler.
 * **WooCommerce product context (NEW in 2.2)** — on a single-product page, `[spintax]` / `spintax_render()` automatically expose the current product as `%product_name%`, `%product_sku%`, `%product_categories%`, `%product_attribute_<slug>%`, and more. Volatile pricing is intentionally out of scope. WooCommerce is optional — the variables simply appear when a product context is present.
@@ -58,7 +58,7 @@ Go to Spintax > Add New in the WordPress admin. Enter a title and your spintax m
 * `%variable%` — variable reference
 * `#set %var% = value` — local variable definition
 * `{?VAR?then|else}` — conditional: render a branch by truthiness of `%VAR%` (also `{?!VAR?then}` inverted)
-* `{plural %Count%: form1|form2|form3}` — plural agreement: picks the correct grammatical form by count (RU 3-form, EN 2-form)
+* `{plural %Count%: form1|form2|form3}` — plural agreement: picks the correct grammatical form by count (RU/UK/BE and SR/HR/BS 3-form, EN-style 2-form)
 * `/#comment#/` — block comment (stripped from output)
 * `#include "slug"` — embed another template
 
@@ -252,6 +252,11 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 2.5.0 =
+* **New: Serbian, Croatian and Bosnian plural agreement.** `{plural %n%: sat|sata|sati}` now picks the right form for `sr`, `hr` and `bs`, on the same boundaries as Russian — one for 1, 21, 101 (but not 11), few for 2-4, 22-24 (but not 12-14), many for the rest. Serbian works in both scripts: `sr-Latn` and `sr-Cyrl` follow identical grammar, and the script lives only in the words you write.
+* **Action required if you already write Croatian, Serbian or Bosnian templates.** These languages previously fell back to the English 2-form rule, so `{plural %n%: kolačić|kolačići}` was accepted — and quietly rendered from the wrong set of forms. They now require **three** forms. A two-form construct is an error: at render time it is left in the page verbatim inside fullwidth braces (`｛plural 3: …｝`) instead of producing text. Search your templates for `{plural` on those languages and add the third form before updating. No other language changes behaviour.
+* Tests: BCS bucket boundaries, both Serbian scripts, region suffixes (`sr_RS`), and the two-form error on both the strict and the lenient path. The rule ships identically in `@spintax/core` 0.2.0 and `spintax/core`, locked by the shared cross-engine corpus, so all three engines agree.
+
 = 2.4.0 =
 * **New: WooCommerce product-field bindings.** Bind a Spintax template to a product's description or short description and have it seeded — or regenerated — per product, through the machinery you already use: save, cron, Bulk Apply, manual-edit preservation. Writes go through WooCommerce itself rather than straight into the database, so its caches, lookup tables and save hooks stay consistent.
 * **New: product data inside a binding.** Tick "Expose WooCommerce product data" and a template generating product copy can use `%product_name%`, `%product_sku%`, `%product_type%`, `%product_categories%`, `%product_tags%`, `%product_attribute_<slug>%` and more — so the copy can say something *true* about the product instead of merely varying its wording. Pricing stays out on purpose: it is volatile, and folding it into stored copy would churn on every price change.
@@ -402,6 +407,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 2.5.0 =
+Adds Serbian, Croatian and Bosnian plural agreement (both Serbian scripts). Breaking for those three languages only: they used to accept a 2-form `{plural}` and now require 3, because they were silently using the English rule. A stale 2-form construct renders as `｛plural …｝` instead of text — add the third form before updating. All other languages are unaffected.
 
 = 2.4.0 =
 New: WooCommerce product-field bindings. Generate a product's description or short description from a template, per product, with that product's own SKU, categories and attributes. Only those two fields are writable; manual edits are preserved.

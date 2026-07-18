@@ -16,12 +16,12 @@ defined( 'ABSPATH' ) || exit;
  *   <count> — literal integer string OR `%Var%` reference (already
  *             substituted by `expand_variables` upstream)
  *   forms   — pipe-separated, arity must match the locale family
- *             (3 for ru/uk/be, 2 for en/es/pt/de/...)
+ *             (3 for ru/uk/be + sr/hr/bs, 2 for en/es/pt/de/...)
  *
  * Locale rules (V1):
- *   - East Slavic (ru/uk/be): one (1, 21, 31… not 11), few (2-4, 22-24…
- *                              not 12-14), many (everything else, 0).
- *   - EN-style (default):     one (n=1), many (everything else).
+ *   - Slavic 3-form (ru/uk/be + sr/hr/bs): one (1, 21, 31… not 11),
+ *     few (2-4, 22-24… not 12-14), many (everything else, 0).
+ *   - EN-style (default): one (n=1), many (everything else).
  *
  * Errors:
  *   - PluralFormError  — form slot contains nested spintax brackets
@@ -258,9 +258,12 @@ class Plurals {
 	/**
 	 * Pick the matching plural form by the locale's grammar rule.
 	 *
-	 * - East Slavic (ru/uk/be): one (1, 21, 31… but not 11), few (2-4,
-	 *   22-24… but not 12-14), many (everything else, including 0).
+	 * - Slavic 3-form (ru/uk/be + sr/hr/bs): one (1, 21, 31… but not 11), few
+	 *   (2-4, 22-24… but not 12-14), many (everything else, including 0).
 	 * - EN-style (default): one (n=1), many (everything else).
+	 *
+	 * Counts are integers here (a non-numeric slot is erased upstream), so the
+	 * BCS/East-Slavic split on fractions cannot be reached.
 	 *
 	 * @param string   $base_lang Normalised base language tag.
 	 * @param int      $n         Count value (negative supported via abs).
@@ -276,6 +279,9 @@ class Plurals {
 			case 'ru':
 			case 'uk':
 			case 'be':
+			case 'sr':
+			case 'hr':
+			case 'bs':
 				if ( 1 === $mod10 && 11 !== $mod100 ) {
 					return $forms[0];
 				}
@@ -293,13 +299,18 @@ class Plurals {
 	 * Expected number of plural forms for the locale.
 	 *
 	 * @param string $base_lang Normalised base language tag.
-	 * @return int 3 for East Slavic, 2 for EN-style default.
+	 * @return int 3 for the Slavic one/few/other family, 2 for EN-style default.
 	 */
 	public function plural_arity( string $base_lang ): int {
+		// BCS shares the East-Slavic integer rule exactly; CLDR names the
+		// third bucket "other" rather than "many", same slot positionally.
 		switch ( $base_lang ) {
 			case 'ru':
 			case 'uk':
 			case 'be':
+			case 'sr':
+			case 'hr':
+			case 'bs':
 				return 3;
 			default:
 				// EN-style 2-form locales: en, es, pt, de, it, fr, nl, sv,

@@ -224,6 +224,12 @@ The genuinely random case — that two references to a `#set` pool *can* differ 
 structural test, not a corpus fixture. Keep it as unit tests in each engine, the same split the BCS
 change used for strict-vs-lenient.
 
+**Use all-identical alternatives, not literals.** "RNG-free value" is satisfied by `#def %n% = 5`,
+but a literal proves nothing about `#def`: there is no bracket, so no resolver runs and the fixture
+would pass against an engine that implements `#def` as a plain alias of `#set`. `{a|a|a}` and
+`[<sep=-> a|a]` are equally deterministic *and* actually drive the roll path. Literals belong in the
+fixtures only as the negative control.
+
 ---
 
 ## 6. Documentation surface
@@ -241,6 +247,7 @@ at :212 and the mistakes table at :228); spintax.net `strings.ts` `syntaxVarRule
 |---|---|---|
 | spintax-php | `README.md:60` | "enumerations inside collapse once, so every reference sees the same value" — the best-worded statement anywhere, and now inverted |
 | spintax-js | `packages/authoring-prompt/src/index.ts:276-282` | teaches `#set` as "chosen ONCE, and every `%v%` is the SAME" — **LLM-facing**, must be rewritten to `#def` for consistency / `#set` for variation |
+| spintax-js | `packages/authoring-prompt/test/prompt.test.ts` | asserts the prompt's collapse-once wording — *"Exactly one of the two words, never a mix — that is the collapse-once promise"* |
 | spintax-js | `docs/spec-npm-engine.md:157-163, 208` | §3.1 "collapse-once semantics" as a required parity item |
 | spintax-js | `CLAUDE.md:46,63,71,153`, `AGENTS.md:37` | "`#set` collapse-once" in the parity list |
 | spintax (WP) | `CLAUDE.md:194` | the collapse-once note (version already corrected 2.2.1 → 2.2.0) |
@@ -252,6 +259,16 @@ at :212 and the mistakes table at :228); spintax.net `strings.ts` `syntaxVarRule
 help text, `packages/core/README.md`, spintax-js `README.md`, spintax-php `README.md`, opencart
 `README.md`, spintax.net syntax table ×14 locales + `play.ts` cheatsheet +
 `static/downloads/Spintax.sublime-syntax` grammar token.
+
+**The authoring prompt's example moves, it does not get deleted.** The prompt currently sells
+collapse-once with `#set %product% = {course|training}` and *"Get our course today — the training
+starts Monday"*, and its test asserts *"Exactly one of the two words, never a mix — that is the
+collapse-once promise"*. That example is the single best demonstration of why roll-once must exist:
+two references in one sentence where a mix reads as a defect. Re-point it at `#def`, keep the prose,
+and re-point the test with it. The prompt then needs a *second* example teaching `#set` for the
+opposite case — a synonym pool that should vary across a page — so a model learns the pair, not a
+replacement. Without that, models will simply use `#def` everywhere and lose all variation, which is
+the failure mode in the opposite direction.
 
 **`#const` collision.** `docs/gtw-syntax-reference.md:291` and `docs/spec-v1.md:291` already reserve
 `#const` for a deferred GTW primitive — "correlated parallel selection", i.e. picking a matched index
@@ -275,6 +292,15 @@ before the engines turns both `php-parity` legs red.
 4. **OpenCart port** — mirror, its own release route (`scripts/release.sh`).
 5. **spintax.net** — engine bump + the second engine copy + `#def` docs. User-owned; not touched
    without an explicit ask.
+
+**Verify parity by the counter, not the badge.** A corpus runner that discovers no fixtures still
+exits 0 and prints `OK`. Measured on the 2.5.0 release run (`29650073630`) and re-run locally on
+2026-07-18, the true figure is **138 tests / 151 assertions / 1 skip**, identical on both matrix
+legs. Two rules follow: a count *below* the last known figure is a red flag regardless of colour, and
+the two legs must agree — if they diverge, one of them checked out a stale default branch, which is
+precisely the failure this merge order exists to prevent. CLAUDE.md's pre-push checklist advertised
+107 until this spec was written; a stale reference number is worse than none, because it trains the
+reader to ignore the mismatch.
 
 **Versioning.** This changes what existing templates mean, wider than the BCS change did — that one
 was breaking for three locales and shipped as a minor. Recommend **plugin 3.0.0**, `spintax/core`

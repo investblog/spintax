@@ -287,7 +287,7 @@ docker run --rm -v "W:\Projects\spintax-js:/js" -v "W:\projects\spintax:/spintax
   -w /js/packages/conformance/php -e SPINTAX_PLUGIN_SRC=/spintax/plugin/src php:8.2-cli vendor/bin/phpunit
 ```
 
-Green = 107 tests, 1 known skip (`neutralize`, a deliberate TS-only divergence).
+Green = **138 tests, 151 assertions, 1 known skip** (`neutralize`, a deliberate TS-only divergence), as of 2026-07-18. **Read the counter, not the exit code.** The corpus grows, so this number dates — treat a count *lower* than the last known figure as a red flag (a runner that discovers no fixtures still exits 0 and prints a cheerful `OK`), and update this line when you add fixtures. In CI the same figure must appear on **both** `php-parity` legs; two legs disagreeing means one engine checked out a stale default branch.
 
 The corpus is the **only** machine check binding this engine to `@spintax/core`, the `spintax/core` Composer package and the OpenCart port. It used to be a manual gate, and that is exactly how three post-process defects reached users in the 2.3.2 window — a Spanish fix shipped here with zero PHP-side tests, its only guard sitting in another repository's corpus that nothing here ran. Both directions are now wired: this repo's CI runs the corpus against this engine, and `spintax-js`'s CI runs a changed corpus against both PHP engines, so a fixture cannot land there without them agreeing.
 

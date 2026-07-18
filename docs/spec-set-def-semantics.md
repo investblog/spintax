@@ -1,6 +1,11 @@
 # `#set` / `#def` — variable expansion semantics (spec)
 
-Status: **DRAFT, not coded.** Supersedes the `#set` collapse-once behaviour introduced in 2.2.0
+Status: **IN PROGRESS.** Decisions taken: plugin ships as **3.0.0**, the OpenCart port ships **in
+lockstep**, delivery starts with `spintax/core`. Step 1 is underway — the engine half landed on
+`spintax-php` main (`062bd9a`, 175 tests green including the 138-fixture corpus, verified on the PHP
+8.0 floor); its validator diagnostics are next. Nothing is released until the corpus lands last.
+
+Supersedes the `#set` collapse-once behaviour introduced in 2.2.0
 (`13ac84a`, Renderer Stage 4b). Spans four engines plus the shared corpus and the public site, so it
 is a cross-engine release in the shape the 2.5.0 BCS change established.
 
@@ -412,11 +417,22 @@ say exactly that, and `plural.count-macro` finds the sites for them.
 
 ## 8. Open questions
 
-1. **Plugin version — 3.0.0 or 2.6.0?** 3.0.0 is honest about a semantics change; 2.6.0 matches the
-   precedent set two weeks ago by the BCS release, which was also breaking. Recommend 3.0.0.
+1. ~~**Plugin version — 3.0.0 or 2.6.0?**~~ **Resolved: 3.0.0.**
 2. ~~**Is `def.not-rolled` a warning or an error?**~~ **Resolved** — the diagnostic no longer exists.
    Placing the roll stage after Stage 5 (§3.1) removed both carve-outs it was meant to report.
 4. **How many WP.org installs adopted collapse-once in the fourteen-day window?** Unknown, and it
    decides whether the Upgrade Notice needs migration instructions or just a changelog line.
-5. **Does the OpenCart port ship in lockstep or trail?** Its release route is independent and its
-   installed base is the one most likely to hold enumeration-valued `#set` counters.
+5. ~~**Does the OpenCart port ship in lockstep or trail?**~~ **Resolved: lockstep.** Its release
+   still goes through its own `scripts/release.sh`, but it does not trail a release behind.
+
+### Findings from step 1 worth carrying forward
+
+- **Nothing pinned collapse-once.** Not one test in `spintax-php` — and per the inventory, not one
+  corpus fixture — asserted the behaviour introduced in 0.2.0. Removing it broke nothing, which
+  sounds reassuring and is the opposite: the semantics could have flipped in either direction
+  unnoticed, and did.
+- **The corpus needed no changes to keep passing.** 138/138 green against the new engine before a
+  single fixture was written. Read that as confirmation the gate does not cover this, not as
+  evidence the change is safe.
+- The permutation test asserts only that the two references *agree*, not what they resolve to.
+  Shuffle output under a sequenced RNG is an implementation detail; agreement is the contract.

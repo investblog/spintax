@@ -167,6 +167,20 @@ Decisions:
   value to be fixed.
 - **Order within the roll stage** mirrors the body: expand `%var%` → conditionals → plurals →
   enumerations → permutations. Dependency order across several `#def` lines, with the cycle guard.
+- **Dependency discovery must follow `#set` aliases, not just direct references.** A `#def` can
+  reach another `#def` through a macro — `#def %b% = %s%` where `#set %s% = %a%` and `%a%` is a
+  `#def`. Because a `#set` is expanded at *reference* time, that dependency is invisible in `%b%`'s
+  own text. Ordering on direct `%name%` matches alone rolls `%b%` first and freezes an unexpanded
+  `%a%` into it; if `%b%` then feeds a plural count, the block silently vanishes. Walk the reference
+  graph through `#set` values to a fixed point. Found in the `spintax-php` implementation by review,
+  fixed in `25ddca4`, and **every port must carry it** — it is not visible from the semantics alone.
+
+**The convenience API counts as surface.** `spintax-php` exposes `Parser::process()`, a subset
+pipeline. Reimplementing its `#set` extractor on top of the combined directive scan made it strip
+`#def` lines while returning no value for them, so a template silently lost its definition and
+printed `%x%`. Rule for every engine: a directive-aware helper either handles both directives or
+leaves the one it does not handle **in the body**, where it is visible. Never strip what you will
+not resolve.
 
 1. **Delete Stage 4b** (`Render/Renderer.php:246-262`). `#set` values go into the context raw.
 2. **Add `#def` extraction** in `Engine/Parser.php` alongside `extract_set_directives()`. Mirror the

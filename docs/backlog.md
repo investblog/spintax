@@ -216,3 +216,48 @@ The cost is not hypothetical. The Spanish sentence-opener fix shipped to WordPre
 **Fix (at implementation time).** Add a `conformance` job to `ci.yml`: check out `investblog/spintax-js` (public), `composer install` in `packages/conformance/php`, then run PHPUnit with `SPINTAX_PLUGIN_SRC` pointed at this checkout's `plugin/src`. No WordPress and no MySQL are needed — the Core engine is pure PHP — so it is a ~30-second job on a stock PHP runner. Scope it to changes under `plugin/src/Core/` if the minutes matter. The mirror job belongs in spintax-js too (drive the corpus through a checked-out plugin), so that neither engine can drift on its own.
 
 **Trigger:** just do it — it is one CI job, and the failure mode it prevents has already reached users once.
+
+---
+
+### The plugin's plural diagnostics are locale-blind
+
+**Status:** open — surfaced by the independent review of 2.5.0 (2026-07-18). Pre-existing since 1.5.0; the BCS break is what makes it bite.
+
+**Problem.** Two paths that should tell an author "this template's plural block has the wrong number of forms" don't, because neither is given a locale:
+
+- `Validator::validate()` (`plugin/src/Core/Engine/Validator.php:26`) takes `string $locale = ''` and skips the arity check entirely when it is empty (`:245`). Its only content-side caller, `MetaBoxes.php:361`, passes three arguments — no locale. `SettingsPage.php:379` passes one. So the arity diagnostic is effectively dead code in the plugin. `@spintax/core`'s `validate()` surfaces `plural.arity` correctly; the gap is plugin-side only.
+- Preview locale ≠ render locale. `MetaBoxes.php:293` calls `process_template( $content )` with no locale, so `Renderer.php:306` falls back to the **site** locale, while the real render path resolves `_spintax_locale` first (`Renderer.php:196`). A template carrying `_spintax_locale=hr` on an `en_US` site previews under `en` — a stale 2-form BCS template previews clean, and a corrected 3-form one previews as fullwidth mush. Exactly backwards from what an author needs during this upgrade.
+
+The 2.5.0 Upgrade Notice tells BCS authors to search their templates for `{plural` **by hand**, and the two surfaces that could have flagged it for them are both locale-blind. That instruction was written correctly for the shipped behaviour, but it is a symptom, not the intended design.
+
+**Fix (at implementation time).** Thread the resolved template locale (`_spintax_locale` → site locale, the same ladder `Renderer.php:196` uses) into both call sites. Extract that resolution into one place rather than duplicating the fallback a third time. Regression tests: a 2-form `{plural}` in a template with `_spintax_locale=hr` must raise an editor-visible arity error, and its preview must render under `hr`, not the site locale.
+
+**Trigger:** the next report of "the validator said my template was fine and the front end shows `｛plural …｝`", or the next time `MetaBoxes` / `Validator` is touched.
+
+---
+
+### Cached output delays the 2.5.0 BCS break past the upgrade
+
+**Status:** open (doc-level) — surfaced by the independent review of 2.5.0 (2026-07-18).
+
+**Problem.** `CacheManager` keys renders on `{template_id}_{version}_{context_hash}` inside a salted group (`:160`) — no plugin or engine version component. So existing BCS renders survive the 2.5.0 upgrade and keep serving the old (wrongly bucketed) output until TTL expiry, a template edit, or a cache-salt bump. The Upgrade Notice reads as though the fullwidth `｛plural …｝` appears **on update**; in practice it appears whenever the cache next turns over, which makes it *harder* to correlate with the upgrade, not easier.
+
+Related to the existing "locale absent from render cache key" entry above — same key, adjacent defect.
+
+**Fix (at implementation time).** Cheapest correct option is to fold `SPINTAX_VERSION` into the cache salt so a plugin update invalidates renders wholesale; that is one line and it makes every future engine change visible immediately. If that is too blunt (large sites re-render everything on each update), the alternative is a one-shot salt bump on engine-behaviour releases, driven from the upgrade routine. Either way, say in the next changelog that the symptom surfaces on cache turnover.
+
+**Trigger:** bundle with the locale-in-cache-key fix — they touch the same key construction.
+
+---
+
+### Gap: the fullwidth-brace degrade is not in the shared corpus
+
+**Status:** open — surfaced by the independent review of 2.5.0 (2026-07-18).
+
+**Problem.** Lenient mode emitting a malformed plural block verbatim in fullwidth braces (U+FF5B / U+FF5D) is the **production** path — the plugin renders with `'lenient' => true` (`Renderer.php:310`) and never throws. After 2.5.0 it is also the headline user-visible symptom of the BCS break: every stale 2-form BCS template in the wild now routes through it. Yet no fixture in `packages/conformance/fixtures/*.json` contains a fullwidth brace. That output is pinned only by per-engine unit tests.
+
+It is also the one output where the engines derive the string **differently**: PHP emits the exact source substring, TS *reconstructs* it as `` `{plural ${countRaw}:${formsRaw}}` `` (`render.ts:301`). No divergent case was constructed during review — both operate post-expansion and both preserve raw slices — so this is a coverage gap, not a proven parity break. That is precisely the shape of thing the corpus exists to catch before it becomes one.
+
+**Fix (at implementation time).** One corpus fixture in `spintax-js`: a 2-form `{plural}` under `sr`, expecting the fullwidth-braced verbatim block. Cheap insurance on the path most users will actually hit. The strict-throw half stays per-engine by construction — a fixture has no vocabulary for a thrown exception and `@spintax/core` has no strict mode to throw from.
+
+**Trigger:** next corpus change in `spintax-js`; land it there, not here.

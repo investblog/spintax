@@ -1,10 +1,22 @@
 # `#set` / `#def` — variable expansion semantics (spec)
 
-Status: **IN PROGRESS.** Decisions taken: plugin ships as **3.0.0**, the OpenCart port ships **in
-lockstep**, delivery starts with `spintax/core`. **Step 1 is complete** on `spintax-php` main —
-engine (`062bd9a`), two rounds of review fixes (`25ddca4`, `31ecde3`), validator (`93d4699`); 211
-tests green on PHP 8.2 and the 8.0 floor, corpus included. **Step 2 is the plugin.** Nothing is
-released until the corpus lands last.
+Status: **IN PROGRESS — steps 1-3 done, nothing released.** Decisions taken: plugin ships as
+**3.0.0**, the OpenCart port ships **in lockstep**.
+
+| # | Repo | State |
+|---|---|---|
+| 1 | `spintax-php` | ✅ `062bd9a` engine, `25ddca4`+`31ecde3`+`0abadfe` review fixes, `93d4699` validator — 237 tests, CI green |
+| 2 | `spintax` (plugin) | ✅ `843966f` — 680 PHPUnit, PHPCS 0/0, CI green |
+| 3 | `spintax-js` | ✅ `2327216` — 513 tests, corpus **138 → 160**, both `php-parity` legs green |
+| 4 | `spintax-opencart` | ⬜ next |
+| 5 | `spintax.net` | ⬜ two engine copies; user-owned, ask first |
+
+**The contract is now actually bound.** Before step 3 the corpus pinned nothing about this
+semantics — it stayed green through the flip. It now runs 160 cases identically against the TS
+engine, the WordPress plugin and `spintax/core`, with both CI legs reporting the same counters
+(160 tests / 173 assertions / 1 skip).
+
+No version is bumped and no tag exists. Releases are cut after the last engine.
 
 Supersedes the `#set` collapse-once behaviour introduced in 2.2.0
 (`13ac84a`, Renderer Stage 4b). Spans four engines plus the shared corpus and the public site, so it
@@ -529,7 +541,7 @@ before the engines turns both `php-parity` legs red.
 
 **Verify parity by the counter, not the badge.** A corpus runner that discovers no fixtures still
 exits 0 and prints `OK`. Measured on the 2.5.0 release run (`29650073630`) and re-run locally on
-2026-07-18, the true figure is **138 tests / 151 assertions / 1 skip**, identical on both matrix
+2026-07-18, the true figure is **160 tests / 173 assertions / 1 skip**, identical on both matrix
 legs. Two rules follow: a count *below* the last known figure is a red flag regardless of colour, and
 the two legs must agree — if they diverge, one of them checked out a stale default branch, which is
 precisely the failure this merge order exists to prevent. CLAUDE.md's pre-push checklist advertised

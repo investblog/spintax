@@ -198,7 +198,7 @@ Lean option 1 unless a user actually hits the "added new legacy data after first
 
 **Status:** ✅ **CLOSED 2026-07-14.** Both directions are wired, so neither side can drift alone:
 - this repo — the `conformance` job in `ci.yml` checks out `investblog/spintax-js` and runs its
-  WP-free runner against `plugin/src` on every push (138 tests as of 2026-07-18, ~15s, no WordPress
+  WP-free runner against `plugin/src` on every push (160 tests as of 2026-07-19, ~15s, no WordPress
   and no MySQL).
   `build` depends on it, so a parity break blocks the ZIP the release pipeline ships;
 - `spintax-js` — the `php-parity` job runs a **changed** corpus against both PHP engines (this

@@ -1,22 +1,25 @@
 # `#set` / `#def` — variable expansion semantics (spec)
 
-Status: **IN PROGRESS — steps 1-3 done, nothing released.** Decisions taken: plugin ships as
-**3.0.0**, the OpenCart port ships **in lockstep**.
+Status: **RELEASED 2026-07-19 — plugin 3.0.0, `spintax/core` 0.3.0, `@spintax/core` 0.3.0.**
+OpenCart remains, and spintax.net after it.
 
 | # | Repo | State |
 |---|---|---|
-| 1 | `spintax-php` | ✅ `062bd9a` engine, `25ddca4`+`31ecde3`+`0abadfe` review fixes, `93d4699` validator — 237 tests, CI green |
-| 2 | `spintax` (plugin) | ✅ `843966f` — 680 PHPUnit, PHPCS 0/0, CI green |
-| 3 | `spintax-js` | ✅ `2327216` — 513 tests, corpus **138 → 160**, both `php-parity` legs green |
-| 4 | `spintax-opencart` | ⬜ next |
+| 1 | `spintax-php` | ✅ released **v0.3.0**, on Packagist |
+| 2 | `spintax` (plugin) | ✅ released **v3.0.0**, on WordPress.org |
+| 3 | `spintax-js` | ✅ released **v0.3.0**, on npm with provenance |
+| 4 | `spintax-opencart` | ⬜ **unblocked now** — bump the `spintax/core` pin, `composer run sync-kernel`, then its own `Orchestrator` (a fourth copy of the stage order, still doing Stage 4b) |
 | 5 | `spintax.net` | ⬜ two engine copies; user-owned, ask first |
 
-**The contract is now actually bound.** Before step 3 the corpus pinned nothing about this
-semantics — it stayed green through the flip. It now runs 160 cases identically against the TS
-engine, the WordPress plugin and `spintax/core`, with both CI legs reporting the same counters
-(160 tests / 173 assertions / 1 skip).
+**The contract is bound.** The corpus runs 160 cases identically against the TS engine, the
+WordPress plugin and `spintax/core`, with both CI parity legs reporting the same counters.
 
-No version is bumped and no tag exists. Releases are cut after the last engine.
+**[URGENT, separate from this change] The OpenCart port is a whole minor behind.** Its pin is
+`spintax/core: ^0.1`, which pre-1.0 means `>=0.1.0 <0.2.0` and can never reach 0.2.0 — so it missed
+the BCS plural release entirely. Verified on the shipped kernel: `sr`/`hr`/`bs` report arity 2 and
+`{plural 5: sat|sata|sati}` under `sr` renders as fullwidth braces, live in v0.2.6. `KernelLoadsTest`
+compares the shipped tree against the pin and cannot see this; nothing compares the pin against the
+latest release.
 
 Supersedes the `#set` collapse-once behaviour introduced in 2.2.0
 (`13ac84a`, Renderer Stage 4b). Spans four engines plus the shared corpus and the public site, so it

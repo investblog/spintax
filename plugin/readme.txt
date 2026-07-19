@@ -153,7 +153,7 @@ The export/import pair is the recommended staging→production sync path; bindin
 A binding template sees four layered variable sources (later layers override earlier ones):
 
 * **Global variables** — the `#set` block in Settings → Spintax. Site-wide.
-* **Per-binding overrides** — a `#set` block in the binding's Variables tab. Applies to that binding only.
+* **Per-binding overrides** — a block of `#set` / `#def` lines in the binding's Variables tab. Applies to that binding only.
 * **Post context** (opt-in checkbox) — `%post_id%`, `%post_title%`, `%post_url%`, `%post_slug%`, `%post_date%`, `%post_modified%`, `%author_id%`, `%author_name%`.
 * **ACF sibling fields** (opt-in checkbox, ACF-target bindings only) — every top-level text / textarea / wysiwyg field in the same ACF group, available as `%acf_<field_name>%`. Siblings are always fresh on save: the binding runs after ACF persists.
 

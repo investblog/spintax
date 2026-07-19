@@ -316,9 +316,13 @@ class BindingApplier {
 	/**
 	 * Render binding source against the post's variable context.
 	 *
-	 * Binding `variables.overrides` is prepended to the source as a
-	 * `#set` block so the existing renderer picks them up as locals
-	 * (sitting between global settings and post-context runtime vars).
+	 * Binding `variables.overrides` is prepended to the source **verbatim**, so the renderer's own
+	 * directive extraction picks the lines up as locals (sitting between global settings and
+	 * post-context runtime vars). Both directives work there — `#set` as a macro, `#def` as
+	 * roll-once — precisely because nothing parses the block on its way in. That is what separates
+	 * it from the Settings globals textarea, which is `#set`-only: globals persist as a flat
+	 * name => value map that records no directive kind, so a `#def` there would validate and never
+	 * reach the renderer.
 	 *
 	 * The plural locale comes from the source template, mirroring `Renderer::render()`'s ladder —
 	 * `_spintax_locale` first, site locale second. Rendering through the site locale instead is a

@@ -74,7 +74,7 @@ One binding describes one rendering relationship. Stored in a single autoloaded 
   'variables'  => [
     'expose_post_context'  => true,    // %post_id%, %post_title%, etc.
     'expose_acf_siblings'  => false,   // %acf_<name>% for other fields in same group
-    'overrides'            => '',      // raw #set block, per-binding scope
+    'overrides'            => '',      // raw directive block (#set / #def), per-binding scope
   ],
   'triggers'   => [
     'save_post'     => true,
@@ -107,7 +107,7 @@ Both modes coexist freely across bindings on the same site / post type. Selectio
 Resolved in this order (later layers override earlier):
 
 1. **Global** — variables from Settings → Spintax (always available).
-2. **Binding overrides** — per-binding `#set` block.
+2. **Binding overrides** — per-binding block of `#set` / `#def` lines.
 3. **Post context** — if `expose_post_context = true`: `%post_id%`, `%post_title%`, `%post_url%`, `%post_slug%`, `%author_name%`, `%author_id%`, `%post_date%`, `%post_modified%`.
 4. **ACF siblings** — if `expose_acf_siblings = true` and `target.kind = acf_field`: every text/textarea/wysiwyg field in the same ACF group as `%acf_<field_name>%`. Repeaters / groups / flexible_content excluded in V1 (returns empty string for those names).
 
@@ -320,7 +320,7 @@ Top-level admin menu entry "Spintax" already exists. Add submenu "Bindings" afte
 1. **Scope** — post_type dropdown (public types), status (`any` | `publish`).
 2. **Target field** — `target.kind` radio (ACF / post_meta); `target.key` field with AJAX-suggested options based on chosen post_type and kind.
 3. **Source** — `source.mode` radio (template / per_post); when template: dropdown of Spintax CPT entries; when per_post: read-only display of the auto-derived sibling meta key + note explaining the inline metabox.
-4. **Variables** — two checkboxes (post context / ACF siblings), plus a textarea for `#set` overrides with the same Validator surface as Settings global vars.
+4. **Variables** — two checkboxes (post context / ACF siblings), plus a textarea for `#set` / `#def` overrides with the same Validator surface as Settings global vars. (Unlike the Settings textarea, which is `#set`-only because globals persist as a flat name => value map with no record of the directive, this block is prepended to the source verbatim — so both directives behave exactly as they would in the template.)
 5. **Triggers** — "Fire on post save" checkbox (bound to `triggers.save_post`), `cron` dropdown. The legacy `triggers.acf_save_post` field persists in the payload (default OFF, reserved for V2) but is not surfaced in the form UI in V1.
 6. **Behavior** — four checkboxes with inline descriptions.
 7. **Test** — Post ID number input + "Test" button, results panel below.
@@ -578,7 +578,7 @@ Five milestones. All land in 2.0.0 — bindings are too coupled to ship in piece
 - `Spintax\Bindings\BindingResolver` — given binding + post_id, resolves source string (template-mode: fetch CPT content; per_post-mode: fetch sibling meta).
 - `Spintax\Bindings\BindingApplier::apply($binding, $post_id)` — orchestrates resolve → render → write logic with all four behavior flags.
 - `Spintax\Core\Variables\PostContextSource` — exposes %post_id%, %post_title%, etc.
-- `Spintax\Core\Variables\BindingOverridesSource` — parses per-binding `#set` block.
+- ~~`Spintax\Core\Variables\BindingOverridesSource` — parses per-binding `#set` block.~~ **Never built.** The overrides block is prepended to the source text by `BindingApplier::render_source()` and picked up by the renderer's own directive extraction; no separate parser exists. Recorded rather than deleted so the next reader does not go looking for the class.
 - `Spintax\Bindings\Triggers\SavePostTrigger` — hooks `save_post` priority 20.
 - Per-post metabox renderer for `per_post`-mode bindings.
 - Signature meta `_spintax_last_render_sig_<binding_id>` lifecycle (per §4.4 cold-start handling).

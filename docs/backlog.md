@@ -222,7 +222,11 @@ The cost is not hypothetical. The Spanish sentence-opener fix shipped to WordPre
 
 ### The plugin's plural diagnostics are locale-blind
 
-**Status:** open — surfaced by the independent review of 2.5.0 (2026-07-18). Pre-existing since 1.5.0; the BCS break is what makes it bite.
+**Status:** ✅ **FIXED in 3.0.0** (2026-07-19). The locale is now resolved through the renderer's own ladder — `_spintax_locale`, then the site locale — and threaded into all three callers: the save-time validator (`MetaBoxes::run_validation`), the AJAX preview (which was rendering under the site locale while the real path used the template's), and the **binding** render, where it mattered most: a binding persists what it renders, so a 3-form template applied on a 2-form site was writing fullwidth-braced wreckage into a stored field. `BindingResolver` now carries the source `template_id` out alongside the source text so the applier can resolve the same ladder; `per_post` sources have no template and keep the site locale. The key also became `OptionKeys::META_LOCALE` once it had a second consumer.
+
+Fixing it was a precondition for 3.0.0 rather than a nicety: the new `plural.count-macro` diagnostic would have landed in exactly this dead path and been invisible in WordPress.
+
+**Originally filed:** open — surfaced by the independent review of 2.5.0 (2026-07-18). Pre-existing since 1.5.0; the BCS break is what made it bite.
 
 **Problem.** Two paths that should tell an author "this template's plural block has the wrong number of forms" don't, because neither is given a locale:
 

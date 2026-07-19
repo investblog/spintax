@@ -1,15 +1,15 @@
 # `#set` / `#def` — variable expansion semantics (spec)
 
-Status: **RELEASED 2026-07-19 — plugin 3.0.0, `spintax/core` 0.3.0, `@spintax/core` 0.3.0.**
-OpenCart remains, and spintax.net after it.
+Status: **RELEASED 2026-07-19 across all four engines.** Only spintax.net remains, and it is
+user-owned.
 
 | # | Repo | State |
 |---|---|---|
 | 1 | `spintax-php` | ✅ released **v0.3.0**, on Packagist |
 | 2 | `spintax` (plugin) | ✅ released **v3.0.0**, on WordPress.org |
 | 3 | `spintax-js` | ✅ released **v0.3.0**, on npm with provenance |
-| 4 | `spintax-opencart` | ⬜ **unblocked now** — bump the `spintax/core` pin, `composer run sync-kernel`, then its own `Orchestrator` (a fourth copy of the stage order, still doing Stage 4b) |
-| 5 | `spintax.net` | ⬜ two engine copies; user-owned, ask first |
+| 4 | `spintax-opencart` | ✅ released **v0.4.0** — `#def` in its `Orchestrator` (the fourth copy of the stage order), plus the SQL rewrite the marketplace scanner demanded |
+| 5 | `spintax.net` | ⬜ **the last gap, and a real one** — it vendors `src/engine/spintax.ts` *and* depends on `@spintax/core`, so both must move; every syntax link in the plugin, the OpenCart admin and both user guides points here, and the site has never heard of `#def`. User-owned |
 
 **The contract is bound.** The corpus runs 160 cases identically against the TS engine, the
 WordPress plugin and `spintax/core`, with both CI parity legs reporting the same counters.

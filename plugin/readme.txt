@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, seo, woocommerce, acf, content generation
 Requires at least: 6.2
 Tested up to: 7.0
-Stable tag: 2.5.0
+Stable tag: 3.0.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -253,6 +253,16 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 3.0.0 =
+* **Breaking: `#set` is a macro again — it is re-picked at every use.** A variable defined with `#set` now behaves as it did before 2.2.0 and as this plugin's documentation has always described: the value is substituted wherever the variable appears, and any `{a|b}` or `[a|b]` inside it is rolled fresh each time. Between 2.2.0 and this release an enumeration in a `#set` value was picked once and held, which contradicted the documented behaviour from the day it shipped.
+* **New: `#def` — a value picked once per render and held.** `#def %brand% = {Acme|Acme Group}` picks one variant and every `%brand%` in that page reads the same. Use it whenever two mentions disagreeing would look like a mistake: a product name, a tone, and above all a number you both print and agree grammatically.
+* **Action required if you used `#set` for a plural count.** `#set %n% = {1|4|9}` followed by `{plural %n%: …}` no longer works — the count is still spintax when the plural is decided, so the block renders empty. Change that one line to `#def %n% = {1|4|9}`; the `%n%` references stay exactly as they are. The template editor now reports this as an error, so you can find the affected templates by opening and saving them.
+* Same one-line change applies to a `#set` used to extract a synonym out of a `{plural}` form slot, and to any `#set` you relied on reading the same twice in one page.
+* **Fix: the editor's preview and validator now use the template's own language.** Both previously fell back to the site language, so a template with a per-template locale previewed under the wrong plural rules — a correct three-form block looked broken and a broken one looked fine.
+* **Fix: bindings render under the template's language too.** A binding stores what it renders, so a three-form template applied on a two-form site was writing `｛plural …｝` into the target field.
+* **Fix: a shortcode carried in by a variable now works.** `[spintax slug="…"]` reaching the page through a variable value was being stripped of its brackets and printed as text.
+* New editor checks: a name defined twice (by either directive), `#include` inside a `#def` value, and an empty `#set` value no longer being reported as malformed.
+
 = 2.5.0 =
 * **New: Serbian, Croatian and Bosnian plural agreement.** `{plural %n%: sat|sata|sati}` now picks the right form for `sr`, `hr` and `bs`, on the same boundaries as Russian — one for 1, 21, 101 (but not 11), few for 2-4, 22-24 (but not 12-14), many for the rest. Serbian works in both scripts: `sr-Latn` and `sr-Cyrl` follow identical grammar, and the script lives only in the words you write.
 * **Action required if you already write Croatian, Serbian or Bosnian templates.** These languages previously fell back to the English 2-form rule, so `{plural %n%: kolačić|kolačići}` was accepted — and quietly rendered from the wrong set of forms. They now require **three** forms. A two-form construct is an error: at render time it is left in the page verbatim inside fullwidth braces (`｛plural 3: …｝`) instead of producing text. Search your templates for `{plural` on those languages and add the third form before updating. No other language changes behaviour.
@@ -409,8 +419,11 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Upgrade Notice ==
 
+= 3.0.0 =
+Breaking: #set is a macro again, re-picked at every use. The new #def holds one value for the whole page. If you used #set for a plural count, that block now renders empty - change the one #set line to #def. References stay as they are; the editor flags the affected templates.
+
 = 2.5.0 =
-Adds Serbian, Croatian and Bosnian plural agreement (both Serbian scripts). Breaking for those three languages only: they used to accept a 2-form `{plural}` and now require 3, because they were silently using the English rule. A stale 2-form construct renders as `｛plural …｝` instead of text — add the third form before updating. All other languages are unaffected.
+Adds Serbian, Croatian and Bosnian plural agreement, both Serbian scripts. Breaking for those three only: they used to accept a 2-form {plural} and now need 3, having silently used the English rule. A stale 2-form block renders as fullwidth braces - add the third form before updating.
 
 = 2.4.0 =
 New: WooCommerce product-field bindings. Generate a product's description or short description from a template, per product, with that product's own SKU, categories and attributes. Only those two fields are writable; manual edits are preserved.

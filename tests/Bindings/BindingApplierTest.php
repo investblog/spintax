@@ -689,4 +689,72 @@ class BindingApplierTest extends \WP_UnitTestCase {
 			get_post_meta( $this->post_id, 'spintax_target', true )
 		);
 	}
+
+	// =========================================================================
+	// Locale + `#def` in the binding render path
+	// =========================================================================
+
+	public function test_binding_render_uses_the_source_templates_locale(): void {
+		// The template declares a 3-form locale while the site stays 2-form. Rendering through the
+		// site locale would make the block an arity error and persist fullwidth-braced wreckage
+		// into the target field — and unlike a preview, this output is stored.
+		wp_update_post(
+			array(
+				'ID'           => $this->template_id,
+				'post_content' => '{plural 5: файл|файла|файлов}',
+			)
+		);
+		update_post_meta( $this->template_id, OptionKeys::META_LOCALE, 'ru_RU' );
+
+		$plan = $this->applier->plan( $this->make_binding(), $this->post_id );
+
+		// Capitalised by the cosmetic post-process pass. What matters is the form: "файлов" is the
+		// 3-form pick for 5 under ru. Under the site locale this would be an arity error and the
+		// stored value would carry fullwidth braces.
+		$this->assertSame( 'Файлов', trim( $plan['write_value'] ) );
+	}
+
+	public function test_a_def_in_per_binding_overrides_is_rolled_once(): void {
+		// The overrides block is prepended to the source verbatim, so directives written there
+		// behave exactly as they would in the template. Asserted rather than assumed: the same
+		// assumption about the globals textarea turned out to be false.
+		wp_update_post(
+			array(
+				'ID'           => $this->template_id,
+				'post_content' => '%brand% and %brand%',
+			)
+		);
+
+		$binding = $this->make_binding(
+			array( 'variables' => array( 'overrides' => '#def %brand% = {Acme|Acme Group}' ) )
+		);
+
+		// The applier builds its own Renderer, so there is no RNG seam to inject here. Repeating the
+		// render is what makes the assertion meaningful: under macro semantics the two halves are
+		// independent coin flips, so twenty agreeing pairs would be a one-in-a-million fluke.
+		for ( $i = 0; $i < 20; $i++ ) {
+			$rendered = trim( $this->applier->plan( $binding, $this->post_id )['write_value'] );
+			$halves   = explode( ' and ', $rendered );
+
+			$this->assertCount( 2, $halves, "Unexpected render: {$rendered}" );
+			$this->assertSame( $halves[0], $halves[1], 'A #def must read the same at every reference.' );
+		}
+	}
+
+	public function test_a_set_in_per_binding_overrides_stays_a_macro(): void {
+		wp_update_post(
+			array(
+				'ID'           => $this->template_id,
+				'post_content' => '%brand%',
+			)
+		);
+
+		$binding = $this->make_binding(
+			array( 'variables' => array( 'overrides' => '#set %brand% = {Acme|Acme}' ) )
+		);
+
+		$plan = $this->applier->plan( $binding, $this->post_id );
+
+		$this->assertSame( 'Acme', trim( $plan['write_value'] ) );
+	}
 }

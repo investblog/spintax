@@ -30,6 +30,37 @@ class Parser {
 	private $random_fn;
 
 	/**
+	 * The one grammar for `#set` and `#def`, shared by the parser and the validator.
+	 *
+	 * Whitespace classes are restricted to spaces and tabs on purpose. `\s` would
+	 * let the engine consume the newlines around `=` and capture the next
+	 * directive as the value of an empty one — see
+	 * `test_extract_set_directives_empty_value_does_not_swallow_next`.
+	 *
+	 * The value group is `(.*?)`, not `(.+)`: an empty value is legal. The
+	 * validator used to disagree on both counts and reported `#set %x% =` as
+	 * malformed while the parser accepted it; anything checking these directives
+	 * must build on this constant rather than write its own pattern.
+	 */
+	public const DIRECTIVE_PATTERN = '/^[ \t]*#(set|def)[ \t]+%(\w+)%[ \t]*=[ \t]*(.*?)[ \t]*$/mu';
+
+	/**
+	 * The same grammar narrowed to `#set`, for `extract_set_directives()` alone.
+	 *
+	 * It cannot be expressed as a filter over `DIRECTIVE_PATTERN`, because that method must leave
+	 * `#def` lines **in the body** rather than strip lines it will not resolve. Kept adjacent to
+	 * the constant it mirrors so the two cannot drift apart unnoticed — which is exactly what
+	 * happened when four near-copies of this were spread across the parser and the validator.
+	 */
+	public const SET_DIRECTIVE_PATTERN = '/^[ \t]*#set[ \t]+%(\w+)%[ \t]*=[ \t]*(.*?)[ \t]*$/mu';
+
+	/**
+	 * A `%var%` reference. Shared by expansion and by `#def` dependency discovery, so the two
+	 * cannot disagree about what counts as a reference.
+	 */
+	public const VARIABLE_PATTERN = '/%(\w+)%/u';
+
+	/**
 	 * Maximum iterations for enumeration/permutation resolution.
 	 *
 	 * @var int
@@ -69,13 +100,40 @@ class Parser {
 	 */
 	public function process( string $template, array $variables = array() ): string {
 		$text      = $this->strip_comments( $template );
-		$extracted = $this->extract_set_directives( $text );
+		$extracted = $this->extract_directives( $text );
 		$text      = $extracted['body'];
-		$all_vars  = array_merge( $extracted['variables'], $variables );
-		$text      = $this->expand_variables( $text, $all_vars );
-		$text      = $this->resolve_enumerations( $text );
-		$text      = $this->resolve_permutations( $text );
-		$text      = $this->post_process( $text );
+		$all_vars  = array_merge( $extracted['set'], $variables );
+
+		// Caller keys are compared lowercased: `%var%` references are case-insensitive everywhere
+		// else, so `['X' => …]` has to outrank `#def %x%` exactly as `['x' => …]` does.
+		$caller = array_change_key_case( $variables, CASE_LOWER );
+
+		// Roll `#def` values before expansion, in dependency order — following aliases through
+		// everything visible here, caller variables included, not just the local `#set` map. This
+		// is the same contract the full pipeline implements, minus the two passes this method does
+		// not run at all (conditionals and plurals): a value carrying those is frozen with them
+		// unresolved. Callers needing the whole language want `Spintax\Core\Render\Renderer`.
+		// Excluded are the definitions that will actually be rolled; one the caller overrides is
+		// left in, because the caller's value is what gets substituted and the graph must follow it.
+		$aliases = array_diff_key(
+			array_change_key_case( $all_vars, CASE_LOWER ),
+			array_diff_key( $extracted['def'], $caller )
+		);
+
+		foreach ( $this->order_definitions( $extracted['def'], $aliases ) as $name ) {
+			if ( array_key_exists( $name, $caller ) ) {
+				continue;
+			}
+
+			$rolled            = $this->expand_variables( $extracted['def'][ $name ], $all_vars );
+			$rolled            = $this->resolve_enumerations( $rolled );
+			$all_vars[ $name ] = $this->resolve_permutations( $rolled );
+		}
+
+		$text = $this->expand_variables( $text, $all_vars );
+		$text = $this->resolve_enumerations( $text );
+		$text = $this->resolve_permutations( $text );
+		$text = $this->post_process( $text );
 
 		return $text;
 	}
@@ -97,28 +155,180 @@ class Parser {
 	 * @return array{body: string, variables: array<string, string>}
 	 */
 	public function extract_set_directives( string $text ): array {
+		// Deliberately `#set` only, matching this method's name and its pre-`#def` contract. Making
+		// it strip `#def` too would remove those lines from the body while returning no value for
+		// them, so `%x%` would survive into the output as literal text — a directive silently
+		// eaten. Callers that want both use `extract_directives()`.
 		$variables = array();
 
-		// Whitespace classes are restricted to spaces/tabs. Using \s would
-		// allow the engine to consume newlines around `=` and capture the
-		// next directive as the value of an empty one — see the
-		// `test_extract_set_directives_empty_value_does_not_swallow_next` case.
-		$body = preg_replace_callback(
-			'/^[ \t]*#set[ \t]+%(\w+)%[ \t]*=[ \t]*(.*?)[ \t]*$/mu',
+		$body = (string) preg_replace_callback(
+			self::SET_DIRECTIVE_PATTERN,
 			static function ( array $m ) use ( &$variables ): string {
-				$name               = strtolower( $m[1] );
-				$variables[ $name ] = $m[2];
+				$variables[ strtolower( $m[1] ) ] = $m[2];
 				return '';
 			},
 			$text
 		);
 
-		// Collapse blank lines left by stripped directives.
-		$body = preg_replace( "/\n{3,}/u", "\n\n", $body );
+		$body = (string) preg_replace( "/\n{3,}/u", "\n\n", $body );
 
 		return array(
 			'body'      => $body,
 			'variables' => $variables,
+		);
+	}
+
+	/**
+	 * Order `#def` names so a definition is rendered after everything it depends on.
+	 *
+	 * Dependencies are followed **through `#set` values**. A `#def` can reach another `#def` by way
+	 * of an alias — `#def %b% = %s%` where `#set %s% = %a%` — and because a `#set` is expanded at
+	 * reference time, that dependency is invisible in `%b%`'s own text. Discovering only direct
+	 * references would roll `%b%` while `%a%` is still raw, and the frozen value would carry an
+	 * unexpanded `%a%`.
+	 *
+	 * A cycle cannot be ordered, so its members are emitted last in declaration order; rendering
+	 * them then relies on `expand_variables()`'s own depth guard rather than looping here.
+	 *
+	 * @param array<string, string> $definitions `#def` values, name => raw value.
+	 * @param array<string, string> $set_values  `#set` values, name => raw value, for alias hops.
+	 * @return list<string> Definition names, dependencies first.
+	 */
+	public function order_definitions( array $definitions, array $set_values = array() ): array {
+		$names   = array_keys( $definitions );
+		$blocked = array();
+
+		foreach ( $definitions as $name => $value ) {
+			$blocked[ $name ] = array_intersect(
+				$this->referenced_names( $value, $set_values ),
+				$names
+			);
+		}
+
+		$ordered = array();
+		$pending = $names;
+
+		while ( ! empty( $pending ) ) {
+			$progressed = false;
+
+			foreach ( $pending as $index => $name ) {
+				foreach ( $blocked[ $name ] as $dependency ) {
+					if ( $dependency !== $name && in_array( $dependency, $pending, true ) ) {
+						continue 2;
+					}
+				}
+
+				$ordered[] = $name;
+				unset( $pending[ $index ] );
+				$progressed = true;
+			}
+
+			$pending = array_values( $pending );
+
+			if ( ! $progressed ) {
+				return array_merge( $ordered, $pending );
+			}
+		}
+
+		return $ordered;
+	}
+
+	/**
+	 * Every variable name a value reaches, hopping through `#set` aliases.
+	 *
+	 * @param string                $value      Raw value.
+	 * @param array<string, string> $set_values `#set` values to follow through.
+	 * @return list<string> Referenced names, lowercased.
+	 */
+	private function referenced_names( string $value, array $set_values ): array {
+		$queue = $this->direct_references( $value );
+		$seen  = array();
+
+		while ( ! empty( $queue ) ) {
+			$name = array_shift( $queue );
+
+			if ( isset( $seen[ $name ] ) ) {
+				continue;
+			}
+			$seen[ $name ] = true;
+
+			if ( array_key_exists( $name, $set_values ) ) {
+				foreach ( $this->direct_references( $set_values[ $name ] ) as $next ) {
+					$queue[] = $next;
+				}
+			}
+		}
+
+		return array_keys( $seen );
+	}
+
+	/**
+	 * The `%var%` names written literally in a string.
+	 *
+	 * @param string $text Text to scan.
+	 * @return list<string> Names, lowercased.
+	 */
+	private function direct_references( string $text ): array {
+		if ( ! preg_match_all( self::VARIABLE_PATTERN, $text, $matches ) ) {
+			return array();
+		}
+
+		return array_map( 'strtolower', $matches[1] );
+	}
+
+	/**
+	 * Extract `#set` and `#def` directives and remove them from the body.
+	 *
+	 * `#set` is a macro: the value is substituted at every `%var%` reference and
+	 * whatever brackets it holds resolve independently each time. `#def` is
+	 * roll-once: the value is rendered a single time and the result is held for
+	 * every reference. Both share one grammar, deliberately — see
+	 * `DIRECTIVE_PATTERN`.
+	 *
+	 * `occurrences` preserves every directive line in source order, including
+	 * duplicates that the `set` / `def` maps flatten away. A validator cannot
+	 * report a collision it can no longer see, so the raw list is the contract.
+	 *
+	 * @param string $text Text containing directives.
+	 * @return array{body: string, set: array<string, string>, def: array<string, string>, occurrences: list<array{kind: string, name: string, value: string, line: int}>}
+	 */
+	public function extract_directives( string $text ): array {
+		$occurrences = array();
+
+		if ( preg_match_all( self::DIRECTIVE_PATTERN, $text, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE ) ) {
+			foreach ( $matches as $match ) {
+				$offset = (int) $match[0][1];
+
+				$occurrences[] = array(
+					'kind'  => strtolower( $match[1][0] ),
+					'name'  => strtolower( $match[2][0] ),
+					'value' => $match[3][0],
+					'line'  => substr_count( $text, "\n", 0, $offset ) + 1,
+				);
+			}
+		}
+
+		$set = array();
+		$def = array();
+
+		foreach ( $occurrences as $occurrence ) {
+			if ( 'def' === $occurrence['kind'] ) {
+				$def[ $occurrence['name'] ] = $occurrence['value'];
+			} else {
+				$set[ $occurrence['name'] ] = $occurrence['value'];
+			}
+		}
+
+		$body = (string) preg_replace( self::DIRECTIVE_PATTERN, '', $text );
+
+		// Collapse blank lines left by stripped directives.
+		$body = (string) preg_replace( "/\n{3,}/u", "\n\n", $body );
+
+		return array(
+			'body'        => $body,
+			'set'         => $set,
+			'def'         => $def,
+			'occurrences' => $occurrences,
 		);
 	}
 
@@ -141,7 +351,7 @@ class Parser {
 		for ( $i = 0; $i < self::MAX_VARIABLE_DEPTH; $i++ ) {
 			$changed = false;
 			$text    = preg_replace_callback(
-				'/%(\w+)%/u',
+				self::VARIABLE_PATTERN,
 				static function ( array $m ) use ( $normalised, &$changed ): string {
 					$name = strtolower( $m[1] );
 					if ( isset( $normalised[ $name ] ) ) {

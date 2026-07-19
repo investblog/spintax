@@ -646,7 +646,11 @@ class BindingsPage {
 	}
 
 	/**
-	 * Read and sanitize the per-binding `#set` overrides textarea.
+	 * Read and sanitize the per-binding variable-overrides textarea.
+	 *
+	 * Accepts both directives: the block is prepended to the source verbatim, so `#set` and `#def`
+	 * behave exactly as they would written in the template. (Unlike the global variables textarea,
+	 * where `#def` is refused — globals persist as a flat map that records no directive kind.)
 	 *
 	 * Isolated into its own method so the PHPCS suppression for the
 	 * spintax-aware sanitiser is single-line — `sanitize_textarea_field()`
@@ -1185,11 +1189,11 @@ class BindingsPage {
 					</td>
 				</tr>
 				<tr>
-					<th scope="row"><label for="spintax-variables-overrides"><?php esc_html_e( 'Per-binding #set overrides', 'spintax' ); ?></label></th>
+					<th scope="row"><label for="spintax-variables-overrides"><?php esc_html_e( 'Per-binding variable overrides', 'spintax' ); ?></label></th>
 					<td>
 						<textarea name="variables_overrides" id="spintax-variables-overrides" rows="5" class="large-text code"><?php echo esc_textarea( $b['variables']['overrides'] ?? '' ); ?></textarea>
 						<p class="description">
-							<?php esc_html_e( 'Raw #set block (one per line). Available inside the source template; overrides global Settings variables.', 'spintax' ); ?>
+							<?php esc_html_e( 'One directive per line — #set (re-picked at every use) or #def (picked once per render). Available inside the source template; overrides global Settings variables.', 'spintax' ); ?>
 						</p>
 					</td>
 				</tr>

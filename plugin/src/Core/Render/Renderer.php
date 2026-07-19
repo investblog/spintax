@@ -16,6 +16,7 @@ use Spintax\Core\Engine\Parser;
 use Spintax\Core\Engine\Plurals;
 use Spintax\Core\PostType\TemplatePostType;
 use Spintax\Core\Settings\SettingsRepository;
+use Spintax\Support\OptionKeys;
 
 /**
  * Orchestrates the multi-stage rendering pipeline with object cache.
@@ -193,7 +194,7 @@ class Renderer {
 		// Resolve plural locale: per-template post meta `_spintax_locale`
 		// (e.g. "ru", "en", "ru_RU") wins; fall back to the WP site locale.
 		// Plurals::normalize_base_lang strips region suffix downstream.
-		$locale = (string) get_post_meta( $template_id, '_spintax_locale', true );
+		$locale = (string) get_post_meta( $template_id, OptionKeys::META_LOCALE, true );
 		if ( '' === $locale ) {
 			$locale = (string) get_locale();
 		}
@@ -239,33 +240,35 @@ class Renderer {
 		// Stage 3: Strip comments.
 		$text = $this->parser->strip_comments( $raw );
 
-		// Stage 4: Parse #set, strip from body.
-		$extracted = $this->parser->extract_set_directives( $text );
+		// Stage 4: Parse #set and #def, strip both from body.
+		$extracted = $this->parser->extract_directives( $text );
 		$text      = $extracted['body'];
 
-		// Stage 4b: Collapse enumerations inside #set values once, so a local
-		// variable holds a single stable value (e.g. `#set %n% = {1|4|9}` → "4").
-		// This keeps repeated `%n%` references consistent and — critically — lets
-		// `{plural %n%: …}` see a numeric count instead of an unresolved `{1|4|9}`
-		// that the plural pass (which runs before enumeration resolution) would
-		// drop. Values carrying conditionals/plurals are left untouched: those
-		// constructs may reference variables defined on other lines and must stay
-		// deferred to the body pipeline (Stages 6a–6d).
-		foreach ( $extracted['variables'] as $set_name => $set_value ) {
-			if ( false === strpos( $set_value, '{' ) ) {
-				continue;
-			}
-			if ( false !== strpos( $set_value, '{?' ) || false !== strpos( $set_value, '{plural ' ) ) {
-				continue;
-			}
-			$extracted['variables'][ $set_name ] = $this->parser->resolve_enumerations( $set_value );
+		// Resolve the locale here rather than at Stage 6d: the `#def` roll below runs the plural
+		// pass over definition values, and it needs the same locale the body will use.
+		if ( '' === $locale ) {
+			$locale = (string) get_locale();
 		}
 
-		// Stage 5: Build variable context.
-		$context = $context->with_local( $extracted['variables'] );
+		// Stage 5: Build variable context. Precedence is runtime > local > global, enforced by
+		// `get_merged_variables()`'s merge order rather than by the order of these calls.
+		$context = $context->with_local( $extracted['set'] );
 		if ( ! empty( $runtime_vars ) ) {
 			$context = $context->with_runtime( $runtime_vars );
 		}
+
+		// Stage 5b: Roll `#def` values ONCE — and only now, because the full context has to exist
+		// first. A `#def` value is rendered as if it were a miniature body and the result is frozen
+		// for every reference; a `#set` value is substituted verbatim and its brackets re-roll at
+		// each reference. Rolling before Stage 5 (where the old collapse-once pass sat) would hand
+		// the roll a context with no globals and no runtime variables, so
+		// `#def %x% = %product_name% {a|b}` would freeze the literal text `%product_name%`.
+		if ( ! empty( $extracted['def'] ) ) {
+			$context = $context->with_local(
+				$this->roll_definitions( $extracted['def'], $context, $runtime_vars, $locale )
+			);
+		}
+
 		$all_vars = $context->get_merged_variables();
 
 		// Shield [spintax] and #include before spintax resolution.
@@ -274,16 +277,7 @@ class Renderer {
 		// then restore and resolve after enum/perm processing.
 		$nested_placeholders = array();
 		$nested_counter      = 0;
-		$text                = preg_replace_callback(
-			'/\[spintax\s+[^\]]+\]/i',
-			static function ( array $m ) use ( &$nested_placeholders, &$nested_counter ): string {
-				$key                         = "\x00NESTED_{$nested_counter}\x00";
-				$nested_placeholders[ $key ] = $m[0];
-				++$nested_counter;
-				return $key;
-			},
-			$text
-		);
+		$text                = $this->shield_nested_constructs( $text, $nested_placeholders, $nested_counter );
 
 		// Stage 6a: Resolve `{?VAR?then|else}` conditionals (pre-expand pass).
 		// Catches conditionals authored directly in the template body so
@@ -292,6 +286,13 @@ class Renderer {
 
 		// Stage 6b: Expand variables.
 		$text = $this->parser->expand_variables( $text, $all_vars );
+
+		// Shield again. Expansion is the only way a `[spintax]` can enter the document after the
+		// first pass — carried in by a `#set`, a global, a runtime variable or a frozen `#def`,
+		// none of whose values were part of the body when it ran. Without this, Stage 8 reads
+		// `[spintax slug="x"]` as a single-element permutation, strips the brackets, and Stage 9
+		// receives inert text. That has been true of `#set` and globals since both existed.
+		$text = $this->shield_nested_constructs( $text, $nested_placeholders, $nested_counter );
 
 		// Stage 6c: Resolve `{?VAR?then|else}` conditionals (post-expand pass).
 		// Catches conditionals introduced via substituted variable values
@@ -303,10 +304,7 @@ class Renderer {
 		// the count slot is already a literal integer string. Lenient mode
 		// so a single broken construct (wrong arity, nested brackets in a
 		// form) renders verbatim with fullwidth braces instead of crashing
-		// the whole render.
-		if ( '' === $locale ) {
-			$locale = (string) get_locale();
-		}
+		// the whole render. The locale was resolved before Stage 5b.
 		$text = $this->plurals->apply( $text, $locale, array( 'lenient' => true ) );
 
 		// Stage 7: Resolve enumerations.
@@ -334,6 +332,120 @@ class Renderer {
 		$text = wp_kses_post( $text );
 
 		return $text;
+	}
+
+	/**
+	 * Render each `#def` value once and return the frozen results.
+	 *
+	 * Values are rendered in dependency order so a `#def` built out of another `#def` sees the
+	 * resolved text rather than the raw template. `Parser::order_definitions()` works that order
+	 * out, following aliases as well as direct references — the dependency in `#def %b% = %s%` with
+	 * `#set %s% = %a%` and `#def %a% = …` is real but invisible in `%b%`'s own text.
+	 *
+	 * A name a runtime variable also defines is skipped: runtime outranks locals, so rolling it
+	 * would be work nothing can read.
+	 *
+	 * @param array<string, string> $definitions  Raw `#def` values, name => value.
+	 * @param RenderContext         $context      Context with globals, `#set` locals and runtime.
+	 * @param array<string, string> $runtime_vars Runtime variables, which outrank every local.
+	 * @param string                $locale       Plural locale, already resolved.
+	 * @return array<string, string> Frozen values, name => rendered text.
+	 */
+	private function roll_definitions( array $definitions, RenderContext $context, array $runtime_vars, string $locale ): array {
+		$vars      = $context->get_merged_variables();
+		$outranked = array_change_key_case( $runtime_vars, CASE_LOWER );
+		$resolved  = array();
+
+		// The alias map is every macro value a definition can actually see — globals and runtime
+		// variables as well as local `#set`. Passing only the local map would miss a dependency
+		// routed through a global.
+		//
+		// Excluded from it are the definitions that will actually be rolled, because a `#def`
+		// shadows a global of the same name and hopping through the shadowed value would compute
+		// the wrong graph. A definition a runtime variable outranks is NOT excluded: it is never
+		// rolled, so the runtime value is the one that will really be substituted, and the graph
+		// has to follow it. Excluding those too made a dependency reached through such a name
+		// invisible, and declaration order leaked back into the result.
+		$aliases = array_diff_key( $vars, array_diff_key( $definitions, $outranked ) );
+
+		foreach ( $this->parser->order_definitions( $definitions, $aliases ) as $name ) {
+			if ( array_key_exists( $name, $outranked ) ) {
+				continue;
+			}
+
+			$resolved[ $name ] = $this->render_definition_value(
+				$definitions[ $name ],
+				array_merge( $vars, $resolved ),
+				$locale
+			);
+		}
+
+		return $resolved;
+	}
+
+	/**
+	 * Render one `#def` value through the same passes the body gets, in the same order.
+	 *
+	 * Stage 9 (`#include` / `[spintax]`) is deliberately absent: those resolve after everything
+	 * here and cannot be frozen into a value, which is why the validator rejects an `#include`
+	 * inside a definition. A `[spintax]` shortcode is shielded for the length of the roll so the
+	 * permutation resolver cannot eat its brackets, and handed back whole.
+	 *
+	 * @param string                $value  Raw directive value.
+	 * @param array<string, string> $vars   Variables visible to this value.
+	 * @param string                $locale Plural locale.
+	 * @return string
+	 */
+	private function render_definition_value( string $value, array $vars, string $locale ): string {
+		$shielded = array();
+		$counter  = 0;
+		$value    = $this->shield_nested_constructs( $value, $shielded, $counter );
+
+		$value = $this->conditionals->apply( $value, $vars );
+		$value = $this->parser->expand_variables( $value, $vars );
+
+		// Shield again, for the same reason the body does: expansion is the one place a shortcode
+		// can enter after the first pass. `#def %frag% = %s%` with `#set %s% = [spintax slug="x"]`
+		// pulls the shortcode in here, and without this the permutation resolver below reads it as
+		// a single-element permutation and strips the brackets.
+		$value = $this->shield_nested_constructs( $value, $shielded, $counter );
+
+		$value = $this->conditionals->apply( $value, $vars );
+		$value = $this->plurals->apply( $value, $locale, array( 'lenient' => true ) );
+		$value = $this->parser->resolve_enumerations( $value );
+		$value = $this->parser->resolve_permutations( $value );
+
+		if ( ! empty( $shielded ) ) {
+			$value = str_replace( array_keys( $shielded ), array_values( $shielded ), $value );
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Replace `[spintax …]` shortcodes with opaque placeholders.
+	 *
+	 * The placeholders are `\x00NESTED_n\x00`, which no template syntax can produce and no resolver
+	 * reads. Callers share `$placeholders` and `$counter` across successive calls, so one restore
+	 * at the end covers every pass.
+	 *
+	 * @param string                $text         Text to shield.
+	 * @param array<string, string> $placeholders Placeholder => original, accumulated by reference.
+	 * @param int                   $counter      Placeholder counter, advanced by reference.
+	 * @return string
+	 */
+	private function shield_nested_constructs( string $text, array &$placeholders, int &$counter ): string {
+		return (string) preg_replace_callback(
+			'/\[spintax\s+[^\]]+\]/i',
+			static function ( array $m ) use ( &$placeholders, &$counter ): string {
+				$key                  = "\x00NESTED_{$counter}\x00";
+				$placeholders[ $key ] = $m[0];
+				++$counter;
+
+				return $key;
+			},
+			$text
+		);
 	}
 
 	/**

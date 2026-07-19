@@ -237,4 +237,140 @@ TPL;
 			( ! empty( $result['errors'] ) ? $result['errors'][0]['message'] : '' )
 		);
 	}
+
+	// =========================================================================
+	// `#set` / `#def` directives
+	// =========================================================================
+
+	private function assert_clean( string $template, string $locale = '' ): void {
+		$result = $this->validator()->validate( $template, array(), array(), $locale );
+		$this->assertEmpty(
+			$result['errors'],
+			! empty( $result['errors'] ) ? $result['errors'][0]['message'] : ''
+		);
+	}
+
+	private function assert_rejected( string $template, string $locale = '' ): void {
+		$this->assertNotEmpty( $this->validator()->validate( $template, array(), array(), $locale )['errors'] );
+	}
+
+	public function test_an_empty_value_validates_for_both_directives(): void {
+		// The parser accepts an empty value and ParserTest locks that. The validator used to
+		// disagree and call it malformed, unless a trailing space happened to be present.
+		$this->assert_clean( "#set %x% =
+%x%" );
+		$this->assert_clean( "#def %y% =
+%y%" );
+	}
+
+	public function test_a_directive_without_an_equals_sign_is_malformed(): void {
+		$this->assert_rejected( '#set %v% hello' );
+		$this->assert_rejected( '#def %v% hello' );
+	}
+
+	public function test_a_def_defined_name_is_not_reported_as_unknown(): void {
+		$this->assertEmpty( $this->validator()->validate( "#def %x% = a
+%x%" )['warnings'] );
+	}
+
+	public function test_a_def_can_self_reference_and_is_caught(): void {
+		$this->assert_rejected( '#def %a% = x %a% y' );
+	}
+
+	public function test_a_cycle_is_caught_even_when_it_crosses_directive_kinds(): void {
+		$this->assert_rejected( "#set %a% = %b%
+#def %b% = %a%" );
+	}
+
+	/**
+	 * @dataProvider duplicate_definitions
+	 */
+	public function test_a_name_defined_twice_is_rejected( string $template ): void {
+		$this->assert_rejected( $template );
+	}
+
+	public function duplicate_definitions(): array {
+		return array(
+			'set then def' => array( "#set %x% = a
+#def %x% = b" ),
+			'set then set' => array( "#set %x% = a
+#set %x% = b" ),
+			'def then def' => array( "#def %x% = a
+#def %x% = b" ),
+		);
+	}
+
+	public function test_the_duplicate_is_reported_on_its_own_line(): void {
+		$errors = $this->validator()->validate( "body
+#set %x% = a
+#def %x% = b" )['errors'];
+		$this->assertSame( 3, $errors[0]['line'] );
+	}
+
+	public function test_include_in_a_def_value_is_rejected(): void {
+		$this->assert_rejected( "#def %x% = #include \"y\"
+%x%" );
+	}
+
+	public function test_include_in_a_set_value_is_allowed(): void {
+		// A macro is substituted verbatim, so its #include reaches the include stage in the body.
+		$this->assert_clean( "#set %x% = #include \"y\"
+%x%" );
+	}
+
+	/**
+	 * @dataProvider tainted_counts
+	 */
+	public function test_a_macro_count_is_rejected( string $template ): void {
+		$this->assert_rejected( $template );
+	}
+
+	public function tainted_counts(): array {
+		return array(
+			'direct enumeration'      => array( "#set %n% = {1|4|9}
+{plural %n%: a|b}" ),
+			'direct permutation'      => array( "#set %n% = [1|2]
+{plural %n%: a|b}" ),
+			'one hop'                 => array( "#set %m% = {1|4|9}
+#set %n% = %m%
+{plural %n%: a|b}" ),
+			'three hops'              => array( "#set %a% = {1|2}
+#set %b% = %a%
+#set %c% = %b%
+{plural %c%: x|y}" ),
+			// The conditional resolves in time; the enumeration it uncovers does not.
+			'enumeration in a branch' => array( "#set %flag% = 1
+#set %n% = {?flag?{1|4}|2}
+{plural %n%: a|b}" ),
+			// A nested plural resolves in the SAME pass as the outer block, not before it.
+			'a nested plural'         => array( "#set %n% = {plural 1:1|2}
+{plural %n%: a|b}" ),
+		);
+	}
+
+	/**
+	 * @dataProvider sound_counts
+	 */
+	public function test_a_sound_count_is_accepted( string $template ): void {
+		$this->assert_clean( $template );
+	}
+
+	public function sound_counts(): array {
+		return array(
+			'def holds a literal by the time plurals run' => array( "#def %n% = {1|4|9}
+{plural %n%: a|b}" ),
+			'a literal #set'                             => array( "#set %n% = 5
+{plural %n%: a|b}" ),
+			'no variable at all'                         => array( '{plural 5: a|b}' ),
+			// Conditionals resolve at 6c, before plurals at 6d — this renders correctly.
+			'a conditional'                              => array( "#set %flag% = 1
+#set %n% = {?flag?1|2}
+{plural %n%: a|b}" ),
+		);
+	}
+
+	public function test_a_self_referential_macro_does_not_hang_the_taint_walk(): void {
+		$this->assert_rejected( "#set %a% = {1|2} %a%
+{plural %a%: x|y}" );
+	}
 }

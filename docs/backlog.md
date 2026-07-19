@@ -38,7 +38,7 @@ ICU MessageFormat (`{count, plural, one {…} few {…} other {…}}`), gettext 
 - **Count slot:** integer literal OR `%var%` reference. The plural pass runs **after** variable expansion, so by the time it executes the variable has already been substituted to its string value.
 - **Delimiter:** `:` separates count slot from forms slot. Whitespace around it is permissive.
 - **Forms:** pipe-separated. Arity must match the locale's plural family (validated; see arity table below).
-- **Forms must NOT contain nested spintax brackets** (`{` `}` `[` `]`). Synonyms / conditionals / permutations inside a form raise `PluralFormError`. Authors who need conditional content in a form must extract it via `#set` and reference the resulting variable in plain form text. HTML tags (`<em>`, `<a>`) and `%`-delimited unresolved variables are allowed — only spintax-structural brackets are forbidden.
+- **Forms must NOT contain nested spintax brackets** (`{` `}` `[` `]`). Synonyms / conditionals / permutations inside a form raise `PluralFormError`. Authors who need conditional content in a form must extract it via `#def` and reference the resulting variable in plain form text. (It was `#set` until 3.0.0, when `#set` went back to being a macro — a macro is substituted verbatim and puts the brackets straight back into the form slot.) HTML tags (`<em>`, `<a>`) and `%`-delimited unresolved variables are allowed — only spintax-structural brackets are forbidden.
 
 #### Examples
 
@@ -262,3 +262,22 @@ It is also the one output where the engines derive the string **differently**: P
 **Fix (at implementation time).** One corpus fixture in `spintax-js`: a 2-form `{plural}` under `sr`, expecting the fullwidth-braced verbatim block. Cheap insurance on the path most users will actually hit. The strict-throw half stays per-engine by construction — a fixture has no vocabulary for a thrown exception and `@spintax/core` has no strict mode to throw from.
 
 **Trigger:** next corpus change in `spintax-js`; land it there, not here.
+
+---
+
+### `#def` is not available for global variables
+
+**Status:** open — deliberately scoped out of the 3.0.0 `#set`/`#def` change (2026-07-19), caught in review before it shipped half-built.
+
+**Problem.** `#def` works inside a template but is refused in Settings → Spintax. The refusal is honest rather than arbitrary: global variables persist as a flat `name => value` map (`SettingsRepository::get_global_variables()`, parsed by `Parser::extract_set_directives()`), which records no trace of *which* directive defined a name. A global `#def` would therefore validate, survive in the raw textarea the editor reads back, and then never reach the renderer — `%brand%` would render unresolved, with nothing anywhere saying why. Accepting it would be worse than refusing it, so the save-time validator rejects `#def` with its own message pointing at templates.
+
+For one commit the Settings help text and placeholder advertised global `#def` while the parsing path was still `#set`-only. That is what the refusal now prevents.
+
+**Fix (at implementation time).** Two decisions, neither of them a patch:
+
+1. **Storage.** Either persist the directive kind alongside each global (a schema change to the `spintax_global_variables` option, with a migration for existing flat data), or stop deriving the parsed map from `#set`-only extraction and keep the raw text as the single source, parsing on read.
+2. **Layering.** A rolled global has to land somewhere. The roll currently writes into the *local* layer, which is right for a template's own `#def` but wrong for a global — a template-local `#set` of the same name must still win, and two things in one layer resolve by merge order rather than by rule. Decide whether rolled globals join the global layer (and therefore roll before the template's own directives are even known) or stay local with an explicit precedence rule.
+
+Also worth settling: a global `#def` is rolled once per *render*, not once per page or per site. Two templates on one page would each get their own pick — which is probably what an author expects from "global", but it is not what "fixed" sounds like, and the help text has to say so.
+
+**Trigger:** a user asking for a site-wide value that must not vary within a page. Until then the template-level `#def` covers every case the 3.0.0 work was motivated by.

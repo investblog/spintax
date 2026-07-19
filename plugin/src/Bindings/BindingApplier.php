@@ -219,7 +219,12 @@ class BindingApplier {
 		}
 
 		// Expensive facts (only after all cheap gates clear).
-		$rendered   = $this->render_source( $binding, $post_id, (string) $source['source'] );
+		$rendered   = $this->render_source(
+			$binding,
+			$post_id,
+			(string) $source['source'],
+			(int) ( $source['template_id'] ?? 0 )
+		);
 		$current    = $target->read( $binding, $post_id );
 		$stored_sig = (string) get_post_meta( $post_id, $this->signature_key( $binding ), true );
 
@@ -315,11 +320,18 @@ class BindingApplier {
 	 * `#set` block so the existing renderer picks them up as locals
 	 * (sitting between global settings and post-context runtime vars).
 	 *
-	 * @param array<string, mixed> $binding Binding payload.
-	 * @param int                  $post_id Target post id.
-	 * @param string               $source  Resolved source text.
+	 * The plural locale comes from the source template, mirroring `Renderer::render()`'s ladder —
+	 * `_spintax_locale` first, site locale second. Rendering through the site locale instead is a
+	 * real defect here rather than a cosmetic one: a binding writes its output into a stored field,
+	 * so a 3-form template applied on a 2-form site persists fullwidth-braced wreckage into the
+	 * catalogue. A `per_post` source has no template and keeps the site locale.
+	 *
+	 * @param array<string, mixed> $binding     Binding payload.
+	 * @param int                  $post_id     Target post id.
+	 * @param string               $source      Resolved source text.
+	 * @param int                  $template_id Source template id, 0 for `per_post` sources.
 	 */
-	private function render_source( array $binding, int $post_id, string $source ): string {
+	private function render_source( array $binding, int $post_id, string $source, int $template_id = 0 ): string {
 		$overrides = (string) ( $binding['variables']['overrides'] ?? '' );
 		if ( '' !== trim( $overrides ) ) {
 			$source = $overrides . "\n" . $source;
@@ -342,7 +354,15 @@ class BindingApplier {
 			$runtime_vars = array_merge( $runtime_vars, $this->acf_siblings->build( $binding, $post_id ) );
 		}
 
-		return $this->renderer->process_template( $source, $runtime_vars );
+		$locale = '';
+		if ( $template_id > 0 ) {
+			$locale = (string) get_post_meta( $template_id, OptionKeys::META_LOCALE, true );
+		}
+		if ( '' === $locale ) {
+			$locale = (string) get_locale();
+		}
+
+		return $this->renderer->process_template( $source, $runtime_vars, null, $locale );
 	}
 
 	/**

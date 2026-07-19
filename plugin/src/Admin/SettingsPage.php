@@ -211,12 +211,17 @@ class SettingsPage {
 				<p class="description">
 					<?php
 					esc_html_e(
-						'One variable per line using #set syntax. Available to all templates. Local #set in a template overrides globals with the same name.',
+						'One variable per line. Available to all templates; a local definition in a template overrides a global of the same name.',
 						'spintax'
 					);
 					?>
 				</p>
-				<p class="description"><code>#set %name% = value</code></p>
+				<p class="description">
+					<code>#set %name% = value</code> —
+					<?php esc_html_e( 'a macro: re-picked at every use, so the same variable can read differently across a page.', 'spintax' ); ?>
+					<br>
+					<?php esc_html_e( 'Global variables are #set only. Use #def inside a template when a value must be picked once and held.', 'spintax' ); ?>
+				</p>
 
 				<?php
 				$this->render_variable_errors();
@@ -360,15 +365,32 @@ class SettingsPage {
 				continue;
 			}
 
-			// Every non-empty line must be a valid #set directive.
-			if ( ! preg_match( '/^#set\s+%(\w+)%\s*=\s*(.+)$/u', $trimmed ) ) {
+			// Globals are `#set` only. The grammar comes from the parser rather than a copy: this
+			// used to carry its own pattern with `\s` and `(.+)`, which rejected the legal empty
+			// value `#set %x% =` that the engine accepts.
+			//
+			// `#def` is rejected here on purpose, with its own message. Global variables are stored
+			// as a flat name => value map with no record of which directive defined them, so a
+			// global `#def` would validate, persist in this textarea, and then never reach the
+			// renderer — the reference would render unresolved. Accepting it would be worse than
+			// refusing it. Supporting it properly is a schema change plus a layering decision; see
+			// docs/backlog.md.
+			if ( ! preg_match( \Spintax\Core\Engine\Parser::SET_DIRECTIVE_PATTERN, $trimmed ) ) {
+				$is_def = 1 === preg_match( '/^[ \t]*#def\b/u', $trimmed );
+
 				$errors[] = array(
-					'message' => sprintf(
-						/* translators: %1$d: line number, %2$s: line content. */
-						__( 'Line %1$d: invalid syntax. Expected: #set %%name%% = value. Got: %2$s', 'spintax' ),
-						$line_num + 1,
-						mb_substr( $trimmed, 0, 60 )
-					),
+					'message' => $is_def
+						? sprintf(
+							/* translators: %d: line number. */
+							__( 'Line %d: #def is not available for global variables — only #set. Define it inside a template instead.', 'spintax' ),
+							$line_num + 1
+						)
+						: sprintf(
+							/* translators: %1$d: line number, %2$s: line content. */
+							__( 'Line %1$d: invalid syntax. Expected: #set %%name%% = value. Got: %2$s', 'spintax' ),
+							$line_num + 1,
+							mb_substr( $trimmed, 0, 60 )
+						),
 					'line'    => $line_num + 1,
 				);
 			}

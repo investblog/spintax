@@ -85,6 +85,17 @@ final class OptionKeys {
 	public const META_LAST_REGENERATED = '_spintax_last_regenerated_at';
 
 	/**
+	 * Per-template plural locale meta key.
+	 *
+	 * Read by the renderer, the preview and the validator, each of which must resolve the
+	 * same ladder — this key first, the site locale second. It was a bare string in one
+	 * place until the validator became a second consumer.
+	 *
+	 * @var string
+	 */
+	public const META_LOCALE = '_spintax_locale';
+
+	/**
 	 * Bindings store option key (single autoloaded option, see spec §4.1).
 	 *
 	 * @var string

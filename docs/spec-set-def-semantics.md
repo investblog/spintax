@@ -179,8 +179,15 @@ Decisions:
 - **The alias map is every macro value the roll can see, not just local `#set`.** Same defect one
   layer out, found on the second review pass: a global or runtime `%s% = %a%` pointing at a local
   `#def %a%` is as real a dependency as a local `#set` doing it, and as invisible. Build the graph
-  from globals + `#set` + runtime, **minus the definition names themselves** — a `#def` shadows a
-  global of the same name, and hopping through the shadowed value computes the wrong graph.
+  from globals + `#set` + runtime, **minus the definitions that will actually be rolled**.
+  - A `#def` shadows a global of the same name, so hopping through the shadowed global's value
+    computes the wrong graph — exclude it.
+  - A `#def` that a **runtime or caller variable outranks is never rolled**, so the runtime value is
+    what actually gets substituted and the graph must follow it — do **not** exclude it. The earlier
+    wording here said "minus the definition names themselves", which excluded these too; the
+    dependency behind such a name became invisible and **declaration order leaked back into the
+    result**, breaking the contract two lines above. Caught on the third review pass, in both
+    engines and in both call sites (the pipeline roll and `Parser::process()`).
 - **Name comparison is case-insensitive at every gate.** `%var%` references are, so an override
   check that uses raw array keys will let `#def %x%` beat a caller-supplied `X`.
 
@@ -322,10 +329,44 @@ it is frozen before the plural pass — which is what makes it the fix the diagn
 `plural.count-macro` is the lint that replaces what collapse-once used to fix implicitly. It is the
 diagnostic that tells a casino-style template author "this counter needs `#def`".
 
+**Taint is decided by stage order, not by bracket type — and the exemption is conditionals ONLY.**
+Conditionals resolve at 6c, *before* plurals at 6d, so a `{?…}` in a count value is already a
+literal when the count is read; flagging it is a false positive on a template that renders correctly
+(`#set %n% = {?flag?1|2}` renders `1 item` and was reported as broken). Enumerations (7) and
+permutations (8) run *after* plurals and are the real hazard. So the test is `[`, or `{` that does
+not open a conditional.
+
+A nested `{plural …}` is **not** exempt, and getting that wrong is a trap this spec walked into:
+narrowing the rule for the conditional case, it exempted `{plural ` too — but a nested plural
+resolves in the *same* pass as the outer block, not before it, so `#set %n% = {plural 1:1|2}` used
+as a count leaves the outer construct holding spintax and it degrades to fullwidth braces. The
+validator said clean. Caught on the fourth review pass.
+
+The rule to port is the correspondence, not the regex: **for every shape a count value can take, the
+validator's verdict must match what the renderer actually does.** Pin the whole table, not one case:
+
+| `#set` value used as a count | Renders | Validator |
+|---|---|---|
+| literal `1` | works | clean |
+| `{?flag?1|2}` conditional | works | clean |
+| `{1|4}` enumeration | block dropped | error |
+| `[1|2]` permutation | block dropped | error |
+| `{?flag?{1|4}|2}` enum inside a conditional | block dropped | error |
+| `{plural 1:1|2}` nested plural | fullwidth braces | error |
+| any `#def` | works | clean |
+
 **Known limit, by construction.** The validator is handed global variable *names*, never their
 values, so taint cannot propagate through a global: a count referencing one is not flagged. Static
 analysis cannot see that far. This is why the runtime consequence (block silently dropped) is pinned
 by an engine test rather than left to the linter.
+
+**The binding path needs the same locale ladder as the renderer.** A binding rendering a template
+source must resolve `_spintax_locale` → site locale, exactly as `Renderer::render()` does. Missing
+it is worse here than in a preview: a binding **persists** its output, so a 3-form template applied
+on a 2-form site writes fullwidth-braced wreckage into a stored field. In the plugin this meant
+carrying the source template id out of `BindingResolver` alongside the source text. Per-post sources
+have no template and keep the site locale. Ports with a binding-like pre-generation layer must check
+the same thing.
 
 **A second piece of advice flipped, and it is scattered.** "Forms must not contain nested brackets —
 extract via `#set` first" was **correct under collapse-once** (the `#set` froze to literal text) and
@@ -394,6 +435,22 @@ Validation fixtures (no RNG needed): `validate/def-malformed` (`#def %x% no equa
 
 `validate/set-empty-value` also belongs here, pinning that an empty `#set` value is *valid* — the
 divergence in §3.2 exists because nothing asserted it.
+
+**[CRITICAL] The corpus runner reimplements the pipeline, and it is now wrong.**
+`packages/conformance/php/tests/GoldenCorpusTest.php::renderPipeline()` is a **hand-written replica**
+of `Renderer::process_template`, complete with line-number citations — and it still calls
+`extract_set_directives()` and performs Stage 4b collapse-once. Consequences, all of which matter:
+
+- the corpus **never exercises the real `Renderer` or `Pipeline`**. "138 green against the plugin
+  engine" certifies the primitives and this replica, not the renderer the plugin actually ships;
+- the replica now implements semantics **neither PHP engine has**, and stays green only because no
+  fixture distinguishes macro from roll-once — the same blindness that let 2.2.0 flip unnoticed;
+- it is a **third** place the stage order is written down, after the plugin's `Renderer` and the
+  package's `Pipeline`.
+
+Update it in step 3, **before or with** the first `#def` fixture. A fixture landing against the
+stale replica would make the PHP legs disagree with TS for a reason that has nothing to do with
+either engine.
 
 **What stays in unit tests.** That two references to a `#set` pool *can* differ under a real RNG is a
 statistical claim, not a fixture; keep it per engine. The seeded fixtures above pin the mechanism;

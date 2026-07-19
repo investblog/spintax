@@ -24,7 +24,9 @@ class RenderContext {
 	private array $global_vars;
 
 	/**
-	 * Variables defined via #set directives inside the template.
+	 * Variables defined inside the template: raw `#set` values, plus `#def` values already frozen
+	 * by the roll stage. Both land in the same layer — the difference between them is settled
+	 * before they get here.
 	 *
 	 * @var array<string, string>
 	 */

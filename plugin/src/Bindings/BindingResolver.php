@@ -103,10 +103,18 @@ class BindingResolver {
 			);
 		}
 
+		// `template_id` travels with the source so the applier can resolve the same plural locale
+		// the template renders under on its own. Without it a binding on a template carrying
+		// `_spintax_locale` rendered through the site locale instead — a 3-form block on a 2-form
+		// site degrades to fullwidth braces, and that output is written into a field.
+		//
+		// `per_post` sources have no template and therefore no locale meta; they keep the site
+		// locale, which is the only answer available.
 		return array(
-			'found'  => true,
-			'source' => $source,
-			'reason' => self::FOUND,
+			'found'       => true,
+			'source'      => $source,
+			'reason'      => self::FOUND,
+			'template_id' => (int) $post->ID,
 		);
 	}
 

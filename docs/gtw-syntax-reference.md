@@ -120,9 +120,44 @@ Some text with %name% and %greeting%, also %items%.
 - Variable names are enclosed in `%`: `%name%`
 - Variable names are alphanumeric + underscore
 - Values can contain any spintax syntax (enumerations, permutations, other variables)
-- Variables are expanded when referenced, not when defined (lazy evaluation)
+- Variables are expanded when referenced, not when defined (lazy evaluation) — so a value carrying
+  `{a|b}` or `[a|b]` is **re-picked at every reference**, and the same variable can read differently
+  twice in one sentence. This is deliberate: a `#set` is a macro.
+- Use **`#def`** (below) when a value must be picked once and held
 - `#set` lines are stripped from output
 - Variables can reference other variables (expanded recursively)
+
+---
+
+## 3a. Fixed Variables `#def`
+
+Same grammar as `#set`, opposite semantics: the value is rendered **once per render** and the result
+is held for every reference.
+
+```text
+#def %VARIABLE_NAME% = value or spintax structure
+```
+
+```text
+#def %count% = {1|4|9}
+We stock %count% {plural %count%: item|items}.
+```
+
+Reach for `#def` when a value must not disagree with itself:
+
+- a number that is both printed and grammatically agreed — under `#set` the printed count and the
+  plural form come from separate picks, and the block is dropped besides, because the count slot
+  still holds unresolved spintax when plurals are decided;
+- a name or tone that must stay consistent across sentences;
+- content extracted out of a `{plural …}` form slot, which forbids nested brackets — a `#set` would
+  put them straight back.
+
+**Rules** are `#set`'s, plus:
+- A `#def` value is resolved after the variable context exists, so it can read globals and runtime
+  variables; a runtime variable of the same name still outranks it
+- A `#def` may be built from another `#def`; order of declaration does not matter
+- `#include` is not allowed inside a `#def` value — includes resolve after the value is frozen
+- A name may be defined once, by one directive
 
 ---
 

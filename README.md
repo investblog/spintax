@@ -17,7 +17,7 @@ Spintax has two halves. The first is a content-generation **engine** with the GT
 
 - **Enumerations** `{a|b|c}` — randomly pick one option, with unlimited nesting
 - **Permutations** `[<config>a|b|c]` — pick N elements, shuffle, join with custom separators
-- **Variables** `%var%` — global, local (`#set`), and shortcode-level scopes
+- **Variables** `%var%` — global, local (`#set` re-picks at every use, `#def` picks once per render), and shortcode-level scopes
 - **Conditionals** `{?VAR?then|else}` — render a branch based on whether a variable is set (also inverted `{?!VAR?then}`)
 - **Plural agreement** `{plural <count>: form1|form2|form3}` — pick the grammatically correct noun form by count. RU/UK/BE and SR/HR/BS 3-form, EN-style 2-form. Anything else falls back to the 2-form rule, so `pl`/`cs`/`sk`/`sl`/`bg` are bucketed by a rule that is not theirs rather than rejected. First spintax engine with first-class plurals.
 - **Nested templates** — embed templates via `#include` or `[spintax]` shortcode
@@ -88,7 +88,8 @@ For bound ACF / post-meta fields, the rendered output is stored on the post itse
 | `[<sep> a\|b]` | Custom separator | `[< and > a\|b]` → `b and a` |
 | `[<config> a\|b\|c]` | Configured permutation | `[<minsize=2;sep=", "> a\|b\|c]` |
 | `%var%` | Variable reference | `Hello %name%!` |
-| `#set %var% = val` | Local variable | `#set %color% = {red\|blue}` |
+| `#set %var% = val` | Local variable, re-picked at every use | `#set %color% = {red\|blue}` |
+| `#def %var% = val` | Local variable, picked once per render | `#def %count% = {1\|4\|9}` |
 | `{?VAR?then\|else}` | Conditional branch | `{?name?Hi %name%\|Hi there}` |
 | `{?!VAR?then}` | Inverted conditional | `{?!name?Anonymous}` |
 | `{plural N: f1\|f2\|f3}` | Plural agreement | `%count% {plural %count%: товар\|товара\|товаров}` |

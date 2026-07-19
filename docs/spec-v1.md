@@ -52,7 +52,7 @@ Core promise:
 - Shortcode rendering in posts and pages
 - PHP rendering helper: `spintax_render( $id_or_slug, $vars = [] )`
 - Global variables in plugin settings
-- Local variables via `#set`
+- Local variables via `#set` (macro) and `#def` (fixed once per render)
 - Nested template rendering via `[spintax ...]` inside template bodies
 - Validation on save
 - Preview in admin
@@ -94,7 +94,7 @@ Each render request operates inside a context made of:
 
 - The target template
 - Global variables from plugin settings
-- Local variables defined in the template via `#set`
+- Local variables defined in the template via `#set` / `#def`
 - Runtime variables passed through shortcode attributes or `spintax_render()`
 - The current nested-template call stack for circular reference protection
 

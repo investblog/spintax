@@ -20,7 +20,7 @@ Ideal for content managers and SEO specialists producing many similar-but-unique
 
 * **Enumerations** `{a|b|c}` — randomly pick one option, with nesting support
 * **Permutations** `[<config>a|b|c]` — pick N elements, shuffle, join with custom separators
-* **Variables** `%var%` — global, local (`#set`), and shortcode-level variable scopes
+* **Variables** `%var%` — global, local (`#set` re-picks at every use, `#def` picks once per render), and shortcode-level scopes
 * **Conditionals** `{?VAR?then|else}` — render a branch based on whether a variable is set (also `{?!VAR?then}` inverted)
 * **Plural agreement** `{plural <count>: form1|form2|form3}` — pick grammatically correct noun form by count. RU/UK/BE and SR/HR/BS 3-form (one|few|many), EN-style 2-form (one|many). Other languages fall back to the 2-form rule, so `pl`, `cs`, `sk`, `sl` and `bg` are bucketed by a rule that is not theirs rather than rejected. First spintax engine with first-class plurals.
 * **Nested templates** — embed templates within templates via `#include` or `[spintax]`
@@ -56,7 +56,8 @@ Go to Spintax > Add New in the WordPress admin. Enter a title and your spintax m
 * `[a|b|c]` — permutation: picks N elements, shuffles, joins with space
 * `[<minsize=2;maxsize=3;sep=", ";lastsep=" and "> a|b|c|d]` — configured permutation
 * `%variable%` — variable reference
-* `#set %var% = value` — local variable definition
+* `#set %var% = value` — local variable, a macro: re-picked at every use
+* `#def %var% = value` — local variable, picked once per render and held at every use
 * `{?VAR?then|else}` — conditional: render a branch by truthiness of `%VAR%` (also `{?!VAR?then}` inverted)
 * `{plural %Count%: form1|form2|form3}` — plural agreement: picks the correct grammatical form by count (RU/UK/BE and SR/HR/BS 3-form, EN-style 2-form)
 * `/#comment#/` — block comment (stripped from output)

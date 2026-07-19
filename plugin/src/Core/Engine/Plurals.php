@@ -25,7 +25,8 @@ defined( 'ABSPATH' ) || exit;
  *
  * Errors:
  *   - PluralFormError  — form slot contains nested spintax brackets
- *                        (`{` `}` `[` `]`). Extract via `#set` first.
+ *                        (`{` `}` `[` `]`). Extract via `#def` first — a `#set`
+ *                        is substituted verbatim and puts the brackets back.
  *   - PluralArityError — wrong number of forms for the locale family.
  *
  * Empty / missing / non-numeric count → entire construct → empty string.
@@ -209,7 +210,7 @@ class Plurals {
 			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped, WordPress.Security.EscapeOutput.OutputNotEscaped -- exception message, not rendered output.
 			throw new PluralFormError(
 				sprintf(
-					'{plural ...}: forms must not contain nested spintax brackets ({}, []). Extract synonym / conditional / permutation via #set first, then reference the resulting variable in plain form text. Construct: %s',
+					'{plural ...}: forms must not contain nested spintax brackets ({}, []). Extract synonym / conditional / permutation via #def first, then reference the resulting variable in plain form text — a #set is substituted verbatim and would put the brackets straight back. Construct: %s',
 					$construct_text
 				),
 				$block['start'],

@@ -209,8 +209,8 @@ class MetaBoxes {
 			}
 		}
 
-		// Validate template content with full context.
-		$result = $this->run_validation( $post->post_content );
+		// Validate template content with full context, the template's own locale included.
+		$result = $this->run_validation( $post->post_content, $post_id );
 
 		if ( ! empty( $result['errors'] ) || ! empty( $result['warnings'] ) ) {
 			set_transient(
@@ -285,12 +285,17 @@ class MetaBoxes {
 			$content = $post->post_content;
 		}
 
-		// Validate with full context.
-		$validation = $this->run_validation( $content );
+		// Validate with full context, the template's own locale included.
+		$locale     = $this->resolve_locale( $post_id );
+		$validation = $this->run_validation( $content, $post_id );
 
-		// Render preview (does NOT touch public cache).
+		// Render preview (does NOT touch public cache). The locale is passed explicitly: the
+		// renderer falls back to the site locale when given none, while the real render path
+		// resolves `_spintax_locale` first. A template carrying a non-site locale therefore used
+		// to preview under the wrong plural rules — a correct 3-form block previewing as broken,
+		// and a broken one previewing clean, which is exactly backwards for an author.
 		$renderer = new Renderer();
-		$output   = $renderer->process_template( $content );
+		$output   = $renderer->process_template( $content, array(), null, $locale );
 
 		wp_send_json_success(
 			array(
@@ -329,12 +334,35 @@ class MetaBoxes {
 	}
 
 	/**
-	 * Run validation with known template slugs and global variables.
+	 * Resolve the plural locale for a template, mirroring the renderer's ladder.
+	 *
+	 * Per-template `_spintax_locale` first, then the site locale — the same order
+	 * `Renderer::render()` uses. Without this the validator was called locale-blind and
+	 * silently skipped every locale-dependent check, so a template could pass validation
+	 * and then render a broken plural block on the front end.
+	 *
+	 * @param int $post_id Template post id, 0 when unknown.
+	 * @return string
+	 */
+	private function resolve_locale( int $post_id ): string {
+		if ( $post_id > 0 ) {
+			$locale = (string) get_post_meta( $post_id, OptionKeys::META_LOCALE, true );
+			if ( '' !== $locale ) {
+				return $locale;
+			}
+		}
+
+		return (string) get_locale();
+	}
+
+	/**
+	 * Run validation with known template slugs, global variables and the template's locale.
 	 *
 	 * @param string $content Template content to validate.
+	 * @param int    $post_id Template post id, for the locale ladder. 0 when unknown.
 	 * @return array{errors: array, warnings: array}
 	 */
-	private function run_validation( string $content ): array {
+	private function run_validation( string $content, int $post_id = 0 ): array {
 		$known_slugs = get_posts(
 			array(
 				'post_type'      => TemplatePostType::POST_TYPE,
@@ -358,6 +386,6 @@ class MetaBoxes {
 		$global_vars = array_keys( $settings->get_global_variables() );
 
 		$validator = new Validator();
-		return $validator->validate( $content, $slugs, $global_vars );
+		return $validator->validate( $content, $slugs, $global_vars, $this->resolve_locale( $post_id ) );
 	}
 }

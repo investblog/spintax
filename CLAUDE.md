@@ -18,12 +18,17 @@ Free WordPress plugin for spintax-based content generation. Target audience: con
   | 1 | `spintax-php` (`W:\projects\spintax-php`) | engine + validator |
   | 2 | `spintax` (this repo) | engine + validator + admin + docs |
   | 3 | `spintax-js` (`W:\Projects\spintax-js`) | TS engine, **corpus fixtures**, authoring prompt |
-  | 4 | `spintax-opencart` | mirror, via its own `scripts/release.sh` |
+  | — | **tag + publish `spintax/core`** | **required before step 4** — see below |
+  | 4 | `spintax-opencart` | bump the `spintax/core` pin → `composer run sync-kernel` → its own host layer; released via its own `scripts/release.sh` |
   | 5 | `spintax.net` | engine bump + **both** copies (it vendors `src/engine/spintax.ts` *and* depends on `@spintax/core`) — user-owned, ask first |
 
   **Why: the two PHP engines FIRST, the corpus LAST.** Every repo's CI checks the others out with `actions/checkout` and **no `ref:`**, so each job floats on the others' *default branch*. Nothing is pinned and no pin-bump commit is ever needed — but a corpus fixture landing before the engines satisfy it turns both `php-parity` legs red. Say so in the PR description if CI may start early.
 
-  **Nothing is tagged until the last engine is in.** Version bumps belong to the release step, not to the per-repo work commits. Worked examples: 2.5.0 (sr/hr/bs plurals, a three-repo trio released 2026-07-18) and the 3.0.0 `#set`/`#def` change (`docs/spec-set-def-semantics.md`).
+  **[CORRECTED 2026-07-19] The OpenCart port is no longer a copy — it is a CONSUMER.** Since its 0.2.6 it takes `spintax/core` as a pinned Composer dependency and unpacks it into the shipped tree with `composer run sync-kernel`. So it cannot be updated before that package is **tagged and on Packagist**: its step necessarily follows the release, not precedes it. The old ordering was written when the port was a byte-for-byte copy of the plugin kernel and is wrong for what it is now.
+
+  **A caret pin can silently freeze the port a whole minor behind.** `KernelLoadsTest` compares the shipped tree against the pinned package and its docblock correctly reasons that freshness must come from "something external and versioned" — but the constraint was `^0.1`, which pre-1.0 means `>=0.1.0 <0.2.0` and therefore *can never* reach 0.2.0. The port consequently missed the BCS plural release entirely: on the shipped kernel `sr`/`hr`/`bs` still report arity 2, and a correct 3-form Serbian template renders as fullwidth-braced wreckage. The guard checks tree ≡ pin; nothing checks pin ≡ latest.
+
+  **Nothing is tagged until the last *engine* is in.** Version bumps belong to the release step, not to the per-repo work commits — with the OpenCart exception above. Worked examples: 2.5.0 (sr/hr/bs plurals, a three-repo trio released 2026-07-18) and the 3.0.0 `#set`/`#def` change (`docs/spec-set-def-semantics.md`).
 
   **The corpus does not certify what it looks like it certifies.** `packages/conformance/php/tests/GoldenCorpusTest.php` reimplements the render pipeline by hand instead of calling `Renderer`/`Pipeline`, so a green corpus attests the primitives and that replica — not the shipping renderers, bindings, cache, locale threading or host shielding. Keep the replica in step with the engines when stage order changes.
 

@@ -456,6 +456,10 @@ class Parser {
 	 * @return string Cleaned-up text.
 	 */
 	public function post_process( string $text ): string {
+		// Whether the CALLER's own text carries a NUL decides how step 12 restores. Read it
+		// here, before the shield mints any of its own — afterwards the two are
+		// indistinguishable.
+		$input_has_nul                   = str_contains( $text, "\x00" );
 		$placeholders                    = array();
 		$counter                         = 0;
 		$domain_part                     = '(?:(?:(?:xn--)?[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*)\.)+(?:xn--[a-z0-9\-]{2,59}|[\p{L}][\p{L}\p{N}-]{1,62})';
@@ -679,13 +683,28 @@ class Parser {
 			$text
 		);
 
-		// 12. Restore placeholders (reverse order for safety).
+		// 12. Restore placeholders.
+		//
+		// `str_replace` with array arguments is a repeated SUBSTRING substitution: it rewrites
+		// every occurrence of each key, not only the one the shield placed. `strtr` with a map
+		// is a TOKEN substitution — one left-to-right pass, longest match, no rescan of what it
+		// emitted. They are not the same function, and the difference is reachable from text
+		// carrying no NUL at all: two adjacent placeholders can sandwich author text that spells
+		// a key, so one token's CLOSING delimiter, that text and the next token's OPENING
+		// delimiter form a third occurrence of a key that really was minted. Delimiters are not
+		// owned by the token that placed them. Rendering `https://a.io e.g. URL_0mailto:x@y.io`,
+		// `str_replace` substitutes the forgery, destroys two real tokens and returns raw NUL
+		// bytes; `strtr` returns the text intact (spintax-js#54).
+		//
+		// So the choice is made on the caller's input, not on the algorithm: `strtr` whenever the
+		// input carries no NUL — which is all real input, and the answer the family agreed on —
+		// and the substring form only for the ambiguous corner where the delimiters no longer
+		// pair as the shield placed them. Pinned by the shared corpus fixture
+		// `postprocess/adjacent-placeholders-around-a-key-name`.
 		if ( ! empty( $placeholders ) ) {
-			$text = str_replace(
-				array_keys( $placeholders ),
-				array_values( $placeholders ),
-				$text
-			);
+			$text = $input_has_nul
+				? str_replace( array_keys( $placeholders ), array_values( $placeholders ), $text )
+				: strtr( $text, $placeholders );
 		}
 
 		return trim( $text );

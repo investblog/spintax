@@ -480,23 +480,26 @@ class Parser {
 			return $store_placeholder( $value, $prefix );
 		};
 
-		// 1. Shield: full URLs (with protocol).
+		// 1. Shield: URIs — full URLs (with protocol) and mailto:/tel: (no //
+		// authority) — in ONE pass. Must run before the email/domain passes,
+		// otherwise the address is carved out from under the prefix, leaving a
+		// bare 'mailto:'/'tel:' whose colon then gets a space injected, producing
+		// a malformed link.
+		//
+		// One pass, not two: a URI body runs to the first delimiter, so the two
+		// match sets overlap whenever one URI carries the other's scheme, and the
+		// second pass then runs into a placeholder the first had minted —
+		// 'mailto:sales@x.com?body=see%20https://shop.x.com/cart' stored a value
+		// containing URL_0's key, the restore was already past that key, and the
+		// engine emitted a raw U+0000. Either pass order damages whichever URI
+		// runs second; a single alternation has no second pass. U+0000 is excluded
+		// from the body class for the caller-supplied case (spintax-js#53).
 		$text = preg_replace_callback(
-			'~(?:https?|ftp)://[^\s<>"\')\]]+~iu',
+			'~(?:(?:https?|ftp)://|(?:mailto|tel):)[^\x00\s<>"\')\]]+~iu',
 			static function ( array $m ) use ( $store_with_trailing_punctuation ): string {
-				return $store_with_trailing_punctuation( $m[0], 'URL' );
-			},
-			$text
-		);
+				$prefix = preg_match( '~^(?:mailto|tel):~i', $m[0] ) ? 'URI' : 'URL';
 
-		// 1b. Shield: mailto:/tel: URIs (no // authority, so step 1 misses them).
-		// Must run before the email/domain passes — otherwise the address is
-		// carved out from under the prefix, leaving a bare 'mailto:'/'tel:' whose
-		// colon then gets a space injected, producing a malformed link.
-		$text = preg_replace_callback(
-			'~(?:mailto|tel):[^\s<>"\')\]]+~iu',
-			static function ( array $m ) use ( $store_with_trailing_punctuation ): string {
-				return $store_with_trailing_punctuation( $m[0], 'URI' );
+				return $store_with_trailing_punctuation( $m[0], $prefix );
 			},
 			$text
 		);

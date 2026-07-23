@@ -140,6 +140,8 @@ engine must reproduce, enforced in CI — so this is a verified guarantee rather
 | --- | --- | --- |
 | **PHP** | [`composer require spintax/core`](https://packagist.org/packages/spintax/core) | any PHP app — Laravel, Symfony, a CLI, a cron job |
 | **JavaScript / TypeScript** | [`npm i @spintax/core`](https://www.npmjs.com/package/@spintax/core) | Node, edge workers, the browser |
+| **Python** | [`pip install spintax-core`](https://pypi.org/project/spintax-core/) | Django, FastAPI, data pipelines, a script |
+| **Object Pascal** | [investblog/spintax-win](https://github.com/investblog/spintax-win) | native desktop / CLI tools (Free Pascal or Delphi) |
 | **OpenCart 3.x** | [Spintax SEO](https://github.com/investblog/spintax-opencart) | product / category copy and SEO URLs |
 
 ## Links

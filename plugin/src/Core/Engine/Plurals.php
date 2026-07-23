@@ -37,8 +37,8 @@ defined( 'ABSPATH' ) || exit;
  * construct survives subsequent pipeline stages without being mistaken
  * for a synonym by the enumeration resolver.
  *
- * Mirrors `spintax-plurals.ts` in casino-platform; see
- * `docs/spintax-plurals-engine-plan.md` there for the v5 contract.
+ * Behaviour is pinned by the shared cross-engine corpus rather than by a
+ * prose spec; see the plural fixtures in the conformance package.
  */
 class Plurals {
 

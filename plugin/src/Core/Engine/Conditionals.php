@@ -28,8 +28,8 @@ defined( 'ABSPATH' ) || exit;
  * (for conditionals that were introduced via substituted variable
  * values).
  *
- * Mirrors `spintax-conditionals.ts` (146 LOC) in casino-platform; see
- * `docs/spintax-conditionals-spec.md` there for the v1 contract.
+ * Behaviour is pinned by the shared cross-engine corpus rather than by a
+ * prose spec; see the conditional fixtures in the conformance package.
  */
 class Conditionals {
 

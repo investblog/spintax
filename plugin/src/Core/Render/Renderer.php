@@ -275,6 +275,10 @@ class Renderer {
 		// Shortcodes use square brackets which would be consumed
 		// by the permutation resolver. Shield them with placeholders first,
 		// then restore and resolve after enum/perm processing.
+		//
+		// Read the restore's guard BEFORE the shield mints a NUL of its own — afterwards a
+		// caller-borne NUL and a shield-minted one are indistinguishable.
+		$unambiguous         = self::restore_is_unambiguous( $text, $all_vars );
 		$nested_placeholders = array();
 		$nested_counter      = 0;
 		$text                = $this->shield_nested_constructs( $text, $nested_placeholders, $nested_counter );
@@ -314,13 +318,7 @@ class Renderer {
 		$text = $this->parser->resolve_permutations( $text );
 
 		// Restore [spintax] placeholders.
-		if ( ! empty( $nested_placeholders ) ) {
-			$text = str_replace(
-				array_keys( $nested_placeholders ),
-				array_values( $nested_placeholders ),
-				$text
-			);
-		}
+		$text = self::restore_shielded( $text, $nested_placeholders, $unambiguous );
 
 		// Stage 9: Resolve #include and [spintax].
 		$text = $this->resolve_nested( $text, $context );
@@ -397,9 +395,11 @@ class Renderer {
 	 * @return string
 	 */
 	private function render_definition_value( string $value, array $vars, string $locale ): string {
-		$shielded = array();
-		$counter  = 0;
-		$value    = $this->shield_nested_constructs( $value, $shielded, $counter );
+		// Read the restore's guard before the shield mints a NUL of its own, exactly as the body does.
+		$unambiguous = self::restore_is_unambiguous( $value, $vars );
+		$shielded    = array();
+		$counter     = 0;
+		$value       = $this->shield_nested_constructs( $value, $shielded, $counter );
 
 		$value = $this->conditionals->apply( $value, $vars );
 		$value = $this->parser->expand_variables( $value, $vars );
@@ -415,11 +415,73 @@ class Renderer {
 		$value = $this->parser->resolve_enumerations( $value );
 		$value = $this->parser->resolve_permutations( $value );
 
-		if ( ! empty( $shielded ) ) {
-			$value = str_replace( array_keys( $shielded ), array_values( $shielded ), $value );
-		}
+		$value = self::restore_shielded( $value, $shielded, $unambiguous );
 
 		return $value;
+	}
+
+	/**
+	 * Put the shielded `[spintax]` placeholders back.
+	 *
+	 * Two restores, and the choice between them is behaviour, not tuning. `str_replace()` over
+	 * arrays is SEQUENTIAL — every occurrence of the first key throughout the text, then the second,
+	 * and so on — which is O(text x keys) and is what made this stage quadratic. It is also
+	 * observable: a replacement can rewrite text an earlier one produced, and an unpaired NUL that
+	 * came in with the template can pair with the opening NUL of a real placeholder to name a key
+	 * the shield never minted. One left-to-right pass reproduces neither.
+	 *
+	 * `$unambiguous` is the caller's promise that no NUL entered from outside — see
+	 * {@see self::restore_is_unambiguous()}. Under it every NUL in the working text is one this
+	 * shield placed, so the keys are well formed and no shielded value can hold a NUL to forge
+	 * another, and `strtr()` — which takes the one key that can match at each position and never
+	 * rescans what it wrote — is the single pass.
+	 *
+	 * The promise removes the NUL-borne disagreements; it does not make the two restores identical.
+	 * Caller text sitting between two adjacent shielded shortcodes can spell a key this shield really
+	 * minted, using the neighbours' delimiters and no NUL of its own, and the sequential restore
+	 * substitutes it. `[spintax slug="a"] NESTED_0 [spintax slug="b"]` is such a body. The single
+	 * pass is the answer taken there, matching `@spintax/core`; both directions are pinned by the
+	 * shared cross-engine corpus.
+	 *
+	 * @param string                $text        Working text.
+	 * @param array<string, string> $shielded    Placeholder => original.
+	 * @param bool                  $unambiguous Whether the single-pass restore is known to agree.
+	 * @return string
+	 */
+	private static function restore_shielded( string $text, array $shielded, bool $unambiguous ): string {
+		if ( empty( $shielded ) ) {
+			return $text;
+		}
+
+		return $unambiguous
+			? strtr( $text, $shielded )
+			: str_replace( array_keys( $shielded ), array_values( $shielded ), $text );
+	}
+
+	/**
+	 * Can the single-pass restore stand in for the sequential one?
+	 *
+	 * Only when no NUL reaches the working text from outside the shield. Two doors: the template
+	 * body, and the variable values expansion substitutes into it — the second shield pass runs
+	 * after expansion precisely because that pass is the one way new text enters, so a `#set`,
+	 * a global, a runtime variable or a frozen `#def` carrying a NUL counts just as the body does.
+	 *
+	 * @param string                $text Body text about to be shielded.
+	 * @param array<string, string> $vars Every variable value that expansion can substitute.
+	 * @return bool
+	 */
+	private static function restore_is_unambiguous( string $text, array $vars ): bool {
+		if ( str_contains( $text, "\x00" ) ) {
+			return false;
+		}
+
+		foreach ( $vars as $value ) {
+			if ( str_contains( $value, "\x00" ) ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**

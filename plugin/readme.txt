@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, seo, woocommerce, acf, content generation
 Requires at least: 6.2
 Tested up to: 7.0
-Stable tag: 3.0.0
+Stable tag: 3.0.1
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -253,6 +253,10 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 3.0.1 =
+* **Fix: rendered output can no longer contain a stray null character.** In rare templates that place a link, a `mailto:`/`tel:` address, an email or a nested `[spintax]` shortcode directly next to one another, the engine could emit an invalid U+0000 (NUL) byte — which some databases reject and browsers show as a replacement character. The internal placeholder handling in both the post-processor and the renderer was reworked so this can no longer happen.
+* **Faster rendering of large pages.** Restoring those internal placeholders is now linear instead of quadratic, so a very large render that previously took tens of seconds now finishes in a fraction of one. No template changes are needed. Engine parity with `@spintax/core` and `spintax/core` 0.3.1, locked by the shared cross-engine corpus.
+
 = 3.0.0 =
 * **Breaking: `#set` is a macro again — it is re-picked at every use.** A variable defined with `#set` now behaves as it did before 2.2.0 and as this plugin's documentation has always described: the value is substituted wherever the variable appears, and any `{a|b}` or `[a|b]` inside it is rolled fresh each time. Between 2.2.0 and this release an enumeration in a `#set` value was picked once and held, which contradicted the documented behaviour from the day it shipped.
 * **New: `#def` — a value picked once per render and held.** `#def %brand% = {Acme|Acme Group}` picks one variant and every `%brand%` in that page reads the same. Use it whenever two mentions disagreeing would look like a mistake: a product name, a tone, and above all a number you both print and agree grammatically.
@@ -418,6 +422,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 3.0.1 =
+Fixes a rare stray null character in rendered output near adjacent links, emails or nested shortcodes, and makes large renders much faster. No template changes needed.
 
 = 3.0.0 =
 Breaking: #set is a macro again, re-picked at every use. The new #def holds one value for the whole page. If you used #set for a plural count, that block now renders empty - change the one #set line to #def. References stay as they are; the editor flags the affected templates.

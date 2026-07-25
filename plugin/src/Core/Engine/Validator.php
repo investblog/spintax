@@ -234,7 +234,10 @@ class Validator {
 				continue;
 			}
 
-			if ( ! preg_match( '/#include\b/u', $occurrence['value'] ) ) {
+			// ASCII lookahead, not `\b`: under /u PCRE's `\b` is a Unicode boundary, so
+			// `#includeя` had no boundary here and the check never fired — the reference's
+			// `\b` is ASCII and it does (#56).
+			if ( ! preg_match( '/#include(?![A-Za-z0-9_])/u', $occurrence['value'] ) ) {
 				continue;
 			}
 
@@ -530,7 +533,9 @@ class Validator {
 		// neither defined locally nor declared globally.
 		$body = $extracted['body'];
 		preg_match_all( Parser::VARIABLE_PATTERN, $body, $percent_matches );
-		preg_match_all( '/\{\?!?([A-Za-z_]\w*)\?/u', $body, $cond_matches );
+		// ASCII name tail, mirroring Conditionals::NAME_RE — `\w` under /u widened it to
+		// Unicode, so `{?xя?y}` produced a phantom ref no renderer in the family reads (#56).
+		preg_match_all( '/\{\?!?([A-Za-z_][A-Za-z0-9_]*)\?/u', $body, $cond_matches );
 		$all_refs = array_merge( $percent_matches[1] ?? array(), $cond_matches[1] ?? array() );
 
 		if ( ! empty( $all_refs ) ) {
@@ -570,7 +575,7 @@ class Validator {
 	private function detect_cycle( string $current, array $definitions, array $visited, array &$errors ): void {
 		$value = $definitions[ $current ] ?? '';
 
-		preg_match_all( '/%(\w+)%/u', $value, $refs );
+		preg_match_all( Parser::VARIABLE_PATTERN, $value, $refs );
 		if ( empty( $refs[1] ) ) {
 			return;
 		}

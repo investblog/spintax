@@ -37,12 +37,26 @@ class Parser {
 	 * directive as the value of an empty one — see
 	 * `test_extract_set_directives_empty_value_does_not_swallow_next`.
 	 *
-	 * The value group is `(.*?)`, not `(.+)`: an empty value is legal. The
-	 * validator used to disagree on both counts and reported `#set %x% =` as
-	 * malformed while the parser accepted it; anything checking these directives
-	 * must build on this constant rather than write its own pattern.
+	 * The value group is lazy and may be empty: an empty value is legal. The
+	 * validator used to disagree and reported `#set %x% =` as malformed while the
+	 * parser accepted it; anything checking these directives must build on this
+	 * constant rather than write its own pattern.
+	 *
+	 * Three parts are spelled out where this pattern once leaned on PCRE shorthands,
+	 * because the shorthands are not the family's sets (investblog/spintax-js#55, #56):
+	 *
+	 * - the NAME is `[A-Za-z0-9_]`, not `\w` — under `/u` PCRE2 turns on UCP and `\w`
+	 *   matches Cyrillic and accented letters, so `#set %имя% = X` was a valid,
+	 *   expanding directive here and a malformed-directive ERROR to every other
+	 *   engine. Identifiers are ASCII by contract;
+	 * - the ANCHORS are lookarounds over the four ECMAScript line terminators — PCRE's
+	 *   `/m` breaks on `\n` alone, the reference also on `\r`, U+2028 and U+2029, so a
+	 *   directive after a bare CR existed there and not here;
+	 * - the VALUE class excludes those four terminators (the reference's `.` does), and
+	 *   the explicit `\r?` keeps a CRLF line's `\r` out of the value — it used to leak
+	 *   in, so every value on a Windows-authored template carried a trailing `\r`.
 	 */
-	public const DIRECTIVE_PATTERN = '/^[ \t]*#(set|def)[ \t]+%(\w+)%[ \t]*=[ \t]*(.*?)[ \t]*$/mu';
+	public const DIRECTIVE_PATTERN = '/(?:\A|(?<=[\n\r\x{2028}\x{2029}]))[ \t]*#(set|def)[ \t]+%([A-Za-z0-9_]+)%[ \t]*=[ \t]*([^\n\r\x{2028}\x{2029}]*?)[ \t]*\r?(?=\z|[\n\r\x{2028}\x{2029}])/u';
 
 	/**
 	 * The same grammar narrowed to `#set`, for `extract_set_directives()` alone.
@@ -52,13 +66,15 @@ class Parser {
 	 * the constant it mirrors so the two cannot drift apart unnoticed — which is exactly what
 	 * happened when four near-copies of this were spread across the parser and the validator.
 	 */
-	public const SET_DIRECTIVE_PATTERN = '/^[ \t]*#set[ \t]+%(\w+)%[ \t]*=[ \t]*(.*?)[ \t]*$/mu';
+	public const SET_DIRECTIVE_PATTERN = '/(?:\A|(?<=[\n\r\x{2028}\x{2029}]))[ \t]*#set[ \t]+%([A-Za-z0-9_]+)%[ \t]*=[ \t]*([^\n\r\x{2028}\x{2029}]*?)[ \t]*\r?(?=\z|[\n\r\x{2028}\x{2029}])/u';
 
 	/**
 	 * A `%var%` reference. Shared by expansion and by `#def` dependency discovery, so the two
-	 * cannot disagree about what counts as a reference.
+	 * cannot disagree about what counts as a reference. ASCII, not `\w`, for the same #56
+	 * reason as the directive name: `%Имя%` expanded here and stayed literal text in every
+	 * other engine.
 	 */
-	public const VARIABLE_PATTERN = '/%(\w+)%/u';
+	public const VARIABLE_PATTERN = '/%([A-Za-z0-9_]+)%/u';
 
 	/**
 	 * An `#include "target"` line — the family rule, with both halves spelled out.

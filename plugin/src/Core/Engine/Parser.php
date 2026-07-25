@@ -61,6 +61,30 @@ class Parser {
 	public const VARIABLE_PATTERN = '/%(\w+)%/u';
 
 	/**
+	 * An `#include "target"` line — the family rule, with both halves spelled out.
+	 *
+	 * This used to be `/^[ \t]*#include\s+"([^"]+)"\s*$/mu`, which is NOT the family rule,
+	 * in two directions at once (investblog/spintax-js#55):
+	 *
+	 * - `\s` is the wrong class: the `u` modifier switches on PCRE2_UCP along with UTF, so
+	 *   `\s` matches U+0085, U+00A0 and all of `\p{Z}` — this engine took
+	 *   `#include<NBSP>"x"` for an include while every other engine in the family printed
+	 *   the line verbatim, and `include.unknown-target` is an error, so the widened class
+	 *   moved verdicts, not just matches. The gap is the six ASCII characters, written out.
+	 * - `^`/`$` under `/m` break on `\n` alone in PCRE; the reference's break on `\r`,
+	 *   U+2028 and U+2029 as well. The anchors are spelled out as lookarounds so a bare-CR
+	 *   line start is a line start here too — and, like the reference's, the trailing run
+	 *   is greedy and backtracks only to a line END, so it may legally swallow whole blank
+	 *   lines (a match can cross terminators; scanning resumes past the match, not at the
+	 *   next line).
+	 *
+	 * The corpus pins both halves (`extract/include-*`); measured against `@spintax/core`
+	 * over the 33-character whitespace/terminator alphabet and 60 000 include-shaped
+	 * differential inputs: zero divergences.
+	 */
+	public const INCLUDE_PATTERN = '/(?:\A|(?<=[\n\r\x{2028}\x{2029}]))[ \t]*#include[ \t\n\r\f\x0B]+"([^"]+)"[ \t\n\r\f\x0B]*(?=\z|[\n\r\x{2028}\x{2029}])/u';
+
+	/**
 	 * Maximum iterations for enumeration/permutation resolution.
 	 *
 	 * @var int
@@ -719,7 +743,7 @@ class Parser {
 	public function find_include_directives( string $text ): array {
 		$includes = array();
 
-		if ( preg_match_all( '/^[ \t]*#include\s+"([^"]+)"\s*$/mu', $text, $matches, PREG_OFFSET_CAPTURE ) ) {
+		if ( preg_match_all( self::INCLUDE_PATTERN, $text, $matches, PREG_OFFSET_CAPTURE ) ) {
 			foreach ( $matches[0] as $i => $full_match ) {
 				$offset = $full_match[1];
 				$line   = substr_count( $text, "\n", 0, $offset ) + 1;
@@ -745,7 +769,7 @@ class Parser {
 	 */
 	public function resolve_includes( string $text, callable $resolver ): string {
 		return preg_replace_callback(
-			'/^[ \t]*#include\s+"([^"]+)"\s*$/mu',
+			self::INCLUDE_PATTERN,
 			static fn( array $m ): string => $resolver( $m[1] ),
 			$text
 		);

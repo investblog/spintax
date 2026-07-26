@@ -17,6 +17,29 @@ npm run lint:php       # PHPCS 0 errors, 0 warnings.
 
 If either fails, fix before continuing. Do not tag.
 
+## Gate A+ — Cross-engine corpus (always required; CI enforces it, know what it means)
+
+The engine's behaviour contract is the shared golden corpus in `investblog/spintax-js`
+(`packages/conformance/fixtures/*.json`), consumed by this plugin, `spintax/core` (Packagist),
+`@spintax/core` (npm) and `spintax-core` (PyPI). The `conformance` job in CI runs it against
+`plugin/src` on every push, and the release ZIP `build` job **needs** it — so a tag on a
+commit whose CI is green has already passed this gate. What the checklist adds:
+
+- **Check the right commit.** CI green on `main` yesterday says nothing about today's tag
+  target. The gate is green CI on the exact commit being tagged.
+- **Local run, when CI is far away** (any PHP 8 container; no wp-env, no MySQL):
+
+  ```bash
+  docker run --rm -v "<projects>:/w" -w /w/spintax-js/packages/conformance/php \
+    -e SPINTAX_PLUGIN_SRC=/w/spintax/plugin/src php:8.3-cli-alpine \
+    php vendor/phpunit/phpunit/phpunit
+  ```
+
+- **Ordering rule when a release carries a parity fix:** the engine change lands (here and
+  in the sibling engines) *before* the corpus fixture that pins it lands in `spintax-js` —
+  the fixture is the lock, the engines are what it locks. A fixture describing behaviour
+  this plugin has not shipped turns `conformance` red by design.
+
 ## Gate B — Plugin Check (always required)
 
 Plugin Check catches WP.org guideline issues PHPUnit doesn't see (output escaping, prepared statements, deprecated function use, prefix collisions, ABSPATH guards, etc).

@@ -147,14 +147,17 @@ class ParserTest extends \WP_UnitTestCase {
 		$this->assertSame( '%unknown%', $parser->expand_variables( '%unknown%', array() ) );
 	}
 
-	public function test_expand_circular_throws(): void {
+	public function test_expand_circular_stops_lenient(): void {
+		// Render never throws on template content (spintax-js#57): a mutual cycle stops at
+		// the budget with the unresolved reference left literal. The surviving NAME is the
+		// parity witness — 51 hops (the reference counts recursion depth 0..50 inclusive)
+		// is odd, so %a% ends as %b%; a 50-pass loop would leave %a%.
 		$parser = $this->make_first();
 		$vars   = array(
 			'a' => '%b%',
 			'b' => '%a%',
 		);
-		$this->expectException( \RuntimeException::class );
-		$parser->expand_variables( '%a%', $vars );
+		$this->assertSame( '%b%', $parser->expand_variables( '%a%', $vars ) );
 	}
 
 	public function test_process_randomises_variable_value_per_occurrence(): void {

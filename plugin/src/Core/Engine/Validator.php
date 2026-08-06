@@ -186,7 +186,10 @@ class Validator {
 		$lines  = explode( "\n", $text );
 
 		foreach ( $lines as $line_num => $line_text ) {
-			$trimmed = ltrim( $line_text );
+			// Spaces and tabs ONLY — the reference trims /^[ \t]+/. Bare ltrim() also eats
+			// NUL/VT/CR, which turns e.g. NUL + `#set broken` into a malformed-directive
+			// error the reference does not report (corpus: validate/directive-check-*).
+			$trimmed = ltrim( $line_text, " \t" );
 
 			$kind = null;
 			foreach ( array( '#set', '#def' ) as $candidate ) {

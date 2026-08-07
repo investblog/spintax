@@ -373,4 +373,94 @@ TPL;
 		$this->assert_rejected( "#set %a% = {1|2} %a%
 {plural %a%: x|y}" );
 	}
+
+	// =========================================================================
+	// The circular-reference walk — emission shape and the non-hang canaries.
+	//
+	// The b2924f3 rewrite (references_of / names_that_reach_a_cycle /
+	// walk_cycles_from) was gated by a 464-document differential external to the
+	// repository; these are its CI-runnable half. Exact messages pin emission
+	// order, count and path text (the corpus asserts codes and verdicts, never
+	// counts); the big silent shapes pin "returns at all" — the depth-30 diamond
+	// used to never return, so a complexity regression fails by timeout. The
+	// per-path emission itself is under discussion in spintax-js#59; this pins
+	// what ships.
+	// =========================================================================
+
+	/**
+	 * @return string[] Circular-reference messages, in emission order.
+	 */
+	private function circular_messages( string $template ): array {
+		$result   = $this->validator()->validate( $template );
+		$messages = array_column( $result['errors'], 'message' );
+		return array_values(
+			array_filter(
+				$messages,
+				static fn( string $m ): bool => str_starts_with( $m, 'Circular' )
+			)
+		);
+	}
+
+	public function test_a_three_cycle_reports_once_per_root_with_the_full_path(): void {
+		$this->assertSame(
+			array(
+				'Circular variable reference detected: c0 → c1 → c2 → c0.',
+				'Circular variable reference detected: c1 → c2 → c0 → c1.',
+				'Circular variable reference detected: c2 → c0 → c1 → c2.',
+			),
+			$this->circular_messages( "#set %c0% = %c1%\n#set %c1% = %c2%\n#set %c2% = %c0%" )
+		);
+	}
+
+	public function test_a_duplicated_edge_reports_per_occurrence(): void {
+		$this->assertSame(
+			array(
+				'Circular variable reference detected: a → b → a.',
+				'Circular variable reference detected: a → b → a.',
+				'Circular variable reference detected: b → a → b.',
+			),
+			$this->circular_messages( "#set %a% = %b% %b%\n#set %b% = %a%" )
+		);
+	}
+
+	public function test_a_diamond_feeding_a_cycle_reports_per_path(): void {
+		$template = "#set %a2% = %p%\n#set %a1% = %a2% %a2%\n#set %a0% = %a1% %a1%\n"
+			. "#set %p% = %q%\n#set %q% = %p%";
+		$this->assertCount( 9, $this->circular_messages( $template ) );
+	}
+
+	public function test_a_silent_chain_of_2000_definitions_is_clean(): void {
+		$lines = array( '#set %v0% = x' );
+		for ( $i = 1; $i < 2000; $i++ ) {
+			$lines[] = "#set %v{$i}% = %v" . ( $i - 1 ) . '%';
+		}
+		$result = $this->validator()->validate( implode( "\n", $lines ) );
+		$this->assertSame( array(), $result['errors'] );
+	}
+
+	public function test_a_silent_diamond_of_depth_30_is_clean(): void {
+		$n     = 30;
+		$lines = array( "#set %a{$n}% = leaf" );
+		for ( $i = $n - 1; $i >= 0; $i-- ) {
+			$lines[] = "#set %a{$i}% = %a" . ( $i + 1 ) . '% %a' . ( $i + 1 ) . '%';
+		}
+		$result = $this->validator()->validate( implode( "\n", $lines ) );
+		$this->assertSame( array(), $result['errors'] );
+	}
+
+	public function test_taint_walks_a_300_macro_chain_into_the_count(): void {
+		$lines = array( '#set %t0% = {x|y}' );
+		for ( $i = 1; $i < 300; $i++ ) {
+			$lines[] = "#set %t{$i}% = %t" . ( $i - 1 ) . '%';
+		}
+		$template = implode( "\n", $lines ) . "\n{plural %t299%: one|many}";
+		$result   = $this->validator()->validate( $template, array(), array(), 'en' );
+		$this->assertCount( 1, $result['errors'] );
+		$this->assertStringContainsString( 'is a #set macro', $result['errors'][0]['message'] );
+
+		$lines[0] = '#set %t0% = plain';
+		$control  = implode( "\n", $lines ) . "\n{plural %t299%: one|many}";
+		$result   = $this->validator()->validate( $control, array(), array(), 'en' );
+		$this->assertSame( array(), $result['errors'] );
+	}
 }

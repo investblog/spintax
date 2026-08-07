@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, seo, woocommerce, acf, content generation
 Requires at least: 6.2
 Tested up to: 7.0
-Stable tag: 3.0.1
+Stable tag: 3.0.2
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -262,6 +262,12 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 3.0.2 =
+* **Engine catch-up: the plugin's built-in engine is back in step with the standalone `spintax/core` 0.5.2.** The standalone engines (Composer, npm, PyPI, Object Pascal) had moved ahead of the plugin; every change below ships identically across the family and is locked by the shared cross-engine corpus.
+* **Fix: a circular `#set` no longer publishes an empty render.** A template whose definitions reference each other in a cycle used to render as an empty string; it now stops expanding at the depth budget and emits the partially-expanded text with the unresolved reference left visible — what every other engine in the family already does. The validator still reports the cycle as an error.
+* **Fix: directive and `#include` recognition follows the family grammar exactly.** Variable names are ASCII, as documented — `#set %имя% = …` was silently accepted (and expanded) by this engine alone while being an error to every other; the editor now reports it and the line renders as text. Likewise an `#include` separated by a non-breaking space is plain text rather than an include, a CRLF line ending no longer leaks a carriage return into a directive's value, and a stray control character before a `#set` no longer flags a valid template as malformed.
+* **Much faster validation of large templates.** The circular-reference walk and the plural-agreement analysis are now iterative: a 1,600-definition chain validates in 86 ms where it previously took 15.7 s, and definition shapes that previously hung the validator complete in seconds. Line-number reporting scales linearly too. Diagnostic output is byte-identical — order, count and messages verified against the previous engine on a 464-document differential.
+
 = 3.0.1 =
 * **Fix: rendered output can no longer contain a stray null character.** In rare templates that place a link, a `mailto:`/`tel:` address, an email or a nested `[spintax]` shortcode directly next to one another, the engine could emit an invalid U+0000 (NUL) byte — which some databases reject and browsers show as a replacement character. The internal placeholder handling in both the post-processor and the renderer was reworked so this can no longer happen.
 * **Faster rendering of large pages.** Restoring those internal placeholders is now linear instead of quadratic, so a very large render that previously took tens of seconds now finishes in a fraction of one. No template changes are needed. Engine parity with `@spintax/core` and `spintax/core` 0.3.1, locked by the shared cross-engine corpus.
@@ -431,6 +437,9 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Settings page with global variables editor
 
 == Upgrade Notice ==
+
+= 3.0.2 =
+Engine parity catch-up with spintax/core 0.5.2: a circular #set renders partial text instead of empty, directive/#include grammar matches the whole engine family (ASCII variable names, as documented), and validating large templates is orders of magnitude faster.
 
 = 3.0.1 =
 Fixes a rare stray null character in rendered output near adjacent links, emails or nested shortcodes, and makes large renders much faster. No template changes needed.

@@ -632,8 +632,8 @@ class Validator {
 			if ( isset( $grey[ $root ] ) || isset( $black[ $root ] ) ) {
 				continue;
 			}
-			$stack          = array( array( $root, 0 ) );
-			$grey[ $root ]  = true;
+			$stack         = array( array( $root, 0 ) );
+			$grey[ $root ] = true;
 			while ( ! empty( $stack ) ) {
 				$top  = count( $stack ) - 1;
 				$name = $stack[ $top ][0];
@@ -660,8 +660,8 @@ class Validator {
 						$reaches[ $name ] = true;
 					}
 				} else {
-					$stack[]        = array( $ref, 0 );
-					$grey[ $ref ]   = true;
+					$stack[]      = array( $ref, 0 );
+					$grey[ $ref ] = true;
 				}
 			}
 		}

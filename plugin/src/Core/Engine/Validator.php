@@ -387,27 +387,27 @@ class Validator {
 			}
 		}
 
-		do {
-			$grew = false;
+		// Same closure the old fixed-point sweep computed, via reverse edges — the sweep
+		// re-read every macro once per newly tainted name, O(n²) on a macro chain.
+		$queue = array_map( 'strval', array_keys( $tainted ) );
 
-			foreach ( $macros as $name => $value ) {
-				if ( isset( $tainted[ $name ] ) ) {
-					continue;
-				}
-
-				if ( ! preg_match_all( Parser::VARIABLE_PATTERN, $value, $references ) ) {
-					continue;
-				}
-
+		$dependents = array();
+		foreach ( $macros as $name => $value ) {
+			if ( preg_match_all( Parser::VARIABLE_PATTERN, (string) $value, $references ) ) {
 				foreach ( $references[1] as $reference ) {
-					if ( isset( $tainted[ strtolower( $reference ) ] ) ) {
-						$tainted[ $name ] = true;
-						$grew             = true;
-						break;
-					}
+					$dependents[ strtolower( $reference ) ][] = (string) $name;
 				}
 			}
-		} while ( $grew );
+		}
+		while ( ! empty( $queue ) ) {
+			$source = array_pop( $queue );
+			foreach ( $dependents[ $source ] ?? array() as $name ) {
+				if ( ! isset( $tainted[ $name ] ) ) {
+					$tainted[ $name ] = true;
+					$queue[]          = $name;
+				}
+			}
+		}
 
 		return $tainted;
 	}
@@ -524,10 +524,16 @@ class Validator {
 			}
 		}
 
-		// Check for circular references (A→B→A).
+		// Check for circular references (A→B→A). References are parsed once and the walk
+		// is pruned to names that can actually reach a cycle — the naive restart-per-root
+		// DFS re-parsed every value at every visit and re-explored shared subtrees, which
+		// hung validate() on ~1.5 KB of converging definitions (see spintax-js#59; the
+		// TS engine took the same fix in 0.3.3). Emission is unchanged: order, count and
+		// messages are the recursive walk's, duplicated edges and all.
+		$refs_of = $this->references_of( $definitions );
+		$reaches = $this->names_that_reach_a_cycle( $definitions, $refs_of );
 		foreach ( $definitions as $name => $value ) {
-			$visited = array( $name );
-			$this->detect_cycle( $name, $definitions, $visited, $errors );
+			$this->walk_cycles_from( (string) $name, $definitions, $refs_of, $reaches, $errors );
 		}
 
 		// Find all variable references in the body (outside #set lines).
@@ -568,42 +574,146 @@ class Validator {
 	}
 
 	/**
-	 * Detect circular variable references via DFS.
+	 * Each definition's references, lowercased, parsed once — the walk used to run
+	 * `preg_match_all` again at every visit of every root.
 	 *
-	 * @param string   $current     Current variable being traced.
-	 * @param array    $definitions All variable definitions.
-	 * @param string[] $visited     Variables visited in current path.
-	 * @param array    $errors      Error collector (by reference).
+	 * @param array $definitions All variable definitions.
+	 * @return array<string, string[]> Name → references in value order.
 	 */
-	private function detect_cycle( string $current, array $definitions, array $visited, array &$errors ): void {
-		$value = $definitions[ $current ] ?? '';
+	private function references_of( array $definitions ): array {
+		$refs_of = array();
+		foreach ( $definitions as $name => $value ) {
+			$list = array();
+			if ( preg_match_all( Parser::VARIABLE_PATTERN, (string) $value, $matches ) ) {
+				foreach ( $matches[1] as $ref ) {
+					$list[] = strtolower( $ref );
+				}
+			}
+			$refs_of[ (string) $name ] = $list;
+		}
+		return $refs_of;
+	}
 
-		preg_match_all( Parser::VARIABLE_PATTERN, $value, $refs );
-		if ( empty( $refs[1] ) ) {
-			return;
+	/**
+	 * Names from which a cycle of length ≥ 2 is reachable, over name → defined refs with
+	 * self-edges excluded — exactly the edges the reporting walk can traverse (it skips
+	 * `ref === current`; a pure self-loop is the self-reference check's).
+	 *
+	 * This is the prune that makes the walk affordable, and it is output-neutral by
+	 * construction: a report fires only when the walk meets a name already on its path,
+	 * which is a cycle that name lies on — so a subtree in which no name reaches any
+	 * cycle cannot emit, and skipping it changes nothing. One iterative colour walk.
+	 *
+	 * @param array $definitions All variable definitions.
+	 * @param array $refs_of     From `references_of()`.
+	 * @return array<string, true> Lookup of names that reach a cycle.
+	 */
+	private function names_that_reach_a_cycle( array $definitions, array $refs_of ): array {
+		$grey    = array();
+		$black   = array();
+		$reaches = array();
+
+		foreach ( $definitions as $root => $unused ) {
+			$root = (string) $root;
+			if ( isset( $grey[ $root ] ) || isset( $black[ $root ] ) ) {
+				continue;
+			}
+			$stack          = array( array( $root, 0 ) );
+			$grey[ $root ]  = true;
+			while ( ! empty( $stack ) ) {
+				$top  = count( $stack ) - 1;
+				$name = $stack[ $top ][0];
+				$i    = $stack[ $top ][1];
+				$refs = $refs_of[ $name ] ?? array();
+				if ( $i >= count( $refs ) ) {
+					array_pop( $stack );
+					unset( $grey[ $name ] );
+					$black[ $name ] = true;
+					if ( ! empty( $stack ) && isset( $reaches[ $name ] ) ) {
+						$reaches[ $stack[ count( $stack ) - 1 ][0] ] = true;
+					}
+					continue;
+				}
+				$stack[ $top ][1] = $i + 1;
+				$ref              = $refs[ $i ];
+				if ( $ref === $name || ! isset( $definitions[ $ref ] ) ) {
+					continue;
+				}
+				if ( isset( $grey[ $ref ] ) ) {
+					$reaches[ $name ] = true; // Back edge — $name sits on a cycle.
+				} elseif ( isset( $black[ $ref ] ) ) {
+					if ( isset( $reaches[ $ref ] ) ) {
+						$reaches[ $name ] = true;
+					}
+				} else {
+					$stack[]        = array( $ref, 0 );
+					$grey[ $ref ]   = true;
+				}
+			}
+		}
+		return $reaches;
+	}
+
+	/**
+	 * The reporting walk, exactly the recursive DFS it replaces: depth-first over a
+	 * value's references in order, one report per frame that meets a name already on
+	 * the path (that frame then abandons its remaining references; siblings continue
+	 * from the parent). Iterative, with the path as a hash set plus a shared push/pop
+	 * array — `in_array` over the path and an `array_merge` copy per step made one
+	 * 1600-definition cycle cost tens of seconds.
+	 *
+	 * @param string $root        Definition to start from.
+	 * @param array  $definitions All variable definitions.
+	 * @param array  $refs_of     From `references_of()`.
+	 * @param array  $reaches     From `names_that_reach_a_cycle()`.
+	 * @param array  $errors      Error collector (by reference).
+	 */
+	private function walk_cycles_from( string $root, array $definitions, array $refs_of, array $reaches, array &$errors ): void {
+		if ( ! isset( $reaches[ $root ] ) ) {
+			return; // The root frame could only report a self-edge, which the walk skips.
 		}
 
-		foreach ( $refs[1] as $ref ) {
-			$ref_lower = strtolower( $ref );
+		$path    = array( $root );
+		$on_path = array( $root => true );
+		$stack   = array( array( $root, 0 ) );
 
-			if ( $ref_lower === $current ) {
+		while ( ! empty( $stack ) ) {
+			$top  = count( $stack ) - 1;
+			$name = $stack[ $top ][0];
+			$i    = $stack[ $top ][1];
+			$refs = $refs_of[ $name ] ?? array();
+
+			if ( $i >= count( $refs ) ) {
+				array_pop( $stack );
+				unset( $on_path[ $name ] );
+				array_pop( $path );
+				continue;
+			}
+			$stack[ $top ][1] = $i + 1;
+			$ref              = $refs[ $i ];
+
+			if ( $ref === $name ) {
 				continue; // Self-reference already reported.
 			}
-
-			if ( in_array( $ref_lower, $visited, true ) ) {
+			if ( isset( $on_path[ $ref ] ) ) {
 				$errors[] = array(
 					'message' => sprintf(
 						'Circular variable reference detected: %s.',
-						implode( ' → ', array_merge( $visited, array( $ref_lower ) ) )
+						implode( ' → ', array_merge( $path, array( $ref ) ) )
 					),
 					'line'    => 0,
 					'column'  => 0,
 				);
-				return;
+				// The recursive walk returned from the whole frame here.
+				array_pop( $stack );
+				unset( $on_path[ $name ] );
+				array_pop( $path );
+				continue;
 			}
-
-			if ( isset( $definitions[ $ref_lower ] ) ) {
-				$this->detect_cycle( $ref_lower, $definitions, array_merge( $visited, array( $ref_lower ) ), $errors );
+			if ( isset( $definitions[ $ref ] ) && isset( $reaches[ $ref ] ) ) {
+				$stack[]         = array( $ref, 0 );
+				$on_path[ $ref ] = true;
+				$path[]          = $ref;
 			}
 		}
 	}

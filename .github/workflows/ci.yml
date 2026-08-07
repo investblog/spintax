@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The 2026-08-06 Actions outage throttled push webhooks, so a pushed head can
+  # exist with no run at all — this is the button that closes that gap.
+  workflow_dispatch:
 
 jobs:
   lint:

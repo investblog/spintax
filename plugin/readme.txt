@@ -33,7 +33,7 @@ Ideal for content managers and SEO specialists producing many similar-but-unique
 * **Validation** — bracket matching, circular reference detection, syntax checking
 * **Admin UI** — code editor, live preview, shortcode copy, settings page, bindings list
 
-**Syntax based on the GTW (Generating The Web) standard.**
+**The syntax is an open, documented standard.** Its core is GTW-compatible (enumerations, permutations, variables, includes), extended over the years with its own primitives — value-driven conditionals, plural agreement, roll-once `#def` variables — and documented in full at [spintax.net](https://spintax.net/docs/syntax). Five independent engines implement it against one shared test corpus, and a free native Windows editor — [Spintax Studio](https://apps.microsoft.com/detail/9mw3ch7b530p) — authors it with live preview and validation.
 
 == Installation ==
 
@@ -73,6 +73,13 @@ Full syntax reference with examples and a live playground: https://spintax.net/d
 * **Conditional spintax guide:** https://spintax.net/docs/conditional-spintax/ — `{?VAR?then|else}` value-driven branching (EN/RU)
 * **Authoring mindset:** https://spintax.net/docs/authoring-mindset/ — write the final text first, add markup last (EN/RU)
 * **Live playground:** https://spintax.net/play/ — write a template, set variables, render N variants in your browser (EN/RU)
+* **Editors & tooling:** https://spintax.net/spintax-editor/ — Spintax Studio for Windows, VS Code and Sublime Text extensions, and the archived GTW application that started the syntax
+
+= Is there a desktop editor for spintax templates? =
+
+Yes — **Spintax Studio**, a free native Windows editor built for exactly this syntax: two-pane live preview rendered by a real engine, inline validation with per-error documentation, variable panels, variant counting and export, and built-in help in 14 languages. Install it from the [Microsoft Store](https://apps.microsoft.com/detail/9mw3ch7b530p); an overview of all the editor tooling (including VS Code and Sublime Text extensions) lives at https://spintax.net/spintax-editor/
+
+Studio embeds `spintax-win` v0.5.1 — the Object Pascal engine from the same corpus-locked family as this plugin's — so a template that validates and previews there behaves the same way when this plugin renders it.
 
 = Does caching require Redis or Memcached? =
 
@@ -219,13 +226,15 @@ Yes. After activating Spintax 2.0, a dismissible admin banner points to **Tools 
 
 = Can I use the same engine outside WordPress? =
 
-Yes — it is published as a standalone open-source library, so a template you author here renders identically elsewhere:
+Yes — the engine is published as a family of standalone open-source libraries, so a template you author here renders identically elsewhere:
 
 * **PHP:** `composer require spintax/core` — https://packagist.org/packages/spintax/core
 * **JavaScript / TypeScript:** `npm i @spintax/core` — https://www.npmjs.com/package/@spintax/core
+* **Python:** `pip install spintax-core` — https://pypi.org/project/spintax-core/
+* **Object Pascal:** `spintax-win` v0.5.1 — https://github.com/investblog/spintax-win — the engine inside Spintax Studio
 * **OpenCart 3.x:** a separate extension built on the same engine.
 
-Both libraries are MIT-licensed and dependency-free. They are held to a shared golden corpus — one set of fixtures every engine must reproduce, enforced in continuous integration — so "renders identically" is a verified guarantee rather than an intention. Handy when a headless front end, a CLI job, or a non-WordPress site has to produce the same copy as your WordPress pages.
+All four libraries are MIT-licensed and dependency-free. They are held to a shared golden corpus — one set of fixtures every engine must reproduce, enforced in continuous integration — so "renders identically" is a verified guarantee rather than an intention. Handy when a headless front end, a CLI job, or a non-WordPress site has to produce the same copy as your WordPress pages.
 
 == Screenshots ==
 
@@ -248,7 +257,7 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Credits ==
 
-* Syntax based on the [GTW (Generating The Web)](https://spintax.net) standard
+* Syntax: the open spintax standard documented at [spintax.net](https://spintax.net), rooted in the historical [GTW (Generating The Web)](https://spintax.net/spintax-editor/) application
 * Developed by [301st](https://301.st)
 
 == Changelog ==

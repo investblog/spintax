@@ -336,14 +336,24 @@ class Parser {
 		$occurrences = array();
 
 		if ( preg_match_all( self::DIRECTIVE_PATTERN, $text, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE ) ) {
+			// Match offsets ascend, so the line number resumes from the previous match
+			// instead of recounting from offset 0 — a fresh count per occurrence made
+			// directive-heavy documents quadratic, on the render path too (the renderer
+			// extracts directives the same way).
+			$cursor_offset = 0;
+			$cursor_line   = 1;
 			foreach ( $matches as $match ) {
 				$offset = (int) $match[0][1];
+				if ( $offset > $cursor_offset ) {
+					$cursor_line  += substr_count( $text, "\n", $cursor_offset, $offset - $cursor_offset );
+					$cursor_offset = $offset;
+				}
 
 				$occurrences[] = array(
 					'kind'  => strtolower( $match[1][0] ),
 					'name'  => strtolower( $match[2][0] ),
 					'value' => $match[3][0],
-					'line'  => substr_count( $text, "\n", 0, $offset ) + 1,
+					'line'  => $cursor_line,
 				);
 			}
 		}
@@ -769,9 +779,16 @@ class Parser {
 		$includes = array();
 
 		if ( preg_match_all( self::INCLUDE_PATTERN, $text, $matches, PREG_OFFSET_CAPTURE ) ) {
+			// Ascending offsets — resume the line count from the previous match.
+			$cursor_offset = 0;
+			$cursor_line   = 1;
 			foreach ( $matches[0] as $i => $full_match ) {
 				$offset = $full_match[1];
-				$line   = substr_count( $text, "\n", 0, $offset ) + 1;
+				if ( $offset > $cursor_offset ) {
+					$cursor_line  += substr_count( $text, "\n", $cursor_offset, $offset - $cursor_offset );
+					$cursor_offset = $offset;
+				}
+				$line = $cursor_line;
 
 				$includes[] = array(
 					'slug'   => $matches[1][ $i ][0],

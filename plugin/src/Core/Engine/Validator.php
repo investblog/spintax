@@ -308,10 +308,17 @@ class Validator {
 			return $errors;
 		}
 
+		// Ascending offsets — resume the line count from the previous match.
+		$cursor_offset = 0;
+		$cursor_line   = 1;
 		foreach ( $matches[1] as $match ) {
 			$config_str = $match[0];
 			$offset     = $match[1];
-			$line       = substr_count( $text, "\n", 0, $offset ) + 1;
+			if ( $offset > $cursor_offset ) {
+				$cursor_line  += substr_count( $text, "\n", $cursor_offset, $offset - $cursor_offset );
+				$cursor_offset = $offset;
+			}
+			$line = $cursor_line;
 
 			// If it looks like a full config (has key=), validate known keys.
 			if ( preg_match( '/\w+\s*=/', $config_str ) ) {
@@ -441,8 +448,15 @@ class Validator {
 		$base_lang = '' !== $locale ? $plurals->normalize_base_lang( $locale ) : '';
 		$arity     = '' !== $base_lang ? $plurals->plural_arity( $base_lang ) : 0;
 
+		// Blocks come in source order — resume the line count from the previous one.
+		$cursor_offset = 0;
+		$cursor_line   = 1;
 		foreach ( $blocks as $block ) {
-			$line = substr_count( $text, "\n", 0, $block['start'] ) + 1;
+			if ( $block['start'] > $cursor_offset ) {
+				$cursor_line  += substr_count( $text, "\n", $cursor_offset, $block['start'] - $cursor_offset );
+				$cursor_offset = $block['start'];
+			}
+			$line = $cursor_line;
 
 			// A macro in the count slot: the count is still unresolved spintax when the plural pass
 			// runs, so the block resolves to nothing. `#def` is the fix — it freezes to a literal

@@ -43,6 +43,15 @@ defined( 'ABSPATH' ) || exit;
 class Plurals {
 
 	/**
+	 * How many forms rendering resolves against when the host supplies no locale.
+	 *
+	 * Named rather than written as a bare 2 wherever it is needed, so the validator's
+	 * "no locale supplied" warning cannot come to disagree with what rendering actually
+	 * does — the disagreement between those two is the whole of spintax-js#65.
+	 */
+	public const DEFAULT_ARITY = 2;
+
+	/**
 	 * Literal "plural" + one space — the unambiguous discriminator from
 	 * synonym `{a|b|c}`. Must be followed by a count slot, `:`, and forms.
 	 */

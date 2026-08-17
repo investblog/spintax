@@ -76,7 +76,9 @@ class Validator {
 		$errors = array_merge( $errors, $this->check_brackets( $text ) );
 		$errors = array_merge( $errors, $this->check_directives( $text ) );
 		$errors = array_merge( $errors, $this->check_permutation_configs( $text ) );
-		$errors = array_merge( $errors, $this->check_plurals( $text, $locale ) );
+		$plural_result = $this->check_plurals( $text, $locale );
+		$errors        = array_merge( $errors, $plural_result['errors'] );
+		$warnings      = array_merge( $warnings, $plural_result['warnings'] );
 
 		$var_result = $this->check_variable_references( $text, $global_var_names );
 		$errors     = array_merge( $errors, $var_result['errors'] );
@@ -435,12 +437,13 @@ class Validator {
 	 * @return array<array{message: string, line: int, column: int}>
 	 */
 	private function check_plurals( string $text, string $locale ): array {
-		$errors  = array();
-		$plurals = new Plurals();
+		$errors   = array();
+		$warnings = array();
+		$plurals  = new Plurals();
 		$blocks  = $plurals->find_plural_blocks( $text );
 
 		if ( empty( $blocks ) ) {
-			return $errors;
+			return array( 'errors' => $errors, 'warnings' => $warnings );
 		}
 
 		$macro_counts = $this->macro_tainted_names( $text );
@@ -489,9 +492,10 @@ class Validator {
 				continue;
 			}
 
+			$forms = explode( '|', $block['forms_raw'] );
+
 			// Arity (only if locale provided).
 			if ( $arity > 0 ) {
-				$forms = explode( '|', $block['forms_raw'] );
 				if ( count( $forms ) !== $arity ) {
 					$errors[] = array(
 						'message' => sprintf(
@@ -504,10 +508,27 @@ class Validator {
 						'column'  => 1,
 					);
 				}
+			} elseif ( count( $forms ) !== Plurals::DEFAULT_ARITY ) {
+				// No locale means no arity VERDICT: the template may well be correct for the
+				// locale it will be rendered with, and calling it invalid here would fail a
+				// good template for a fact the caller never claimed. But rendering has no
+				// such luxury — it defaults to 2 forms — so silence sends a 3-form block
+				// straight to the fullwidth-brace fallback in finished text (spintax-js#65:
+				// a pipeline shipped the fallback to live pages because validation stayed
+				// quiet). A WARNING says the one true thing without moving the verdict.
+				$warnings[] = array(
+					'message' => sprintf(
+						'{plural ...}: %1$d forms, but no locale was supplied. Rendering defaults to %2$d forms and leaves this block unresolved — pass the locale you will render with.',
+						count( $forms ),
+						Plurals::DEFAULT_ARITY
+					),
+					'line'    => $line,
+					'column'  => 1,
+				);
 			}
 		}
 
-		return $errors;
+		return array( 'errors' => $errors, 'warnings' => $warnings );
 	}
 
 	/**

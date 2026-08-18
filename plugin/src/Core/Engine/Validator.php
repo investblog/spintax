@@ -533,10 +533,18 @@ class Validator {
 		$seen_macro = array();
 		$verbatim   = $this->walk_macro_path( $forms_raw, $defs, $macros, $host_names, $seen_macro );
 		if ( 'brackets' === $verbatim ) {
-			return array( 'forms' => 0, 'unresolved' => true, 'macro_spintax' => true );
+			return array(
+				'forms' => 0,
+				'unresolved' => true,
+				'macro_spintax' => true,
+			);
 		}
 		if ( 'opaque' === $verbatim ) {
-			return array( 'forms' => 0, 'unresolved' => true, 'macro_spintax' => false );
+			return array(
+				'forms' => 0,
+				'unresolved' => true,
+				'macro_spintax' => false,
+			);
 		}
 
 		$text = $forms_raw;
@@ -578,7 +586,11 @@ class Validator {
 			);
 
 			if ( $bailed ) {
-				return array( 'forms' => 0, 'unresolved' => true, 'macro_spintax' => false );
+				return array(
+					'forms' => 0,
+					'unresolved' => true,
+					'macro_spintax' => false,
+				);
 			}
 			if ( ! $saw_reference ) {
 				// No construct can be left, so the plain split is what rendering does too.
@@ -591,9 +603,35 @@ class Validator {
 		}
 
 		// A cycle, or a chain deeper than this bothers to follow.
-		return array( 'forms' => 0, 'unresolved' => true, 'macro_spintax' => false );
+		return array(
+			'forms' => 0,
+			'unresolved' => true,
+			'macro_spintax' => false,
+		);
 	}
 
+	/**
+	 * Check `{plural <count>: form|…}` blocks for structural and arity issues.
+	 *
+	 * Structural check (always on): the forms slot must not contain nested spintax
+	 * brackets `{` `}` `[` `]` — including brackets a `#set` named in the slot would
+	 * put back, since a macro is substituted verbatim and is still spintax when the
+	 * plural is decided.
+	 *
+	 * Arity check (only when a locale is given): the form count must match the locale
+	 * family (3 for ru/uk/be + sr/hr/bs, 2 for en/es/pt/de/…). Forms are counted the way
+	 * rendering counts them — after definition values are substituted — and only when the
+	 * count is provably invariant; a value carrying any bracket suppresses the verdict
+	 * rather than guessing at a roll (spintax-js#66).
+	 *
+	 * An empty locale skips arity and may instead raise the locale-missing warning, which
+	 * is why this returns two buckets rather than one list.
+	 *
+	 * @param string        $text             Template body (after comment stripping).
+	 * @param string        $locale           Render locale (raw); empty disables the arity check.
+	 * @param array<string> $global_var_names Names the host will supply at render time.
+	 * @return array{errors: array<array{message: string, line: int, column: int}>, warnings: array<array{message: string, line: int, column: int}>}
+	 */
 	private function check_plurals( string $text, string $locale, array $global_var_names = array() ): array {
 		$errors   = array();
 		$warnings = array();
@@ -601,7 +639,10 @@ class Validator {
 		$blocks  = $plurals->find_plural_blocks( $text );
 
 		if ( empty( $blocks ) ) {
-			return array( 'errors' => $errors, 'warnings' => $warnings );
+			return array(
+				'errors' => $errors,
+				'warnings' => $warnings,
+			);
 		}
 
 		$macro_counts = $this->macro_tainted_names( $text );
@@ -721,7 +762,10 @@ class Validator {
 			}
 		}
 
-		return array( 'errors' => $errors, 'warnings' => $warnings );
+		return array(
+			'errors' => $errors,
+			'warnings' => $warnings,
+		);
 	}
 
 	/**

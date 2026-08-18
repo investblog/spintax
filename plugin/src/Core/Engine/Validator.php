@@ -493,6 +493,9 @@ class Validator {
 	 * own limit; it only has to terminate, and a chain deeper than this is suppressed
 	 * rather than judged, which is the safe direction.
 	 */
+	/** Names printed in a circular-reference message before it gives up and counts. */
+	private const CYCLE_PATH_LIMIT = 8;
+
 	private const FORM_EXPANSION_PASSES = 51;
 
 	/**
@@ -601,18 +604,30 @@ class Validator {
 				$offset  = $cursor;
 
 				if ( $total > $budget ) {
-					return array( 'forms' => 0, 'unresolved' => true, 'macro_spintax' => false );
+					return array(
+						'forms' => 0,
+						'unresolved' => true,
+						'macro_spintax' => false,
+					);
 				}
 			}
 
 			if ( $bailed ) {
-				return array( 'forms' => 0, 'unresolved' => true, 'macro_spintax' => false );
+				return array(
+					'forms' => 0,
+					'unresolved' => true,
+					'macro_spintax' => false,
+				);
 			}
 
 			$parts[] = substr( $text, $cursor );
 			$total  += strlen( $text ) - $cursor;
 			if ( $total > $budget ) {
-				return array( 'forms' => 0, 'unresolved' => true, 'macro_spintax' => false );
+				return array(
+					'forms' => 0,
+					'unresolved' => true,
+					'macro_spintax' => false,
+				);
 			}
 			$text = implode( '', $parts );
 
@@ -827,9 +842,19 @@ class Validator {
 		// TS engine took the same fix in 0.3.3). Emission is unchanged: order, count and
 		// messages are the recursive walk's, duplicated edges and all.
 		$refs_of = $this->references_of( $definitions );
-		$reaches = $this->names_that_reach_a_cycle( $definitions, $refs_of );
+		$graph   = $this->names_that_reach_a_cycle( $definitions, $refs_of );
 		foreach ( $definitions as $name => $value ) {
-			$this->walk_cycles_from( (string) $name, $definitions, $refs_of, $reaches, $errors );
+			if ( ! isset( $graph['reaches'][ (string) $name ] ) ) {
+				continue;
+			}
+			$errors[] = array(
+				'message' => sprintf(
+					'Circular variable reference detected: %s.',
+					$this->cycle_path( (string) $name, $graph['via'] )
+				),
+				'line'    => 0,
+				'column'  => 0,
+			);
 		}
 
 		// Find all variable references in the body (outside #set lines).
@@ -908,6 +933,11 @@ class Validator {
 		$grey    = array();
 		$black   = array();
 		$reaches = array();
+		// One witness edge per name: the reference through which it first turned out to
+		// reach a cycle. Following it name by name reproduces the route the old per-path
+		// walk printed, without walking every path to find one. First discovery wins, so
+		// the route is deterministic.
+		$via     = array();
 
 		foreach ( $definitions as $root => $unused ) {
 			$root = (string) $root;
@@ -926,7 +956,11 @@ class Validator {
 					unset( $grey[ $name ] );
 					$black[ $name ] = true;
 					if ( ! empty( $stack ) && isset( $reaches[ $name ] ) ) {
-						$reaches[ $stack[ count( $stack ) - 1 ][0] ] = true;
+						$parent = $stack[ count( $stack ) - 1 ][0];
+						if ( ! isset( $reaches[ $parent ] ) ) {
+							$reaches[ $parent ] = true;
+							$via[ $parent ]     = $name;
+						}
 					}
 					continue;
 				}
@@ -936,10 +970,15 @@ class Validator {
 					continue;
 				}
 				if ( isset( $grey[ $ref ] ) ) {
-					$reaches[ $name ] = true; // Back edge — $name sits on a cycle.
-				} elseif ( isset( $black[ $ref ] ) ) {
-					if ( isset( $reaches[ $ref ] ) ) {
+					// Back edge — $name sits on a cycle.
+					if ( ! isset( $reaches[ $name ] ) ) {
 						$reaches[ $name ] = true;
+						$via[ $name ]     = $ref;
+					}
+				} elseif ( isset( $black[ $ref ] ) ) {
+					if ( isset( $reaches[ $ref ] ) && ! isset( $reaches[ $name ] ) ) {
+						$reaches[ $name ] = true;
+						$via[ $name ]     = $ref;
 					}
 				} else {
 					$stack[]      = array( $ref, 0 );
@@ -947,71 +986,58 @@ class Validator {
 				}
 			}
 		}
-		return $reaches;
+		return array(
+			'reaches' => $reaches,
+			'via'     => $via,
+		);
 	}
 
 	/**
-	 * The reporting walk, exactly the recursive DFS it replaces: depth-first over a
-	 * value's references in order, one report per frame that meets a name already on
-	 * the path (that frame then abandons its remaining references; siblings continue
-	 * from the parent). Iterative, with the path as a hash set plus a shared push/pop
-	 * array — `in_array` over the path and an `array_merge` copy per step made one
-	 * 1600-definition cycle cost tens of seconds.
+	 * The route from $name into its cycle, as the message shows it.
 	 *
-	 * @param string $root        Definition to start from.
-	 * @param array  $definitions All variable definitions.
-	 * @param array  $refs_of     From `references_of()`.
-	 * @param array  $reaches     From `names_that_reach_a_cycle()`.
-	 * @param array  $errors      Error collector (by reference).
+	 * Following the witness edges reproduces the text the old per-path walk produced, so a
+	 * real cycle reads exactly as it did. It is capped because per-name emission alone does
+	 * not bound the TEXT: one cycle of N names is N diagnostics each printing an N-name
+	 * route, and a 43 KB template of one giant cycle carried tens of megabytes of it. Past a
+	 * handful of names a route stops being something a human reads, so it becomes a count.
+	 *
+	 * @param string                $name Definition to start from.
+	 * @param array<string, string> $via  Witness edges from `names_that_reach_a_cycle()`.
+	 * @return string
 	 */
-	private function walk_cycles_from( string $root, array $definitions, array $refs_of, array $reaches, array &$errors ): void {
-		if ( ! isset( $reaches[ $root ] ) ) {
-			return; // The root frame could only report a self-edge, which the walk skips.
+	private function cycle_path( string $name, array $via ): string {
+		$seen    = array( $name => true );
+		$shown   = array( $name );
+		$current = $name;
+
+		while ( true ) {
+			if ( ! isset( $via[ $current ] ) ) {
+				break; // Cannot happen for a name that reaches a cycle; belt and braces.
+			}
+			$next = $via[ $current ];
+			if ( isset( $seen[ $next ] ) ) {
+				$shown[] = $next; // The repeat closes the route.
+				break;
+			}
+			if ( count( $shown ) >= self::CYCLE_PATH_LIMIT ) {
+				$more = 0;
+				$walk = $next;
+				while ( ! isset( $seen[ $walk ] ) ) {
+					$seen[ $walk ] = true;
+					++$more;
+					if ( ! isset( $via[ $walk ] ) ) {
+						break;
+					}
+					$walk = $via[ $walk ];
+				}
+				return implode( ' → ', $shown ) . sprintf( ' → … (%d more)', $more );
+			}
+			$seen[ $next ] = true;
+			$shown[]       = $next;
+			$current       = $next;
 		}
 
-		$path    = array( $root );
-		$on_path = array( $root => true );
-		$stack   = array( array( $root, 0 ) );
-
-		while ( ! empty( $stack ) ) {
-			$top  = count( $stack ) - 1;
-			$name = $stack[ $top ][0];
-			$i    = $stack[ $top ][1];
-			$refs = $refs_of[ $name ] ?? array();
-
-			if ( $i >= count( $refs ) ) {
-				array_pop( $stack );
-				unset( $on_path[ $name ] );
-				array_pop( $path );
-				continue;
-			}
-			$stack[ $top ][1] = $i + 1;
-			$ref              = $refs[ $i ];
-
-			if ( $ref === $name ) {
-				continue; // Self-reference already reported.
-			}
-			if ( isset( $on_path[ $ref ] ) ) {
-				$errors[] = array(
-					'message' => sprintf(
-						'Circular variable reference detected: %s.',
-						implode( ' → ', array_merge( $path, array( $ref ) ) )
-					),
-					'line'    => 0,
-					'column'  => 0,
-				);
-				// The recursive walk returned from the whole frame here.
-				array_pop( $stack );
-				unset( $on_path[ $name ] );
-				array_pop( $path );
-				continue;
-			}
-			if ( isset( $definitions[ $ref ] ) && isset( $reaches[ $ref ] ) ) {
-				$stack[]         = array( $ref, 0 );
-				$on_path[ $ref ] = true;
-				$path[]          = $ref;
-			}
-		}
+		return implode( ' → ', $shown );
 	}
 
 	/**

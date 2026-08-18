@@ -414,6 +414,7 @@ class Parser {
 	 *
 	 * @param string $text     Text with %var% references.
 	 * @param array  $variables name => raw value (names without %).
+	 * @param int|null $shared_budget Expansion allowance shared across one render; null ⇒ a per-call one.
 	 * @return string Text with variables expanded.
 	 */
 	public function expand_variables( string $text, array $variables, ?int &$shared_budget = null ): string {

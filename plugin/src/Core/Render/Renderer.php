@@ -511,18 +511,6 @@ class Renderer {
 	}
 
 	/**
-	 * Replace `[spintax …]` shortcodes with opaque placeholders.
-	 *
-	 * The placeholders are `\x00NESTED_n\x00`, which no template syntax can produce and no resolver
-	 * reads. Callers share `$placeholders` and `$counter` across successive calls, so one restore
-	 * at the end covers every pass.
-	 *
-	 * @param string                $text         Text to shield.
-	 * @param array<string, string> $placeholders Placeholder => original, accumulated by reference.
-	 * @param int                   $counter      Placeholder counter, advanced by reference.
-	 * @return string
-	 */
-	/**
 	 * Characters of `%variable%` expansion left for the render in progress (spintax-js#69).
 	 *
 	 * Per render, includes and all. A child template is expanded by its own call, so an
@@ -536,6 +524,18 @@ class Renderer {
 	 */
 	private ?int $expansion_budget = null;
 
+	/**
+	 * Replace `[spintax …]` shortcodes with opaque placeholders.
+	 *
+	 * The placeholders are `\x00NESTED_n\x00`, which no template syntax can produce and no resolver
+	 * reads. Callers share `$placeholders` and `$counter` across successive calls, so one restore
+	 * at the end covers every pass.
+	 *
+	 * @param string                $text         Text to shield.
+	 * @param array<string, string> $placeholders Placeholder => original, accumulated by reference.
+	 * @param int                   $counter      Placeholder counter, advanced by reference.
+	 * @return string
+	 */
 	private function shield_nested_constructs( string $text, array &$placeholders, int &$counter ): string {
 		return (string) preg_replace_callback(
 			'/\[spintax\s+[^\]]+\]/i',

@@ -76,7 +76,7 @@ class Validator {
 		$errors = array_merge( $errors, $this->check_brackets( $text ) );
 		$errors = array_merge( $errors, $this->check_directives( $text ) );
 		$errors = array_merge( $errors, $this->check_permutation_configs( $text ) );
-		$plural_result = $this->check_plurals( $text, $locale );
+		$plural_result = $this->check_plurals( $text, $locale, $global_var_names );
 		$errors        = array_merge( $errors, $plural_result['errors'] );
 		$warnings      = array_merge( $warnings, $plural_result['warnings'] );
 
@@ -436,7 +436,165 @@ class Validator {
 	 * @param string $locale Render locale (raw); empty disables arity check.
 	 * @return array<array{message: string, line: int, column: int}>
 	 */
-	private function check_plurals( string $text, string $locale ): array {
+	/**
+	 * Follow `#set` references out of a form list and say what arrives verbatim.
+	 *
+	 * Returns `brackets` when the path reaches macro text carrying any bracket (which the
+	 * plural stage then rejects), `opaque` when it reaches a conditional — where the
+	 * engines themselves disagree, both PHP renderers resolving one that expansion
+	 * introduces inside a form list while JS and Python do not, so this declines to judge
+	 * rather than pick a side — and `clean` otherwise.
+	 *
+	 * @param string                $source     Text to scan.
+	 * @param array<string, string> $defs       `#def` values.
+	 * @param array<string, string> $macros     `#set` values.
+	 * @param array<string, bool>   $host_names Names the host will supply.
+	 * @param array<string, bool>   $seen_macro Visited macros, by reference (cycle guard).
+	 * @return string `brackets` | `opaque` | `clean`
+	 */
+	private function walk_macro_path( string $source, array $defs, array $macros, array $host_names, array &$seen_macro ): string {
+		if ( ! preg_match_all( '/%(\w+)%/', $source, $matches ) ) {
+			return 'clean';
+		}
+
+		foreach ( $matches[1] as $reference ) {
+			$name = strtolower( $reference );
+
+			// A #def rolls it and a host value replaces it — either way the macro text
+			// does not arrive verbatim, so this path says nothing.
+			if ( isset( $defs[ $name ] ) || isset( $host_names[ $name ] ) ) {
+				continue;
+			}
+			if ( ! isset( $macros[ $name ] ) || isset( $seen_macro[ $name ] ) ) {
+				continue;
+			}
+			$seen_macro[ $name ] = true;
+			$value               = $macros[ $name ];
+
+			if ( 1 === preg_match( '/\{\?/', $value ) ) {
+				return 'opaque';
+			}
+			if ( 1 === preg_match( '/[\[\]{}]/', $value ) ) {
+				return 'brackets';
+			}
+			$deeper = $this->walk_macro_path( $value, $defs, $macros, $host_names, $seen_macro );
+			if ( 'clean' !== $deeper ) {
+				return $deeper;
+			}
+		}
+
+		return 'clean';
+	}
+
+	/**
+	 * Passes, not occurrences — each one substitutes EVERY reference, as the renderer's
+	 * expansion does. Counting occurrences instead let a form list with 51 references
+	 * exhaust the budget and go unjudged. Deliberately NOT claimed to match a renderer's
+	 * own limit; it only has to terminate, and a chain deeper than this is suppressed
+	 * rather than judged, which is the safe direction.
+	 */
+	private const FORM_EXPANSION_PASSES = 51;
+
+	/**
+	 * How many forms the plural stage will receive, or an admission that it is unknowable.
+	 *
+	 * Rendering expands `%variables%` and only THEN splits the form list, while this
+	 * validator used to split the raw source — so any reference inside a form list was
+	 * judged on the wrong number, in both directions (spintax-js#66).
+	 *
+	 * The rule is deliberately narrow, and the narrowness IS the correction. A first
+	 * version tried to predict the roll, counting pipes at bracket depth 0 on the theory
+	 * that a construct always collapses to one form. It does not:
+	 *
+	 *     #set %flag% =
+	 *     #def %x% = {?flag?a|b|c}     the false branch freezes as `b|c`: TWO forms
+	 *     {plural 1: one|%x%}          renders fine under ru; the guess said arity error
+	 *
+	 * So a value is counted only when its form count is the same WHATEVER the roll does —
+	 * when it carries no construct at all. Note the bracket class below includes `{?`
+	 * conditionals, unlike the unresolved-at-plural-time test: a conditional resolves
+	 * before plurals, but its branches can differ in top-level pipes, and counting is
+	 * about invariance rather than stage order.
+	 *
+	 * `macro_spintax` is the one prediction that survives, because it is not one: a `#set`
+	 * named DIRECTLY in the form slot is substituted verbatim and is still spintax when
+	 * the plural is decided. Reached through a `#def` it is rolled first.
+	 *
+	 * @param string                $forms_raw  Raw forms slot.
+	 * @param array<string, string> $defs       `#def` values.
+	 * @param array<string, string> $macros     `#set` values.
+	 * @param array<string, bool>   $host_names Names the host will supply, lower-cased keys.
+	 * @return array{forms: int, unresolved: bool, macro_spintax: bool}
+	 */
+	private function expand_forms_for_counting( string $forms_raw, array $defs, array $macros, array $host_names ): array {
+		// Which brackets reach the form slot VERBATIM: follow the #set chain out of the raw
+		// slot. "Direct" is a property of the PATH, not of one hop — `#set %a% = %b%` with
+		// `#set %b% = {a|b}` never crosses a #def, so the macro text arrives whole.
+		$seen_macro = array();
+		$verbatim   = $this->walk_macro_path( $forms_raw, $defs, $macros, $host_names, $seen_macro );
+		if ( 'brackets' === $verbatim ) {
+			return array( 'forms' => 0, 'unresolved' => true, 'macro_spintax' => true );
+		}
+		if ( 'opaque' === $verbatim ) {
+			return array( 'forms' => 0, 'unresolved' => true, 'macro_spintax' => false );
+		}
+
+		$text = $forms_raw;
+
+		for ( $pass = 0; $pass < self::FORM_EXPANSION_PASSES; $pass++ ) {
+			$bailed         = false;
+			$saw_reference  = false;
+
+			// EVERY reference per pass, as the renderer's expansion does.
+			$text = preg_replace_callback(
+				'/%(\w+)%/',
+				static function ( array $m ) use ( $defs, $macros, $host_names, &$bailed, &$saw_reference ): string {
+					$saw_reference = true;
+					$name          = strtolower( $m[1] );
+
+					// Runtime context outranks a definition of the same name, so a
+					// host-declared name makes the count unknowable regardless.
+					if ( isset( $host_names[ $name ] ) ) {
+						$bailed = true;
+						return $m[0];
+					}
+
+					$value = $defs[ $name ] ?? ( $macros[ $name ] ?? null );
+					if ( null === $value ) {
+						$bailed = true;
+						return $m[0];
+					}
+
+					// A construct in the value: what it rolls to may or may not carry a
+					// top-level pipe, so no single count is true of every render.
+					if ( 1 === preg_match( '/[\[\]{}]/', $value ) ) {
+						$bailed = true;
+						return $m[0];
+					}
+
+					return $value;
+				},
+				$text
+			);
+
+			if ( $bailed ) {
+				return array( 'forms' => 0, 'unresolved' => true, 'macro_spintax' => false );
+			}
+			if ( ! $saw_reference ) {
+				// No construct can be left, so the plain split is what rendering does too.
+				return array(
+					'forms'         => count( explode( '|', $text ) ),
+					'unresolved'    => false,
+					'macro_spintax' => false,
+				);
+			}
+		}
+
+		// A cycle, or a chain deeper than this bothers to follow.
+		return array( 'forms' => 0, 'unresolved' => true, 'macro_spintax' => false );
+	}
+
+	private function check_plurals( string $text, string $locale, array $global_var_names = array() ): array {
 		$errors   = array();
 		$warnings = array();
 		$plurals  = new Plurals();
@@ -447,6 +605,16 @@ class Validator {
 		}
 
 		$macro_counts = $this->macro_tainted_names( $text );
+		$directives   = $this->parser()->extract_directives( $text );
+		$form_defs    = $directives['def'];
+		$form_macros  = $directives['set'];
+		// Names the host says it will supply: runtime context outranks a definition of
+		// the same name, so one of these makes a form count unknowable however the
+		// template defines it.
+		$host_names   = array();
+		foreach ( $global_var_names as $global_name ) {
+			$host_names[ strtolower( (string) $global_name ) ] = true;
+		}
 
 		$base_lang = '' !== $locale ? $plurals->normalize_base_lang( $locale ) : '';
 		$arity     = '' !== $base_lang ? $plurals->plural_arity( $base_lang ) : 0;
@@ -492,35 +660,60 @@ class Validator {
 				continue;
 			}
 
-			$forms = explode( '|', $block['forms_raw'] );
+			// The form list AS THE RENDERER WILL SEE IT (spintax-js#66).
+			$expanded = $this->expand_forms_for_counting( $block['forms_raw'], $form_defs, $form_macros, $host_names );
+
+			// A `#set` whose value carries spintax lands in the form list VERBATIM and is
+			// still unresolved when the plural is decided — the same fact the count-macro
+			// check states for the count slot, and what this message already describes.
+			if ( $expanded['macro_spintax'] ) {
+				$errors[] = array(
+					'message' => '{plural ...}: forms must not contain nested spintax brackets ({}, []). Extract synonym / conditional / permutation via #def first — a #set is substituted verbatim and would put the brackets straight back.',
+					'line'    => $line,
+					'column'  => 1,
+				);
+				continue;
+			}
+
+			// A reference the template does not define has no static form count. Judging it
+			// would repeat the mistake #65 fixed: a verdict on a fact nobody claimed.
+			if ( $expanded['unresolved'] ) {
+				continue;
+			}
+
+			$form_count = $expanded['forms'];
 
 			// Arity (only if locale provided).
 			if ( $arity > 0 ) {
-				if ( count( $forms ) !== $arity ) {
+				if ( $form_count !== $arity ) {
 					$errors[] = array(
 						'message' => sprintf(
 							'{plural ...}: expected %1$d forms for "%2$s", got %3$d.',
 							$arity,
 							$base_lang,
-							count( $forms )
+							$form_count
 						),
 						'line'    => $line,
 						'column'  => 1,
 					);
 				}
-			} elseif ( count( $forms ) !== Plurals::DEFAULT_ARITY ) {
+			} elseif ( $form_count !== Plurals::DEFAULT_ARITY ) {
 				// No locale means no arity VERDICT: the template may well be correct for the
 				// locale it will be rendered with, and calling it invalid here would fail a
-				// good template for a fact the caller never claimed. But rendering has no
-				// such luxury — it defaults to 2 forms — so silence sends a 3-form block
-				// straight to the fullwidth-brace fallback in finished text (spintax-js#65:
-				// a pipeline shipped the fallback to live pages because validation stayed
-				// quiet). A WARNING says the one true thing without moving the verdict.
+				// good template for a fact the caller never claimed. The warning covers the
+				// other half — a form count the render locale may not take (spintax-js#65).
+				//
+				// The wording is deliberately weaker HERE than in the sibling engines, and
+				// the reason is this plugin's own render path: `Renderer::process_template()`
+				// replaces an empty locale with `get_locale()`, so "no locale" does NOT mean
+				// the engine's two-form default on a WordPress site. Claiming it did would
+				// report a false problem on every ru_RU install — a three-form template that
+				// renders perfectly. So the message states the condition and names the
+				// dependency instead of predicting the outcome.
 				$warnings[] = array(
 					'message' => sprintf(
-						'{plural ...}: %1$d forms, but no locale was supplied. Rendering defaults to %2$d forms and leaves this block unresolved — pass the locale you will render with.',
-						count( $forms ),
-						Plurals::DEFAULT_ARITY
+						'{plural ...}: %1$d forms, and no locale was passed to the validator. Rendering agrees the plural with the locale it is given — the site locale when the caller supplies none — so this block resolves only where that locale takes %1$d forms. Pass the locale you will render with to get a definite verdict.',
+						$form_count
 					),
 					'line'    => $line,
 					'column'  => 1,

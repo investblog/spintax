@@ -124,7 +124,7 @@ class Parser {
 	 * it. Deliberately far above any real document: the point is to end an explosion, not
 	 * to ration ordinary output.
 	 */
-	private const MAX_EXPANSION_CHARS = 1048576;
+	public const MAX_EXPANSION_CHARS = 1048576;
 
 	/**
 	 * Constructor.
@@ -416,14 +416,22 @@ class Parser {
 	 * @param array  $variables name => raw value (names without %).
 	 * @return string Text with variables expanded.
 	 */
-	public function expand_variables( string $text, array $variables ): string {
+	public function expand_variables( string $text, array $variables, ?int &$shared_budget = null ): string {
 		// Normalise variable keys to lowercase.
 		$normalised = array();
 		foreach ( $variables as $k => $v ) {
 			$normalised[ strtolower( $k ) ] = $v;
 		}
 
-		$budget = self::MAX_EXPANSION_CHARS;
+		// A caller that threads its own counter gets ONE allowance for the whole render,
+		// includes and all: each included body is expanded by its own call, so a budget
+		// local to this method is a budget per subtree. Fifty `#include` lines over one
+		// 62-character bomb turned 690 bytes into 57 MB in the JS engine before its budget
+		// moved up a level. Standalone callers keep the per-call allowance.
+		$budget = &$shared_budget;
+		if ( null === $budget ) {
+			$budget = self::MAX_EXPANSION_CHARS;
+		}
 
 		for ( $i = 0; $i <= self::MAX_VARIABLE_DEPTH; $i++ ) {
 			$changed = false;

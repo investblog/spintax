@@ -237,6 +237,32 @@ class Renderer {
 	public function process_template( string $raw, array $runtime_vars = array(), ?RenderContext $context = null, string $locale = '' ): string {
 		$context = $context ?? new RenderContext( $this->settings->get_global_variables() );
 
+		// The outermost call owns the expansion allowance; a nested one inherits it.
+		$outermost = null === $this->expansion_budget;
+		if ( $outermost ) {
+			$this->expansion_budget = Parser::MAX_EXPANSION_CHARS;
+		}
+
+		try {
+			return $this->process_template_inner( $raw, $runtime_vars, $context, $locale );
+		} finally {
+			if ( $outermost ) {
+				$this->expansion_budget = null;
+			}
+		}
+	}
+
+	/**
+	 * The staged render itself. Split from `process_template()` so the allowance above is
+	 * opened and closed exactly once per render however the body returns.
+	 *
+	 * @param string             $raw          Raw template source.
+	 * @param array<string, string> $runtime_vars Runtime variables.
+	 * @param RenderContext      $context      Render context.
+	 * @param string             $locale       Render locale.
+	 * @return string Rendered text.
+	 */
+	private function process_template_inner( string $raw, array $runtime_vars, RenderContext $context, string $locale ): string {
 		// Stage 3: Strip comments.
 		$text = $this->parser->strip_comments( $raw );
 
@@ -289,7 +315,7 @@ class Renderer {
 		$text = $this->conditionals->apply( $text, $all_vars );
 
 		// Stage 6b: Expand variables.
-		$text = $this->parser->expand_variables( $text, $all_vars );
+		$text = $this->parser->expand_variables( $text, $all_vars, $this->expansion_budget );
 
 		// Shield again. Expansion is the only way a `[spintax]` can enter the document after the
 		// first pass — carried in by a `#set`, a global, a runtime variable or a frozen `#def`,
@@ -402,7 +428,7 @@ class Renderer {
 		$value       = $this->shield_nested_constructs( $value, $shielded, $counter );
 
 		$value = $this->conditionals->apply( $value, $vars );
-		$value = $this->parser->expand_variables( $value, $vars );
+		$value = $this->parser->expand_variables( $value, $vars, $this->expansion_budget );
 
 		// Shield again, for the same reason the body does: expansion is the one place a shortcode
 		// can enter after the first pass. `#def %frag% = %s%` with `#set %s% = [spintax slug="x"]`
@@ -496,6 +522,20 @@ class Renderer {
 	 * @param int                   $counter      Placeholder counter, advanced by reference.
 	 * @return string
 	 */
+	/**
+	 * Characters of `%variable%` expansion left for the render in progress (spintax-js#69).
+	 *
+	 * Per render, includes and all. A child template is expanded by its own call, so an
+	 * allowance created per call is an allowance per subtree and bounds nothing overall —
+	 * fifty `#include` lines over one 62-character bomb turned 690 bytes into 57 MB in the
+	 * JS engine before its budget moved up a level. Null means no render is in progress;
+	 * the outermost `process_template()` opens the allowance and closes it on the way out,
+	 * so a nested call inherits rather than resets.
+	 *
+	 * @var int|null
+	 */
+	private ?int $expansion_budget = null;
+
 	private function shield_nested_constructs( string $text, array &$placeholders, int &$counter ): string {
 		return (string) preg_replace_callback(
 			'/\[spintax\s+[^\]]+\]/i',

@@ -115,6 +115,18 @@ class Parser {
 	private const MAX_VARIABLE_DEPTH = 50;
 
 	/**
+	 * Characters one render may produce by expanding `%variables%` (spintax-js#69).
+	 *
+	 * Depth alone does not bound expansion, only its height: `#set %a% = %b% %b%` over
+	 * `#set %b% = %a% %a%` replaces one reference with two every pass, so 51 passes is
+	 * 2^51 and a 62-character template ended the process with a memory fatal — in every
+	 * engine of the family. Acyclic doubling does the same, so the cycle guard never sees
+	 * it. Deliberately far above any real document: the point is to end an explosion, not
+	 * to ration ordinary output.
+	 */
+	private const MAX_EXPANSION_CHARS = 1048576;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param callable|null $random_fn Custom RNG for deterministic testing. Signature: fn(int $min, int $max): int.
@@ -411,17 +423,26 @@ class Parser {
 			$normalised[ strtolower( $k ) ] = $v;
 		}
 
+		$budget = self::MAX_EXPANSION_CHARS;
+
 		for ( $i = 0; $i <= self::MAX_VARIABLE_DEPTH; $i++ ) {
 			$changed = false;
 			$text    = preg_replace_callback(
 				self::VARIABLE_PATTERN,
-				static function ( array $m ) use ( $normalised, &$changed ): string {
+				static function ( array $m ) use ( $normalised, &$changed, &$budget ): string {
 					$name = strtolower( $m[1] );
-					if ( isset( $normalised[ $name ] ) ) {
-						$changed = true;
-						return $normalised[ $name ];
+					if ( ! isset( $normalised[ $name ] ) ) {
+						return $m[0];
 					}
-					return $m[0];
+					// Out of budget ⇒ the reference stays literal, exactly as an
+					// undefined name does. No new output shape, and rendering still
+					// never throws on content.
+					if ( $budget <= 0 ) {
+						return $m[0];
+					}
+					$budget -= strlen( $normalised[ $name ] );
+					$changed = true;
+					return $normalised[ $name ];
 				},
 				$text
 			);

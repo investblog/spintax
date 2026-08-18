@@ -496,6 +496,21 @@ class Validator {
 	private const FORM_EXPANSION_PASSES = 51;
 
 	/**
+	 * How far the form list may GROW under expansion, in characters.
+	 *
+	 * Passes alone do NOT bound the work: `#set %a% = %b% %b%` over `#set %b% = %a% %a%`
+	 * doubles the text every pass, so 51 of them is 2**51 — a 62-character template took
+	 * `validate()` out with a memory fatal in every engine of the family.
+	 *
+	 * Growth, not total size, and the difference is a verdict: `{plural 2: one|<65 KB of
+	 * ordinary text>}` is plainly two forms and must keep earning its arity error under
+	 * `ru`. A ceiling on total length called that unknowable and flipped it to valid — a
+	 * real regression, caught in review before it shipped. Expansion that ADDS this much
+	 * is a graph exploding; a long form list is just long.
+	 */
+	private const FORM_EXPANSION_MAX_GROWTH = 65536;
+
+	/**
 	 * How many forms the plural stage will receive, or an admission that it is unknowable.
 	 *
 	 * Rendering expands `%variables%` and only THEN splits the form list, while this
@@ -547,51 +562,60 @@ class Validator {
 			);
 		}
 
-		$text = $forms_raw;
+		$text   = $forms_raw;
+		$budget = strlen( $forms_raw ) + self::FORM_EXPANSION_MAX_GROWTH;
 
 		for ( $pass = 0; $pass < self::FORM_EXPANSION_PASSES; $pass++ ) {
-			$bailed         = false;
-			$saw_reference  = false;
+			$bailed        = false;
+			$saw_reference = false;
+			// Built by hand rather than with preg_replace_callback() because the budget has
+			// to be enforced DURING the pass: the callback form materializes the whole next
+			// generation before anyone can measure it, so one pass over 60 KB of
+			// self-reference allocates hundreds of megabytes and a later check never runs.
+			$parts  = array();
+			$total  = 0;
+			$cursor = 0;
+			$offset = 0;
 
-			// EVERY reference per pass, as the renderer's expansion does.
-			$text = preg_replace_callback(
-				'/%(\w+)%/',
-				static function ( array $m ) use ( $defs, $macros, $host_names, &$bailed, &$saw_reference ): string {
-					$saw_reference = true;
-					$name          = strtolower( $m[1] );
+			while ( preg_match( '/%(\w+)%/', $text, $m, PREG_OFFSET_CAPTURE, $offset ) ) {
+				$saw_reference = true;
+				$start         = $m[0][1];
+				$whole         = $m[0][0];
+				$name          = strtolower( $m[1][0] );
 
-					// Runtime context outranks a definition of the same name, so a
-					// host-declared name makes the count unknowable regardless.
-					if ( isset( $host_names[ $name ] ) ) {
-						$bailed = true;
-						return $m[0];
-					}
+				// Runtime context outranks a definition of the same name, so a
+				// host-declared name makes the count unknowable regardless.
+				$value = isset( $host_names[ $name ] ) ? null : ( $defs[ $name ] ?? ( $macros[ $name ] ?? null ) );
 
-					$value = $defs[ $name ] ?? ( $macros[ $name ] ?? null );
-					if ( null === $value ) {
-						$bailed = true;
-						return $m[0];
-					}
+				// A construct in the value: what it rolls to may or may not carry a
+				// top-level pipe, so no single count is true of every render.
+				if ( null === $value || 1 === preg_match( '/[\[\]{}]/', $value ) ) {
+					$bailed = true;
+					break;
+				}
 
-					// A construct in the value: what it rolls to may or may not carry a
-					// top-level pipe, so no single count is true of every render.
-					if ( 1 === preg_match( '/[\[\]{}]/', $value ) ) {
-						$bailed = true;
-						return $m[0];
-					}
+				$parts[] = substr( $text, $cursor, $start - $cursor );
+				$parts[] = $value;
+				$total  += ( $start - $cursor ) + strlen( $value );
+				$cursor  = $start + strlen( $whole );
+				$offset  = $cursor;
 
-					return $value;
-				},
-				$text
-			);
+				if ( $total > $budget ) {
+					return array( 'forms' => 0, 'unresolved' => true, 'macro_spintax' => false );
+				}
+			}
 
 			if ( $bailed ) {
-				return array(
-					'forms' => 0,
-					'unresolved' => true,
-					'macro_spintax' => false,
-				);
+				return array( 'forms' => 0, 'unresolved' => true, 'macro_spintax' => false );
 			}
+
+			$parts[] = substr( $text, $cursor );
+			$total  += strlen( $text ) - $cursor;
+			if ( $total > $budget ) {
+				return array( 'forms' => 0, 'unresolved' => true, 'macro_spintax' => false );
+			}
+			$text = implode( '', $parts );
+
 			if ( ! $saw_reference ) {
 				// No construct can be left, so the plain split is what rendering does too.
 				return array(

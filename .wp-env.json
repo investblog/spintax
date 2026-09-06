@@ -6,7 +6,8 @@
   "mappings": {
     "wp-content/plugins/spintax": "./plugin",
     "wp-content/plugins/spintax/tests": "./tests",
-    "wp-content/plugins/spintax/phpunit.xml.dist": "./phpunit.xml.dist"
+    "wp-content/plugins/spintax/phpunit.xml.dist": "./phpunit.xml.dist",
+    "wp-content/plugins/spintax/phpcs.xml.dist": "./phpcs.xml.dist"
   },
   "plugins": [
     "https://downloads.wordpress.org/plugin/plugin-check.latest-stable.zip",

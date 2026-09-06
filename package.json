@@ -14,7 +14,7 @@
     "lint:php:fix": "bash scripts/lint-php-fix.sh",
     "lint:php:ci": "composer run phpcs",
     "test:php": "wp-env run tests-cli -- bash -c \"cd /var/www/html/wp-content/plugins/spintax && /tmp/vendor/bin/phpunit\"",
-    "test:php:setup": "wp-env run tests-cli -- bash -c \"cd /tmp && composer require --dev yoast/phpunit-polyfills:^2.0 phpunit/phpunit:^9.6 2>&1\"",
+    "test:php:setup": "wp-env run tests-cli -- bash -c \"cd /tmp && composer require --dev --no-interaction yoast/phpunit-polyfills:^2.0 phpunit/phpunit:^9.6 && composer config allow-plugins.dealerdirect/phpcodesniffer-composer-installer true && composer require --dev --no-interaction squizlabs/php_codesniffer:^3.7 wp-coding-standards/wpcs:^3.0 dealerdirect/phpcodesniffer-composer-installer:^1.0 2>&1\"",
     "version:set": "bash scripts/version-set.sh",
     "version:check": "bash scripts/version-check.sh"
   },

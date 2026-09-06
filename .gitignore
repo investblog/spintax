@@ -26,6 +26,7 @@ plugin/composer.json
 plugin/composer.lock
 plugin/.phpunit.result.cache
 plugin/phpunit.xml.dist
+plugin/phpcs.xml.dist
 
 .env
 .env.*

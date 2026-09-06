@@ -257,7 +257,7 @@ Related to the existing "locale absent from render cache key" entry above — sa
 
 ### Gap: the fullwidth-brace degrade is not in the shared corpus
 
-**Status:** open — surfaced by the independent review of 2.5.0 (2026-07-18).
+**Status:** narrowed 2026-09-06 — the premise "no fixture contains a fullwidth brace" (from the 2.5.0 review, 2026-07-18) is no longer true: since `c1c2c14` in `spintax-js` (2026-08-18) `render-semantics.json` carries `plural/count-conditional-shown-in-fallback`, which expects the fullwidth-braced block, so the degrade path and the PHP-slice-vs-TS-reconstruct question below are corpus-gated for that shape. What is still **not** pinned is the case this entry was filed for — a **2-form block under `sr`** (arity mismatch, the BCS upgrade symptom). Open for that one fixture only.
 
 **Problem.** Lenient mode emitting a malformed plural block verbatim in fullwidth braces (U+FF5B / U+FF5D) is the **production** path — the plugin renders with `'lenient' => true` (`Renderer.php:310`) and never throws. After 2.5.0 it is also the headline user-visible symptom of the BCS break: every stale 2-form BCS template in the wild now routes through it. Yet no fixture in `packages/conformance/fixtures/*.json` contains a fullwidth brace. That output is pinned only by per-engine unit tests.
 

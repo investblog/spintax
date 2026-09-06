@@ -412,10 +412,10 @@ TPL;
 		);
 	}
 
-	public function test_a_duplicated_edge_reports_per_occurrence(): void {
+	public function test_a_duplicated_edge_reports_once_per_name(): void {
+		// Two references to %b% inside %a% used to print the same route twice.
 		$this->assertSame(
 			array(
-				'Circular variable reference detected: a → b → a.',
 				'Circular variable reference detected: a → b → a.',
 				'Circular variable reference detected: b → a → b.',
 			),
@@ -423,10 +423,46 @@ TPL;
 		);
 	}
 
-	public function test_a_diamond_feeding_a_cycle_reports_per_path(): void {
+	public function test_a_diamond_feeding_a_cycle_reports_once_per_name(): void {
+		// Was nine — 2^2 from a0, 2^1 from a1, one each from a2, p and q. Now five, one per
+		// name, and each keeps the route it had (spintax-js#59).
 		$template = "#set %a2% = %p%\n#set %a1% = %a2% %a2%\n#set %a0% = %a1% %a1%\n"
 			. "#set %p% = %q%\n#set %q% = %p%";
-		$this->assertCount( 9, $this->circular_messages( $template ) );
+		$this->assertSame(
+			array(
+				'Circular variable reference detected: a2 → p → q → p.',
+				'Circular variable reference detected: a1 → a2 → p → q → p.',
+				'Circular variable reference detected: a0 → a1 → a2 → p → q → p.',
+				'Circular variable reference detected: p → q → p.',
+				'Circular variable reference detected: q → p → q.',
+			),
+			$this->circular_messages( $template )
+		);
+	}
+
+	public function test_a_deep_diamond_stays_linear_in_its_depth(): void {
+		// The shape that was a live denial of service: 457 bytes, 524 288 diagnostics.
+		$lines = array( '#set %c1% = %c2%', '#set %c2% = %c1%' );
+		for ( $i = 0; $i < 200; $i++ ) {
+			$src     = 0 === $i ? 'c1' : 'd' . ( $i - 1 );
+			$lines[] = "#set %d{$i}% = %{$src}% %{$src}%";
+		}
+
+		$this->assertCount( 202, $this->circular_messages( implode( "\n", $lines ) ) );
+	}
+
+	public function test_a_giant_cycle_keeps_its_message_text_linear(): void {
+		// Per-name emission alone does not bound the TEXT: N names each printing an N-name
+		// route is still quadratic, and 20 KB of one cycle carried 8.7 MB of it.
+		$lines = array();
+		for ( $i = 0; $i < 1000; $i++ ) {
+			$lines[] = "#set %n{$i}% = %n" . ( ( $i + 1 ) % 1000 ) . '%';
+		}
+		$messages = $this->circular_messages( implode( "\n", $lines ) );
+
+		$this->assertCount( 1000, $messages );
+		$this->assertLessThan( 512 * 1024, strlen( implode( '', $messages ) ) );
+		$this->assertStringContainsString( '(992 more)', $messages[0] );
 	}
 
 	public function test_a_silent_chain_of_2000_definitions_is_clean(): void {

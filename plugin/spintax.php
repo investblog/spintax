@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Spintax
  * Plugin URI:        https://spintax.net
- * Description:       Template-based dynamic content generation using spintax markup. Create reusable templates with randomised text variants, variable substitution, and permutation logic.
+ * Description:       Generate unique content at scale with spintax templates — inline via shortcode or PHP, or bound to ACF, post-meta and WooCommerce product fields so every matching post gets its own variant on save, on cron, or via Bulk Apply.
  * Version:           3.0.2
  * Requires at least: 6.2
  * Requires PHP:      8.0

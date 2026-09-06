@@ -11,7 +11,7 @@ The checklist has two tracks:
 
 ```bash
 npm run env:start
-npm run test:php       # All tests green. Currently 430 cases.
+npm run test:php       # All tests green. 711 cases as of 3.1.0 — a lower count than the last release is a red flag.
 npm run lint:php       # PHPCS 0 errors, 0 warnings.
 ```
 

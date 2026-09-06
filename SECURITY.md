@@ -2,9 +2,10 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.0.x   | :white_check_mark: |
+| Version              | Supported                                        |
+| -------------------- | ------------------------------------------------ |
+| 3.x (latest release) | :white_check_mark:                               |
+| < 3.0                | :x: — upgrade to the current WordPress.org release |
 
 ## Reporting a Vulnerability
 

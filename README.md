@@ -4,12 +4,13 @@
 [![License](https://img.shields.io/badge/license-GPL--2.0%2B-green.svg)](https://www.gnu.org/licenses/gpl-2.0.html)
 [![PHP](https://img.shields.io/badge/PHP-8.0%2B-purple.svg)](https://php.net)
 [![WordPress](https://img.shields.io/badge/WordPress-6.2%2B-blue.svg)](https://wordpress.org)
+[![CI](https://github.com/investblog/spintax/actions/workflows/ci.yml/badge.svg)](https://github.com/investblog/spintax/actions/workflows/ci.yml)
 
-Spintax templates plus ACF / post-meta bindings, Logs, and WP-CLI — generate dynamic content at scale on WordPress.
+Spintax templates plus ACF / post-meta / WooCommerce bindings, Logs, and WP-CLI — generate unique content at scale on WordPress.
 
 **[Install from WordPress.org](https://wordpress.org/plugins/spintax/)** · **[Docs & playground at spintax.net](https://spintax.net)**
 
-Spintax has two halves. The first is a content-generation **engine** with the GTW-derived spintax markup (enumerations, permutations, conditionals, plural agreement) that you embed inline via `[spintax]` shortcode or `spintax_render()`. The second is a **bindings layer** that ties a template to an ACF or post-meta field on a post type — once configured, every matching post gets its own rendered variant on save, on a cron, or on demand. There's a Logs page, a full WP-CLI surface, and manual-edit detection on the binding side.
+Spintax has two halves. The first is a content-generation **engine** with the GTW-derived spintax markup (enumerations, permutations, conditionals, plural agreement) that you embed inline via `[spintax]` shortcode or `spintax_render()`. The second is a **bindings layer** that ties a template to an ACF field, a post-meta key, or a WooCommerce product description on a post type — once configured, every matching post gets its own rendered variant on save, on a cron, or on demand. There's a Logs page, a full WP-CLI surface, and manual-edit detection on the binding side. On a single-product page the current WooCommerce product is exposed to templates as `%product_*%` variables.
 
 ## Features
 
@@ -21,6 +22,7 @@ Spintax has two halves. The first is a content-generation **engine** with the GT
 - **Conditionals** `{?VAR?then|else}` — render a branch based on whether a variable is set (also inverted `{?!VAR?then}`)
 - **Plural agreement** `{plural <count>: form1|form2|form3}` — pick the grammatically correct noun form by count. RU/UK/BE and SR/HR/BS 3-form, EN-style 2-form. Anything else falls back to the 2-form rule, so `pl`/`cs`/`sk`/`sl`/`bg` are bucketed by a rule that is not theirs rather than rejected. First spintax engine with first-class plurals.
 - **Nested templates** — embed templates via `#include` or `[spintax]` shortcode
+- **WooCommerce product context** — on a single-product page `[spintax]` / `spintax_render()` see the current product as `%product_name%`, `%product_sku%`, `%product_categories%`, `%product_attribute_<slug>%` and more; pricing is deliberately excluded (2.2)
 - **Object cache** — rendered output cached via WP Object Cache API (Redis/Memcached ready), configurable TTL with presets (no caching / hourly / 6h / daily / weekly / monthly / custom seconds)
 - **Cron regeneration** — optional scheduled cache refresh per template
 - **Validation** — bracket matching, circular reference detection, syntax checking on save
@@ -29,6 +31,7 @@ Spintax has two halves. The first is a content-generation **engine** with the GT
 ### Bindings layer (`Spintax → Bindings`)
 
 - **ACF & post-meta targets** — bind a template (or per-post inline source) to any ACF text / textarea / wysiwyg field or plain post-meta key on a post type. ACF Free and Pro both supported.
+- **WooCommerce product fields** — bind a template to a product's description or short description (2.4). Writes go through WooCommerce's own CRUD, only those two fields are writable, and the product's own data can feed the template.
 - **Triggers** — fire on post save, or run on a per-binding cron (`hourly` / `twicedaily` / `daily`)
 - **Bulk Apply** — async chunked walks via Action Scheduler when installed; one-click admin button
 - **Run now** — synchronous walk for admins, recommended fallback when Action Scheduler isn't available
@@ -128,29 +131,41 @@ npm run lint:php               # PHPCS (0 errors, 0 warnings required)
 npm run version:set -- X.Y.Z   # Bump version in plugin header, SPINTAX_VERSION, and readme.txt Stable tag
 ```
 
+Engine changes must also pass the cross-engine golden corpus (`investblog/spintax-js`, `packages/conformance`) — CI runs it on every push, and the Docker recipe for a local run is in `CLAUDE.md` under "Pre-push checklist".
+
 Release flow: bump version → commit → push to `main` (CI runs lint + tests + ZIP build) → smoke-test the user-facing surface that changed → tag `vX.Y.Z` (triggers a GitHub Release plus an SVN push to WordPress.org).
 
 ## The same engine, outside WordPress
 
 The spintax engine this plugin runs is published on its own, so the templates you author here render
-identically elsewhere. All of them are held to a **shared golden corpus** — one set of fixtures every
-engine must reproduce, enforced in CI — so this is a verified guarantee rather than an intention.
+identically elsewhere. Six independent engines — the five libraries below plus this plugin — are held to a
+**shared golden corpus** — one set of fixtures every engine must reproduce, enforced in CI — so this is a
+verified guarantee rather than an intention. The family is described at
+[spintax.net/spintax-engines/](https://spintax.net/spintax-engines/).
 
 | | install | use it for |
 | --- | --- | --- |
 | **PHP** | [`composer require spintax/core`](https://packagist.org/packages/spintax/core) | any PHP app — Laravel, Symfony, a CLI, a cron job |
 | **JavaScript / TypeScript** | [`npm i @spintax/core`](https://www.npmjs.com/package/@spintax/core) | Node, edge workers, the browser |
 | **Python** | [`pip install spintax-core`](https://pypi.org/project/spintax-core/) | Django, FastAPI, data pipelines, a script |
-| **Object Pascal** | [investblog/spintax-win](https://github.com/investblog/spintax-win) | native desktop / CLI tools (Free Pascal or Delphi) |
+| **.NET** | [`dotnet add package Spintax.Core`](https://www.nuget.org/packages/Spintax.Core) | `netstandard2.0` + `net472` — .NET Framework 4.7.2+ and every .NET since |
+| **Object Pascal** | [investblog/spintax-win](https://github.com/investblog/spintax-win) | native desktop / CLI tools (Free Pascal or Delphi); the engine inside Spintax Studio |
 | **OpenCart 3.x** | [Spintax SEO](https://github.com/investblog/spintax-opencart) | product / category copy and SEO URLs |
+| **n8n** | `n8n-nodes-spintax` (community node) — [guide](https://spintax.net/spintax-for-n8n/) | render, validate and check templates inside a workflow |
+| **AI agents (MCP)** | `npx @spintax/mcp`, or hosted at `https://spintax.net/mcp` — [guide](https://spintax.net/spintax-mcp/) | validate and render a template from Claude, Cursor or any MCP client |
 
 ## Links
 
 - **WordPress.org plugin page:** https://wordpress.org/plugins/spintax/
+- **Full changelog:** [CHANGELOG.md](CHANGELOG.md) — the WordPress.org listing carries only the latest releases
 - **Documentation hub:** https://spintax.net/docs/
 - **Live playground:** https://spintax.net/play/
+- **Engine family overview:** https://spintax.net/spintax-engines/
 - **PHP engine (MIT):** https://github.com/investblog/spintax-php
-- **JS/TS engine (MIT):** https://github.com/investblog/spintax-js
+- **JS/TS engine, golden corpus, n8n node, MCP server (MIT):** https://github.com/investblog/spintax-js
+- **Python engine (MIT):** https://github.com/investblog/spintax-py
+- **.NET engine (MIT):** https://github.com/investblog/spintax-dotnet
+- **Object Pascal engine (MIT):** https://github.com/investblog/spintax-win
 
 ## License
 

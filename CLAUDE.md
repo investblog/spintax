@@ -8,9 +8,9 @@ Free WordPress plugin for spintax-based content generation. Target audience: con
 - **WP.org:** https://wordpress.org/plugins/spintax/
 - **Docs / playground:** https://spintax.net
 - **Author:** 301st (https://301.st)
-- **Current version:** 3.0.2
+- **Current version:** 3.1.0
 - **Status:** live on WordPress.org. Shipping surfaces: spintax engine (templates + shortcode + `spintax_render()`), **WooCommerce product context variables** (`%product_*%`, read-only, 2.2.0), bindings (ACF + post-meta + **`woocommerce_product_field` write targets since 2.4.0**, with Bulk Apply / Run-now / cron triggers; decision engine is a pure `Planner` + `TargetRegistry` since 2.3.0), Logs page, WP-CLI `wp spintax bindings *`. Detailed release notes live in `plugin/readme.txt` changelog — don't duplicate them here. Reviewer-driven contracts that aren't obvious from the code live in the "Bindings" section below.
-- **Active roadmap:** the `#set`/`#def` language change SHIPPED as 3.0.0 across all engines and is fully closed — spintax.net documents `#def` and pins the current `@spintax/core`. As of 3.0.2 (2026-08-07) the plugin is at engine parity with `spintax/core` 0.5.2. **The one engine still behind is the OpenCart port: its `^0.3` caret pin froze it at engine 0.3.1** (the same caret trap documented below, second occurrence) — bump pending via its own release flow. Underneath that, WooCommerce integration. Phase 1 (context vars) SHIPPED 2.2.0; Phase 2 (pure Planner / TargetRegistry refactor) SHIPPED 2.3.0; **Phase 3 (`woocommerce_product_field` write targets) SHIPPED 2.4.0** — `docs/spec-woocommerce-phase3.md`, status block records the deviations from the mini-spec. **Next: Phase 4 (term targets) / Phase 5 (slugs) — deferred, no trigger yet.** Product framing: `docs/spec-woocommerce.md` + `docs/spec-woocommerce-discussion.md`. Separately, the engine is now a standalone package (`spintax/core` on Packagist, `@spintax/core` on npm); the plugin does **not** consume it yet (deferred — the cross-engine corpus CI gate already closes the drift risk that motivated it).
+- **Active roadmap:** the `#set`/`#def` language change SHIPPED as 3.0.0 across all engines and is fully closed — spintax.net documents `#def` and pins the current `@spintax/core`. As of 3.1.0 (2026-09-06) the plugin is at engine parity with `spintax/core` 0.8.0 (family at that date: `@spintax/core` 0.6.1, `spintax-core` 0.3.3, `spintax-win` 0.8.1, `Spintax.Core` 0.1.0 on NuGet — **six** engines run the corpus, five are installable libraries; say which count you mean). **The one engine still behind is the OpenCart port: its `^0.5` caret pin holds it at engine 0.5.2** (the same caret trap documented below — `^0.1` and `^0.3` did it before, this is the third occurrence) — bump pending via its own release flow. Between 3.0.2 and 3.1.0 the engine mirrors sat unreleased on `main` for three weeks with CI red, because the per-name circular-reference change landed without rewriting the two tests that pinned per-path emission — mirror the sibling's test rewrite along with its engine change. Underneath that, WooCommerce integration. Phase 1 (context vars) SHIPPED 2.2.0; Phase 2 (pure Planner / TargetRegistry refactor) SHIPPED 2.3.0; **Phase 3 (`woocommerce_product_field` write targets) SHIPPED 2.4.0** — `docs/spec-woocommerce-phase3.md`, status block records the deviations from the mini-spec. **Next: Phase 4 (term targets) / Phase 5 (slugs) — deferred, no trigger yet.** Product framing: `docs/spec-woocommerce.md` + `docs/spec-woocommerce-discussion.md`. Separately, the engine is now a standalone package (`spintax/core` on Packagist, `@spintax/core` on npm); the plugin does **not** consume it yet (deferred — the cross-engine corpus CI gate already closes the drift risk that motivated it).
 - **[CRITICAL] Cross-engine changes ship in a FIXED ORDER. Do not re-derive it — it has been worked out from the workflows more than once and the answer is always this:**
 
   | # | Repo | What lands |
@@ -254,7 +254,8 @@ Verified at each release tag (re-run before SVN deploy):
 
 - PHPCS: 0 errors, 0 warnings
 - Plugin Check (`--include-experimental`): 0 errors, 0 warnings on the shipping surface (test files excluded from ZIP via `.distignore`)
-- CI fully green (lint PHP 8.0–8.3, tests PHP 8.0+8.2 × WP 6.2+latest, build ZIP)
+- `readme.txt` Changelog section under **5,000 characters** — WP.org's readme parser trims anything past that and Plugin Check warns (`readme_parser_warnings_trimmed_section_changelog`). Keep the latest release or two there; the full history lives in `CHANGELOG.md` (root, generated from the readme at 3.1.0 — append new entries to both)
+- CI fully green (lint PHP 8.0–8.4, tests PHP 8.0+8.2 × WP 6.2+latest, cross-engine corpus, build ZIP)
 - Nonces on all forms/AJAX
 - Capability checks on all admin actions
 - Input sanitisation via `Validators::sanitize_spintax()` — `wp_check_invalid_utf8`, strip null bytes/control chars, normalize line endings
@@ -287,10 +288,12 @@ npm run lint:php               # PHPCS via wp-env container
 npm run lint:php:fix           # Auto-fix PHPCS
 npm run lint:php:ci            # PHPCS via local composer (CI)
 npm run test:php               # PHPUnit via wp-env
-npm run test:php:setup         # Install PHPUnit + polyfills in container
+npm run test:php:setup         # Install PHPUnit + polyfills + WPCS in the tests container (ephemeral — redo after any container rebuild)
 npm run version:set -- X.Y.Z  # Set version everywhere
 npm run version:check          # Verify version sync
 ```
+
+**wp-env on this Windows machine — two traps.** (1) To run against a specific core, pin it per call: `WP_ENV_CORE="WordPress/WordPress#7.1" npx wp-env start` — and keep the same variable on every `wp-env run` / `npm run test:php` / `npm run lint:php` in that session, or the command targets the config-default environment. (2) Query Monitor (in `.wp-env.json` plugins) creates `wp-content/db.php` as a symlink to a container path; on the host it is dangling, and any `wp-env start` that has to re-copy core (a core change) dies with `EACCES … lstat … wp-content/db.php`. Delete `~/.wp-env/<hash>/{WordPress,tests-WordPress}/wp-content/db.php` and start again. `npm run lint:php` runs the repo's `phpcs.xml.dist` (mapped into the container) — the same ruleset as CI; a bare `--standard=WordPress` reports violations CI does not.
 
 ## Pre-push checklist (MANDATORY before every push)
 
@@ -309,7 +312,7 @@ docker run --rm -v "W:\Projects\spintax-js:/js" -v "W:\projects\spintax:/spintax
   -w /js/packages/conformance/php -e SPINTAX_PLUGIN_SRC=/spintax/plugin/src php:8.2-cli vendor/bin/phpunit
 ```
 
-Green = **224 tests, 259 assertions, 1 known skip** (`neutralize`, a deliberate TS-only divergence), as of 2026-08-07. **Read the counter, not the exit code.** The corpus grows, so this number dates — treat a count *lower* than the last known figure as a red flag (a runner that discovers no fixtures still exits 0 and prints a cheerful `OK`), and update this line when you add fixtures. In CI the same figure must appear on **both** `php-parity` legs; two legs disagreeing means one engine checked out a stale default branch.
+Green = **248 tests, 283 assertions, 1 known skip** (`neutralize`, a deliberate TS-only divergence), as of 2026-09-06. **Read the counter, not the exit code.** The corpus grows, so this number dates — treat a count *lower* than the last known figure as a red flag (a runner that discovers no fixtures still exits 0 and prints a cheerful `OK`), and update this line when you add fixtures. In CI the same figure must appear on **both** `php-parity` legs; two legs disagreeing means one engine checked out a stale default branch.
 
 The corpus is the **only** machine check binding this engine to `@spintax/core`, the `spintax/core` Composer package and the OpenCart port. It used to be a manual gate, and that is exactly how three post-process defects reached users in the 2.3.2 window — a Spanish fix shipped here with zero PHP-side tests, its only guard sitting in another repository's corpus that nothing here ran. Both directions are now wired: this repo's CI runs the corpus against this engine, and `spintax-js`'s CI runs a changed corpus against both PHP engines, so a fixture cannot land there without them agreeing.
 
@@ -347,7 +350,7 @@ git push origin vX.Y.Z         # → release.yml + wporg-deploy.yml fire in para
 
 ## CI/CD (GitHub Actions)
 
-- `ci.yml` — PHPCS on PHP 8.0-8.3, PHPUnit on PHP 8.0+8.2 × WP 6.2+latest, build ZIP. Runs on every push to main.
+- `ci.yml` — PHPCS on PHP 8.0-8.4, PHPUnit on PHP 8.0+8.2 × WP 6.2+latest, the cross-engine corpus (`conformance`), build ZIP. Runs on every push to main; `workflow_dispatch` re-runs a head that an Actions outage dropped.
 - `release.yml` — version validation (all 3 sources match the tag), PHPCS, build, GitHub Release with ZIP attached. Triggered by tag `v*`.
 - `wporg-deploy.yml` — 10up action for WP.org SVN. Triggered by tag `v*`. Pushes `plugin/` → SVN trunk + `tags/<version>/` and `assets/` → SVN `/assets/`. Scoped to GitHub Environment `svn` (`environment: svn` in the workflow), which is where `SVN_USERNAME` (`301st`) and `SVN_PASSWORD` live. Repository-level secrets are NOT used — must be Environment-level. Manual SVN ops can use `.env.svn` (gitignored).
 

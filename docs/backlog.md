@@ -285,3 +285,16 @@ For one commit the Settings help text and placeholder advertised global `#def` w
 Also worth settling: a global `#def` is rolled once per *render*, not once per page or per site. Two templates on one page would each get their own pick — which is probably what an author expects from "global", but it is not what "fixed" sounds like, and the help text has to say so.
 
 **Trigger:** a user asking for a site-wide value that must not vary within a page. Until then the template-level `#def` covers every case the 3.0.0 work was motivated by.
+
+---
+
+### 3.1.0 release review -- deferred findings (2026-09-06)
+
+**Status:** open -- the Gate D fresh-eyes review of the 3.1.0 engine catch-up found no P1; these are the P2s and notes that were not fixed before the tag. The one finding that was fixed (a budget-truncated child render being cached under its own key) shipped in 3.1.0.
+
+1. **Cycle-route text is quadratic in the cycle length** (`Validator.php`, `cycle_path()`). The "(N more)" cap bounds the message, but the walk that computes it is O(route length) per name, so one cycle of N names costs O(N^2): 1000 names is ~1M steps (fine), a 20k-name cycle (~400 KB template) is ~4x10^8. Same in `spintax/core`. Memoising distance-to-cycle per name makes it linear. Trigger: a real template anywhere near that size.
+2. **Per-block re-expansion in the plural count** (`Validator.php`, `expand_forms_for_counting()`). The 64 KB growth bound is enforced during the pass, but each `{plural}` block re-runs up to 51 passes over its own copy, so 1000 blocks referencing a 60 KB macro that keeps one live reference is ~3 GB of string copying. Authenticated editor only; same in the sibling. Fix: memoise the expanded form list per (macro set, slot text) within one `validate()` call.
+3. **Coverage gaps in the plugin suite** (the corpus pins only "answers at all" for these shapes): no 65 KB growth-not-size test (the regression the sibling caught in review), no 15k self-reference one-pass allocation test, no test that the budget closes when an exception propagates out of `process_template_inner()`, no test for `#set %x% = {?flag?a|b}` in a form slot staying silent (`opaque`).
+4. **Global NAMES suppress the count, global VALUES could decide it.** `#set %x% = {a|b}` in a template plus a global also named `x`: the template-local `#set` wins at render, but the validator sees the name in `host_names` and stays silent instead of reporting nested brackets. Silence, never a wrong verdict. The plugin has the global values (`SettingsRepository::get_global_variables()`) and could pass them to the walk.
+5. **`walk_macro_path()` bails `opaque` on the first `{?`** even when a later reference on the same path carries `[` / `{` -- reference-order-dependent silence. Same in the sibling.
+6. **Global-variables page: the nested-brackets advice is unactionable there.** `#set %syn% = {a|b}` + `#set %msg% = {plural 2: one|%syn%}` now errors on Settings -> Spintax (correctly -- it always rendered as fullwidth braces), and the message says "extract via `#def`", which that page rejects (see the entry above). Save is not blocked. Either word the message per surface or land global `#def`.

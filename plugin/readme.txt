@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, seo, woocommerce, acf, content generation
 Requires at least: 6.2
 Tested up to: 7.1
-Stable tag: 3.0.2
+Stable tag: 3.1.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html

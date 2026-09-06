@@ -208,8 +208,15 @@ class Renderer {
 		try {
 			$output = $this->process_template( $raw, $runtime_vars, $context, $locale );
 
-			// Cache store.
-			$this->cache->set( $template_id, $context_hash, $output );
+			// Cache store — unless the expansion allowance ran out somewhere in this render.
+			// A truncated body must not be served from cache: the key carries no trace of the
+			// parent that spent the budget, so a page rendering this template alone would get
+			// the cut-short text although it could afford the full one.
+			if ( $this->expansion_exhausted ) {
+				$this->log_error( sprintf( 'Expansion budget exhausted rendering template %d; output truncated and not cached.', $template_id ) );
+			} else {
+				$this->cache->set( $template_id, $context_hash, $output );
+			}
 
 			// Record dependency graph for the top-level template.
 			if ( $is_top_level && ! empty( $this->rendered_ids ) ) {
@@ -240,11 +247,16 @@ class Renderer {
 		// The outermost call owns the expansion allowance; a nested one inherits it.
 		$outermost = null === $this->expansion_budget;
 		if ( $outermost ) {
-			$this->expansion_budget = Parser::MAX_EXPANSION_CHARS;
+			$this->expansion_budget    = Parser::MAX_EXPANSION_CHARS;
+			$this->expansion_exhausted = false;
 		}
 
 		try {
-			return $this->process_template_inner( $raw, $runtime_vars, $context, $locale );
+			$output = $this->process_template_inner( $raw, $runtime_vars, $context, $locale );
+			if ( $this->expansion_budget <= 0 ) {
+				$this->expansion_exhausted = true;
+			}
+			return $output;
 		} finally {
 			if ( $outermost ) {
 				$this->expansion_budget = null;
@@ -523,6 +535,19 @@ class Renderer {
 	 * @var int|null
 	 */
 	private ?int $expansion_budget = null;
+
+	/**
+	 * Whether the allowance ran out somewhere in the render in progress (or the last one).
+	 *
+	 * Set as each `process_template()` body returns, so a nested `render()` reads it before
+	 * its own cache store. The cache is keyed per template and context, with no record of
+	 * the parent that spent the budget — so a child cut short inside a big parent would
+	 * otherwise be served, under its own key, to a page that renders it alone and would have
+	 * afforded it in full. Reset when the outermost call opens a fresh allowance.
+	 *
+	 * @var bool
+	 */
+	private bool $expansion_exhausted = false;
 
 	/**
 	 * Replace `[spintax …]` shortcodes with opaque placeholders.

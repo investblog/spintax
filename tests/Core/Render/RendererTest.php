@@ -612,4 +612,71 @@ class RendererTest extends \WP_UnitTestCase {
 
 		$this->assertSame( 'X=() y=()', $result );
 	}
+
+	// =========================================================================
+	// Expansion budget (spintax-js#69): a render is bounded, includes and all
+	//
+	// The shared corpus pins that rendering TERMINATES on these shapes, not what the
+	// truncated text looks like — the engines expand by different mechanisms (a per-reference
+	// tree walk in TS and Python, a whole-text fixpoint in both PHP engines) and stop at
+	// different places. So the bound itself, and the literal reference it leaves behind, are
+	// pinned here.
+	// =========================================================================
+
+	public function test_an_expansion_bomb_renders_instead_of_ending_the_process(): void {
+		// `%a%` doubles on every pass and never cycles, so the circular guard cannot fire.
+		// Every released engine in the family died on this with a memory fatal.
+		$out = $this->renderer->process_template( "#set %a% = %b% %b%\n#set %b% = %a% %a%\n%a%", array() );
+
+		$this->assertLessThan( 4 * Parser::MAX_EXPANSION_CHARS, strlen( $out ) );
+		$this->assertMatchesRegularExpression( '/%[ab]%/', $out, 'what the budget could not afford stays a literal reference' );
+	}
+
+	public function test_an_ordinary_template_is_nowhere_near_the_expansion_budget(): void {
+		$out = $this->renderer->process_template(
+			"#set %greeting% = {Hi|Hello}\n#def %n% = 2\n%greeting%, {plural %n%: guest|guests}!",
+			array(),
+			null,
+			'en'
+		);
+
+		$this->assertSame( 'Hi, guests!', $out );
+	}
+
+	public function test_the_budget_is_per_render_not_per_include(): void {
+		// A child template is expanded by its own call, so an allowance created per call is an
+		// allowance per subtree: twenty includes of one bomb were twenty budgets. The outermost
+		// `process_template()` now opens the allowance once and nested calls inherit it, so the
+		// first include spends it and the other nineteen leave their references literal.
+		// `render_fresh()` keeps the child out of the render cache, which would otherwise hand
+		// includes two to twenty the first include's output and hide what is being measured.
+		$this->make_template( 'bomb', "#set %a% = %b% %b%\n#set %b% = %a% %a%\n%a%" );
+		$parent = $this->make_template( 'twenty-bombs', implode( "\n", array_fill( 0, 20, '#include "bomb"' ) ) );
+
+		$out = $this->renderer->render_fresh( $parent );
+
+		$this->assertLessThan( 2 * Parser::MAX_EXPANSION_CHARS, strlen( $out ) );
+		$this->assertMatchesRegularExpression( '/%[ab]%/', $out );
+	}
+
+	public function test_a_second_render_on_the_same_renderer_gets_a_fresh_budget(): void {
+		// One Renderer serves a whole Bulk Apply walk, so a spent allowance must close with
+		// the render that spent it rather than starve the posts that follow.
+		$this->renderer->process_template( "#set %a% = %b% %b%\n#set %b% = %a% %a%\n%a%", array() );
+
+		$this->assertSame( 'Hello World!', $this->renderer->process_template( "#set %x% = World\n{Hello|Hi} %x%!", array() ) );
+	}
+
+	public function test_a_child_cut_short_by_the_budget_is_not_cached_under_its_own_key(): void {
+		// Includes run in document order and share the allowance, so a child after the bomb
+		// renders with nothing left and its references stay literal. The cache key is per
+		// template and context — no trace of the parent — so storing that would hand the
+		// truncated text to a page that renders the child alone and could afford it.
+		$this->make_template( 'bomb', "#set %a% = %b% %b%\n#set %b% = %a% %a%\n%a%" );
+		$city   = $this->make_template( 'city', "#set %c% = Berlin\nWelcome to %c%" );
+		$parent = $this->make_template( 'bomb-then-city', "#include \"bomb\"\n#include \"city\"" );
+
+		$this->assertStringContainsString( '%c%', $this->renderer->render( $parent ), 'inside the parent the child really is cut short' );
+		$this->assertSame( 'Welcome to Berlin', $this->renderer->render( $city ) );
+	}
 }

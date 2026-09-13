@@ -601,8 +601,11 @@ class Parser {
 		);
 
 		// 2. Shield: email addresses.
+		// The local run is taken possessively and a run that is no email is skipped whole: its class holds no
+		// '@', so every start inside it meets the same '@' — or none — and fails where the first start failed.
+		// Retrying from each of them made a long run, or a long domain the TLD rule rejects, quadratic.
 		$text = preg_replace_callback(
-			'~[a-z0-9._%+\-]+@' . $domain_part . '\b~iu',
+			'~[a-z0-9._%+\-]++(?:@' . $domain_part . '\b|(*SKIP)(*FAIL))~iu',
 			static function ( array $m ) use ( $store_placeholder ): string {
 				return $store_placeholder( $m[0], 'EMAIL' );
 			},
@@ -613,8 +616,11 @@ class Parser {
 		// Matches: example.com, sub.domain.co.uk, xn--e1afmapc.xn--p1ai, etc.
 		// Requires dot-separated labels ending with a 2-63 char TLD that
 		// contains at least one letter (excludes pure numbers like 3.14).
+		// A chain of labels that is no domain is skipped whole: a later start in the chain could only match
+		// with a TLD the first start could reach too. Retrying from every label made `a.a.…a.Game` quadratic
+		// once a one-case TLD rejected `Game` (spintax-js#79), and `a.a.…a` was so already.
 		$text = preg_replace_callback(
-			'~\b' . $domain_part . '\b~iu',
+			'~\b(?:' . $domain_part . '\b|(?>(?:(?:xn--)?[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*\.)*)(?:(?:xn--)?[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*)?(*SKIP)(*FAIL))~iu',
 			static function ( array $m ) use ( $store_placeholder ): string {
 				return $store_placeholder( $m[0], 'DOM' );
 			},

@@ -551,7 +551,10 @@ class Parser {
 		$input_has_nul                   = str_contains( $text, "\x00" );
 		$placeholders                    = array();
 		$counter                         = 0;
-		$domain_part                     = '(?:(?:(?:xn--)?[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*)\.)+(?:xn--[a-z0-9\-]{2,59}|[\p{L}][\p{L}\p{N}-]{1,62})';
+		// A TLD is a label in ONE case (spintax-js#79): `example.com` and `ASP.NET` are domains, `compact.Game`
+		// is a sentence glued to the next one. Letters without case (\p{Lo}, \p{Lm}) fit either branch, so a CJK or
+		// Arabic TLD stays a domain. The branch is caseless-off inside patterns that carry /i.
+		$domain_part                     = '(?:(?:(?:xn--)?[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*)\.)+(?:xn--[a-z0-9\-]{2,59}|(?-i:[\p{Ll}\p{Lm}\p{Lo}][\p{Ll}\p{Lm}\p{Lo}\p{N}-]{1,62}|[\p{Lu}\p{Lt}\p{Lm}\p{Lo}][\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{N}-]{1,62}))';
 		$store_placeholder               = static function ( string $value, string $prefix ) use ( &$placeholders, &$counter ): string {
 			$key                  = "\x00{$prefix}_{$counter}\x00";
 			$placeholders[ $key ] = $value;

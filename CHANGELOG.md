@@ -2,7 +2,7 @@
 
 All notable changes to the Spintax WordPress plugin, newest first. The WordPress.org listing (`plugin/readme.txt`) carries only the most recent releases, because the directory shows at most 5,000 characters of changelog; this file is the complete history. Upgrade notices live in `plugin/readme.txt`.
 
-## Unreleased
+## 3.2.0
 * **Engine catch-up: the built-in engine is back in step with `spintax/core` 0.9.0.** The same three changes, locked by the shared cross-engine corpus.
 * **Fix: a sentence glued to the next one gets its space back.** The engine protects bare domains and email addresses from the spacing pass, and it was taking any `word.Word` for a domain — so `kept compact.Game categories` and `конец.Начало` stayed glued. A domain's last label must now be all lower case or all upper case. `example.com`, `ASP.NET`, `info@Example.COM` and `例子.中国` are untouched; the accepted cost is that `Yandex.Money` renders as `Yandex. Money` and `info@example.Com` is no longer treated as an address. **Rendered text changes for these shapes** — the only user-visible change in this release.
 * **Fix: a long dotted chain no longer costs seconds of CPU.** Text like `a.a.a.…a.Game` made the address and domain protection restart from every label: 2,000 one-letter labels took 48 ms where they had taken 0.7. Now 0.1–0.9 ms. Ordinary text costs 2–4% more.

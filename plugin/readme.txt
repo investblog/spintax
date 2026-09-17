@@ -275,6 +275,13 @@ Templates and their rendered output are stored entirely within your WordPress da
 
 == Changelog ==
 
+= 3.2.0 =
+* **Engine catch-up: the built-in engine is back in step with `spintax/core` 0.9.0.** The same three changes, locked by the shared cross-engine corpus.
+* **Fix: a sentence glued to the next one gets its space back.** The engine protects bare domains and email addresses from the spacing pass, and it was taking any `word.Word` for a domain — so `kept compact.Game categories` and `конец.Начало` stayed glued. A domain's last label must now be all lower case or all upper case. `example.com`, `ASP.NET`, `info@Example.COM` and `例子.中国` are untouched; the accepted cost is that `Yandex.Money` renders as `Yandex. Money` and `info@example.Com` is no longer treated as an address. **Rendered text changes for these shapes** — the only user-visible change in this release.
+* **Fix: a long dotted chain no longer costs seconds of CPU.** Text like `a.a.a.…a.Game` made the address and domain protection restart from every label: 2,000 one-letter labels took 48 ms where they had taken 0.7. Now 0.1–0.9 ms. Ordinary text costs 2–4% more.
+* **Much faster rendering of templates with many `#def` definitions.** Three inner loops were charging the whole variable map for every definition in it. Measured on PHP 8.4, same machine: 3,200 chained definitions 8.7 s → 0.010 s, 12,800 independent ones 14.5 s → 0.021 s, and validating one cycle of 16,000 names 6.1 s → 0.163 s. Nothing a template renders changes — byte-identical across 3,000 generated definition-graph documents, with six deliberate mutations proving the check can see breakage first.
+* Tests: +9 since 3.1.0 (720 PHPUnit); the shared cross-engine corpus stands at 333 cases, 324 of them asserted against this engine.
+
 = 3.1.0 =
 * **Engine catch-up: the built-in engine is back in step with `spintax/core` 0.8.0.** Six fixes that already shipped across the family — Composer 0.6–0.8, npm (`@spintax/core` 0.4–0.6), PyPI, Object Pascal and .NET — every one locked by the shared cross-engine corpus.
 * **Fix: a 62-character template could exhaust memory in the validator.** `#set %a% = %b% %b%` over `#set %b% = %a% %a%` doubles the text on every expansion pass, and there is no cycle, so the circular-reference guard never fired. Plural-form expansion now stops at 64 KB and reports the count as unknowable instead of dying. Every engine in the family had this.
@@ -286,15 +293,12 @@ Templates and their rendered output are stored entirely within your WordPress da
 * Tested up to WordPress 7.1. Tests: +22 since 3.0.2 (711 PHPUnit); the shared cross-engine corpus stands at 248 cases.
 * Listing refresh: the .NET engine (`Spintax.Core` on NuGet) joins the family list, Spintax Studio's engine version is current, and a new FAQ covers the n8n node and the MCP server.
 
-= 3.0.2 =
-* **Engine catch-up: the plugin's built-in engine is back in step with the standalone `spintax/core` 0.5.2.** The standalone engines (Composer, npm, PyPI, Object Pascal) had moved ahead of the plugin; every change below ships identically across the family and is locked by the shared cross-engine corpus.
-* **Fix: a circular `#set` no longer publishes an empty render.** A template whose definitions reference each other in a cycle used to render as an empty string; it now stops expanding at the depth budget and emits the partially-expanded text with the unresolved reference left visible — what every other engine in the family already does. The validator still reports the cycle as an error.
-* **Fix: directive and `#include` recognition follows the family grammar exactly.** Variable names are ASCII, as documented — `#set %имя% = …` was silently accepted (and expanded) by this engine alone while being an error to every other; the editor now reports it and the line renders as text. Likewise an `#include` separated by a non-breaking space is plain text rather than an include, a CRLF line ending no longer leaks a carriage return into a directive's value, and a stray control character before a `#set` no longer flags a valid template as malformed.
-* **Much faster validation of large templates.** The circular-reference walk and the plural-agreement analysis are now iterative: a 1,600-definition chain validates in 86 ms where it previously took 15.7 s, and definition shapes that previously hung the validator complete in seconds. Line-number reporting scales linearly too. Diagnostic output is byte-identical — order, count and messages verified against the previous engine on a 464-document differential.
-
-Earlier releases (3.0.1 back to 1.0.0) are listed in full in `CHANGELOG.md` in the plugin's GitHub repository: https://github.com/investblog/spintax/blob/main/CHANGELOG.md
+Earlier releases (3.0.2 back to 1.0.0) are listed in full in `CHANGELOG.md` in the plugin's GitHub repository: https://github.com/investblog/spintax/blob/main/CHANGELOG.md
 
 == Upgrade Notice ==
+
+= 3.2.0 =
+Engine catch-up with spintax/core 0.9.0. One visible change: a bare domain or email address whose last label is mixed case is no longer protected from the spacing pass, so `Yandex.Money` now renders as `Yandex. Money`. All-lower-case and all-upper-case domains are untouched. Templates with many #def definitions render far faster.
 
 = 3.1.0 =
 Engine catch-up with spintax/core 0.8.0: validation and rendering stay memory-safe on pathological templates, plural forms are counted after #def expansion (fewer false arity errors), one circular-reference error per variable. Tested up to WordPress 7.1. No template changes needed.

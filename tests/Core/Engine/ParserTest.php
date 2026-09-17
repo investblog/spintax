@@ -867,4 +867,94 @@ class ParserTest extends \WP_UnitTestCase {
 		// Permutation brackets should be resolved (except HTML attributes like href).
 		$this->assertStringNotContainsString( '#set ', $result );
 	}
+
+	/**
+	 * The roll order is this engine's own, and these are the shapes that say which one ran.
+	 *
+	 * `order_definitions()` reproduces a left-to-right sweep: a name whose last dependency was
+	 * placed earlier in the same walk goes out immediately. `@spintax/core` and `spintax-core`
+	 * place whole ROUNDS instead and answer `a, c, b` and `a, d, b, c` to the first two — which is
+	 * visible in rendered text, because every roll draws from the RNG.
+	 *
+	 * Pinned here because the difference is invisible to the shared corpus: an `rng` case asserts
+	 * within-engine reproducibility only, and under a first-choice RNG every order renders the
+	 * same string. A future edit that ports the reference's rounds goes red here rather than
+	 * quietly re-rolling every multi-definition template (investblog/spintax-js#82).
+	 *
+	 * @dataProvider order_provider
+	 * @param array<string, string> $definitions Directive values, name => raw value.
+	 * @param array<string, string> $aliases     `#set` values for alias hops.
+	 * @param string[]              $expected    The order this engine rolls them in.
+	 */
+	public function test_definition_order_is_the_sweep_this_engine_has_always_used(
+		array $definitions,
+		array $aliases,
+		array $expected
+	): void {
+		$this->assertSame( $expected, $this->make_first()->order_definitions( $definitions, $aliases ) );
+	}
+
+	/**
+	 * @return array<string, array{0: array<string, string>, 1: array<string, string>, 2: string[]}>
+	 */
+	public function order_provider(): array {
+		return array(
+			// The two shapes where the sweep and the reference's rounds disagree.
+			'a dependent name placed before a later independent one' => array(
+				array(
+					'a' => 'x',
+					'b' => '%a%',
+					'c' => 'y',
+				),
+				array(),
+				array( 'a', 'b', 'c' ),
+			),
+			'a whole chain drains before a later independent name'   => array(
+				array(
+					'a' => 'x',
+					'b' => '%a%',
+					'c' => '%b%',
+					'd' => 'y',
+				),
+				array(),
+				array( 'a', 'b', 'c', 'd' ),
+			),
+			// Shapes where the two agree — here so a rewrite cannot trade one for the other.
+			'a chain written backwards takes one pass per name'      => array(
+				array(
+					'a' => '%b%',
+					'b' => '%c%',
+					'c' => 'z',
+				),
+				array(),
+				array( 'c', 'b', 'a' ),
+			),
+			'a dependency reached through a #set alias'              => array(
+				array(
+					'b' => '%s%',
+					'a' => '{1|2}',
+				),
+				array( 's' => '%a%' ),
+				array( 'a', 'b' ),
+			),
+			'a self-reference is not a dependency'                   => array(
+				array(
+					'a' => '%a% tail',
+					'b' => 'x',
+				),
+				array(),
+				array( 'a', 'b' ),
+			),
+			'a cycle, and the name waiting behind it, come last'     => array(
+				array(
+					'a' => '%b%',
+					'b' => '%a%',
+					'c' => 'free',
+					'd' => '%a%',
+				),
+				array(),
+				array( 'c', 'a', 'b', 'd' ),
+			),
+		);
+	}
 }

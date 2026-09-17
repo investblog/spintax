@@ -404,16 +404,48 @@ class Renderer {
 		// invisible, and declaration order leaked back into the result.
 		$aliases = array_diff_key( $vars, array_diff_key( $definitions, $outranked ) );
 
+		// One map that grows by each rolled value, and the NUL question answered beside it.
+		// Rebuilding the map per definition cost n copies of up to n names, re-deriving the NUL
+		// answer scanned every value again per definition, and `expand_variables()` rebuilt the
+		// lowercased key map on top — three quadratics in one loop, 6 400 independent definitions
+		// took 3.5 s between them. `RenderContext` normalises keys on the way in, so the map is
+		// already lowercase and `expand_normalised_variables()` can skip that pass.
+		$visible = $vars;
+
+		// WHICH names carry a NUL, not merely whether any does. A `#def` shadows a global of the
+		// same name, so a roll can take the last NUL out of the map — and the per-roll scan this
+		// replaces would have seen it go. A flag that only ever turns on keeps the sequential
+		// restore for the rest of the render and answers differently.
+		$nul_keys = array();
+
+		foreach ( $visible as $key => $value ) {
+			if ( str_contains( $value, "\x00" ) ) {
+				$nul_keys[ $key ] = true;
+			}
+		}
+
 		foreach ( $this->parser->order_definitions( $definitions, $aliases ) as $name ) {
 			if ( array_key_exists( $name, $outranked ) ) {
 				continue;
 			}
 
-			$resolved[ $name ] = $this->render_definition_value(
+			$rolled = $this->render_definition_value(
 				$definitions[ $name ],
-				array_merge( $vars, $resolved ),
-				$locale
+				$visible,
+				$locale,
+				! empty( $nul_keys )
 			);
+
+			$resolved[ $name ] = $rolled;
+			$visible[ $name ]  = $rolled;
+
+			// The rolled value REPLACES whatever this name held, so it can add a NUL to the map
+			// or take the last one out of it.
+			if ( str_contains( $rolled, "\x00" ) ) {
+				$nul_keys[ $name ] = true;
+			} else {
+				unset( $nul_keys[ $name ] );
+			}
 		}
 
 		return $resolved;
@@ -427,20 +459,24 @@ class Renderer {
 	 * inside a definition. A `[spintax]` shortcode is shielded for the length of the roll so the
 	 * permutation resolver cannot eat its brackets, and handed back whole.
 	 *
-	 * @param string                $value  Raw directive value.
-	 * @param array<string, string> $vars   Variables visible to this value.
-	 * @param string                $locale Plural locale.
+	 * @param string                $value    Raw directive value.
+	 * @param array<string, string> $vars     Variables visible to this value.
+	 * @param string                $locale   Plural locale.
+	 * @param bool                  $vars_nul Whether any value in `$vars` carries a NUL. The
+	 *                                        caller tracks it across the roll: asking
+	 *                                        `restore_is_unambiguous()` here scanned the whole
+	 *                                        map once per definition.
 	 * @return string
 	 */
-	private function render_definition_value( string $value, array $vars, string $locale ): string {
+	private function render_definition_value( string $value, array $vars, string $locale, bool $vars_nul ): string {
 		// Read the restore's guard before the shield mints a NUL of its own, exactly as the body does.
-		$unambiguous = self::restore_is_unambiguous( $value, $vars );
+		$unambiguous = ! $vars_nul && ! str_contains( $value, "\x00" );
 		$shielded    = array();
 		$counter     = 0;
 		$value       = $this->shield_nested_constructs( $value, $shielded, $counter );
 
 		$value = $this->conditionals->apply( $value, $vars );
-		$value = $this->parser->expand_variables( $value, $vars, $this->expansion_budget );
+		$value = $this->parser->expand_normalised_variables( $value, $vars, $this->expansion_budget );
 
 		// Shield again, for the same reason the body does: expansion is the one place a shortcode
 		// can enter after the first pass. `#def %frag% = %s%` with `#set %s% = [spintax slug="x"]`

@@ -843,6 +843,7 @@ class Validator {
 		// messages are the recursive walk's, duplicated edges and all.
 		$refs_of = $this->references_of( $definitions );
 		$graph   = $this->names_that_reach_a_cycle( $definitions, $refs_of );
+		$lengths = $this->route_lengths( $graph['via'] );
 		foreach ( $definitions as $name => $value ) {
 			if ( ! isset( $graph['reaches'][ (string) $name ] ) ) {
 				continue;
@@ -850,7 +851,7 @@ class Validator {
 			$errors[] = array(
 				'message' => sprintf(
 					'Circular variable reference detected: %s.',
-					$this->cycle_path( (string) $name, $graph['via'] )
+					$this->cycle_path( (string) $name, $graph['via'], $lengths )
 				),
 				'line'    => 0,
 				'column'  => 0,
@@ -1001,11 +1002,12 @@ class Validator {
 	 * route, and a 43 KB template of one giant cycle carried tens of megabytes of it. Past a
 	 * handful of names a route stops being something a human reads, so it becomes a count.
 	 *
-	 * @param string                $name Definition to start from.
-	 * @param array<string, string> $via  Witness edges from `names_that_reach_a_cycle()`.
+	 * @param string                $name    Definition to start from.
+	 * @param array<string, string> $via     Witness edges from `names_that_reach_a_cycle()`.
+	 * @param array<string, int>    $lengths Route lengths from `route_lengths()`.
 	 * @return string
 	 */
-	private function cycle_path( string $name, array $via ): string {
+	private function cycle_path( string $name, array $via, array $lengths ): string {
 		$seen    = array( $name => true );
 		$shown   = array( $name );
 		$current = $name;
@@ -1020,16 +1022,10 @@ class Validator {
 				break;
 			}
 			if ( count( $shown ) >= self::CYCLE_PATH_LIMIT ) {
-				$more = 0;
-				$walk = $next;
-				while ( ! isset( $seen[ $walk ] ) ) {
-					$seen[ $walk ] = true;
-					++$more;
-					if ( ! isset( $via[ $walk ] ) ) {
-						break;
-					}
-					$walk = $via[ $walk ];
-				}
+				// What is left is the route's length less what is shown — and the length belongs
+				// to the name the route STARTED from, not to the one it stopped at. Counting it
+				// here instead walked the rest of the cycle once per name.
+				$more = ( $lengths[ $name ] ?? count( $shown ) ) - count( $shown );
 				return implode( ' → ', $shown ) . sprintf( ' → … (%d more)', $more );
 			}
 			$seen[ $next ] = true;
@@ -1038,6 +1034,64 @@ class Validator {
 		}
 
 		return implode( ' → ', $shown );
+	}
+
+	/**
+	 * How many names the route from each name visits before it repeats one.
+	 *
+	 * `names_that_reach_a_cycle()` records ONE witness edge per name, so `$via` is a functional
+	 * graph and every route is the same shape: a tail running down into exactly one cycle. That
+	 * is what lets one pass measure them all — a name on a cycle visits the cycle, and a name on
+	 * a tail visits one more than its successor. Each walk stops at the first name already
+	 * measured, so every name is walked once.
+	 *
+	 * @param array<string, string> $via Witness edges from `names_that_reach_a_cycle()`.
+	 * @return array<string, int> Name → route length.
+	 */
+	private function route_lengths( array $via ): array {
+		$lengths = array();
+
+		foreach ( $via as $start => $unused ) {
+			if ( isset( $lengths[ $start ] ) ) {
+				continue;
+			}
+
+			$walk    = array();
+			$on_walk = array();
+			$node    = $start;
+
+			while ( null !== $node && ! isset( $lengths[ $node ] ) && ! isset( $on_walk[ $node ] ) ) {
+				$on_walk[ $node ] = count( $walk );
+				$walk[]           = $node;
+				$node             = $via[ $node ] ?? null;
+			}
+
+			$total    = count( $walk );
+			$tail_end = $total;
+
+			// A walk that runs out of successors counts only its last name; one that meets a
+			// measured name adds to that length; one that meets itself has closed a cycle, and
+			// every name from there on lies on it.
+			$length = null === $node ? 0 : ( $lengths[ $node ] ?? 0 );
+
+			if ( null !== $node && isset( $on_walk[ $node ] ) ) {
+				$from   = $on_walk[ $node ];
+				$length = $total - $from;
+
+				for ( $k = $from; $k < $total; $k++ ) {
+					$lengths[ $walk[ $k ] ] = $length;
+				}
+
+				$tail_end = $from;
+			}
+
+			for ( $k = $tail_end - 1; $k >= 0; $k-- ) {
+				++$length;
+				$lengths[ $walk[ $k ] ] = $length;
+			}
+		}
+
+		return $lengths;
 	}
 
 	/**

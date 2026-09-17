@@ -679,4 +679,30 @@ class RendererTest extends \WP_UnitTestCase {
 		$this->assertStringContainsString( '%c%', $this->renderer->render( $parent ), 'inside the parent the child really is cut short' );
 		$this->assertSame( 'Welcome to Berlin', $this->renderer->render( $city ) );
 	}
+
+	/**
+	 * Rolling definitions is linear, and this is the tripwire.
+	 *
+	 * Each roll used to be handed a freshly merged copy of the map of rolled values, re-derive
+	 * whether any of them carried a NUL, and re-lowercase every key — three passes over a map that
+	 * grows by one name per definition. The bound is deliberately far above the measured cost —
+	 * 0.05 s for this template, against 18.2 s before the fix — so it says nothing about how fast
+	 * the machine is and everything about which roll ran.
+	 */
+	public function test_rolling_many_definitions_does_not_go_quadratic_again(): void {
+		$lines = array();
+		for ( $i = 0; $i < 12800; $i++ ) {
+			$lines[] = "#def %d{$i}% = {a|b}";
+		}
+		$lines[] = '%d0%';
+
+		$id = $this->make_template( 'many-definitions', implode( "\n", $lines ) );
+
+		$started = hrtime( true );
+		$out     = $this->renderer->render( $id );
+		$elapsed = ( hrtime( true ) - $started ) / 1e9;
+
+		$this->assertContains( trim( $out ), array( 'A', 'B' ) );
+		$this->assertLessThan( 5.0, $elapsed, sprintf( 'rolling 12 800 definitions took %.3f s', $elapsed ) );
+	}
 }

@@ -881,16 +881,26 @@ class Parser {
 		// 7. Punctuation spacing.
 		// Remove whitespace BEFORE punctuation: "word ," becomes "word,".
 		$text = preg_replace( '/\s+([,;:!?.])/u', '$1', $text );
+		// A CLOSER — what closes the quotation or aside the mark ends inside: '"Is it audited?", the
+		// figure', '(see above.)', '«Как дела?», и ушёл', '"Yes," he said'. No space goes between the
+		// mark and a closer ('"Is it audited? ",' before); what follows the closer is left as written.
+		// ')' and ']' never open, so they always close. A quote is read by what follows its run, not by
+		// its shape — '“' opens English and closes German, '"' does both everywhere: whitespace, the end,
+		// a tag, the end of a tag, .,;:!?…, ')', ']' or a dash follow a closing quote. Anything else — a
+		// word, a number, '(', '$', a placeholder — keeps the space it always got; the cost is an opening
+		// quote glued to the mark before a follower ('is it?"—no"'). Every shorter run ends at another
+		// quote, which is not on that list, so a run is only ever read whole.
+		$closer = '[)\]]|[\'"«»‹›“”‘’]+(?=\s|$|<|\/?>|[.,;:!?…)\]—–])';
 		// Ensure space AFTER comma/semicolon/colon unless followed by
-		// digit, whitespace, end, or tag. Placeholders (\x00) are allowed;
+		// digit, whitespace, end, tag or closer. Placeholders (\x00) are allowed;
 		// they will be restored later and need the space before them.
-		$text = preg_replace( '/([,;:])(?!\d)(?!\s|$|<)/u', '$1 ', $text );
+		$text = preg_replace( '/([,;:])(?!\d)(?!\s|$|<|' . $closer . ')/u', '$1 ', $text );
 		// Ensure space AFTER sentence-ending punctuation (.!?) with same rules. The class matches a
 		// RUN of marks, and the run must be complete (`(?![.!?])`): "..." and "?!" are ONE sentence
 		// end, not several, so the space belongs after the run and never inside it. The guard is what
 		// forces that — a greedy `+` on its own still backtracks INTO the run to satisfy the
 		// lookaheads, which turns "Wow!!!" into "Wow!! !" and "Wait... what" into "Wait.. . what".
-		$text = preg_replace( '/([.!?]+)(?![.!?])(?!\d)(?!\s|$|<)/u', '$1 ', $text );
+		$text = preg_replace( '/([.!?]+)(?![.!?])(?!\d)(?!\s|$|<|' . $closer . ')/u', '$1 ', $text );
 
 		// 7a. Sentence openers: Spanish OPENS a question/exclamation with an inverted mark, so the
 		// mark binds to the word it opens ("¿ qué" becomes "¿qué"). Runs BEFORE capitalisation, so

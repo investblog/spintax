@@ -18,6 +18,19 @@ class RenderContextTest extends \WP_UnitTestCase {
 		$this->assertSame( 'big', $vars['size'] );
 	}
 
+	public function test_digits_only_names_survive_every_merge(): void {
+		// spintax-js#84: PHP stores '7' as the int key 7, and array_merge() renumbered int keys
+		// instead of overwriting them — the value moved to a fresh index and `%7%` stayed literal.
+		// The corpus runner reimplements the renderer, so this is the pin on the shipped class.
+		$ctx  = new RenderContext( array( '7' => 'global' ), array( '1' => 'local' ) );
+		$ctx  = $ctx->with_local( array( '7' => 'rolled' ) )->with_runtime( array( '2' => 'runtime' ) );
+		$vars = $ctx->get_merged_variables();
+		$this->assertSame( 'rolled', $vars['7'] );
+		$this->assertSame( 'local', $vars['1'] );
+		$this->assertSame( 'runtime', $vars['2'] );
+		$this->assertCount( 3, $vars );
+	}
+
 	public function test_case_insensitive_keys(): void {
 		$ctx  = new RenderContext( array( 'CityName' => 'Moscow' ) );
 		$vars = $ctx->get_merged_variables();

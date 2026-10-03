@@ -74,6 +74,7 @@ The earlier sketch had two structural weaknesses that the colon form closes:
 | Locale family | Languages | Forms | Rule |
 |---|---|---|---|
 | Slavic 3-form | `ru`, `uk`, `be`, `sr`, `hr`, `bs` | 3 (`one\|few\|many`) | `mod10===1 && mod100!==11` → one; `mod10∈[2,4] && mod100∉[12,14]` → few; else → many |
+| Arabic 6-form (3.2.0, spintax-js#88) | `ar` | 6 (`zero\|one\|two\|few\|many\|other`) | `0` → zero; `1` → one; `2` → two; `mod100∈[3,10]` → few; `mod100∈[11,99]` → many; else → other |
 | EN-style (default) | `en`, `es`, `pt`, `de`, `it`, `fr`, `nl`, `sv`, `no`, `da`, `fi`, ... | 2 (`one\|many`) | `abs(n)===1` → one; else → many |
 
 BCS (`sr`, `hr`, `bs`) shares the East-Slavic rule exactly on integers, so it reuses that bucket rather than getting its own. CLDR calls its third bucket `other` instead of `many`; positionally it is the same slot. The BCS/East-Slavic divergence is fractional-only, and counts are integers here (a non-numeric slot is erased), so it is unreachable. Script subtags carry no plural grammar — `sr-Latn` and `sr-Cyrl` both normalise to `sr`.

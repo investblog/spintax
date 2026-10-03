@@ -16,11 +16,13 @@ defined( 'ABSPATH' ) || exit;
  *   <count> — literal integer string OR `%Var%` reference (already
  *             substituted by `expand_variables` upstream)
  *   forms   — pipe-separated, arity must match the locale family
- *             (3 for ru/uk/be + sr/hr/bs, 2 for en/es/pt/de/...)
+ *             (6 for ar, 3 for ru/uk/be + sr/hr/bs, 2 for en/es/pt/de/...)
  *
  * Locale rules (V1):
  *   - Slavic 3-form (ru/uk/be + sr/hr/bs): one (1, 21, 31… not 11),
  *     few (2-4, 22-24… not 12-14), many (everything else, 0).
+ *   - Arabic 6-form, CLDR order: zero (0), one (1), two (2), few (n%100 in
+ *     3..10), many (n%100 in 11..99), other (everything else).
  *   - EN-style (default): one (n=1), many (everything else).
  *
  * Errors:
@@ -270,6 +272,8 @@ class Plurals {
 	 *
 	 * - Slavic 3-form (ru/uk/be + sr/hr/bs): one (1, 21, 31… but not 11), few
 	 *   (2-4, 22-24… but not 12-14), many (everything else, including 0).
+	 * - Arabic, CLDR order: zero (0), one (1), two (2), few (n%100 in 3..10),
+	 *   many (n%100 in 11..99), other (everything else: 100-102, 200-202, ...).
 	 * - EN-style (default): one (n=1), many (everything else).
 	 *
 	 * Counts are integers here (a non-numeric slot is erased upstream), so the
@@ -286,6 +290,24 @@ class Plurals {
 		$mod100 = $abs % 100;
 
 		switch ( $base_lang ) {
+			case 'ar':
+				if ( 0 === $abs ) {
+					return $forms[0];
+				}
+				if ( 1 === $abs ) {
+					return $forms[1];
+				}
+				if ( 2 === $abs ) {
+					return $forms[2];
+				}
+				if ( $mod100 >= 3 && $mod100 <= 10 ) {
+					return $forms[3];
+				}
+				if ( $mod100 >= 11 ) {
+					return $forms[4];
+				}
+				return $forms[5];
+
 			case 'ru':
 			case 'uk':
 			case 'be':
@@ -309,12 +331,16 @@ class Plurals {
 	 * Expected number of plural forms for the locale.
 	 *
 	 * @param string $base_lang Normalised base language tag.
-	 * @return int 3 for the Slavic one/few/other family, 2 for EN-style default.
+	 * @return int 6 for Arabic, 3 for the Slavic one/few/other family, 2 for EN-style default.
 	 */
 	public function plural_arity( string $base_lang ): int {
 		// BCS shares the East-Slavic integer rule exactly; CLDR names the
 		// third bucket "other" rather than "many", same slot positionally.
+		// Arabic takes CLDR's six forms, strictly: a two-form ar block is an
+		// arity error, not the English rule (spintax-js#88).
 		switch ( $base_lang ) {
+			case 'ar':
+				return 6;
 			case 'ru':
 			case 'uk':
 			case 'be':

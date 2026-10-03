@@ -162,7 +162,7 @@ class Parser {
 		$text      = $this->strip_comments( $template );
 		$extracted = $this->extract_directives( $text );
 		$text      = $extracted['body'];
-		$all_vars  = array_merge( $extracted['set'], $variables );
+		$all_vars  = array_replace( $extracted['set'], $variables );
 
 		// Caller keys are compared lowercased: `%var%` references are case-insensitive everywhere
 		// else, so `['X' => …]` has to outrank `#def %x%` exactly as `['x' => …]` does.
@@ -261,8 +261,10 @@ class Parser {
 	 * Deliberately NOT the reference engine's order. `@spintax/core` places whole rounds at a
 	 * time, so it rolls `a, c, b` where this rolls `a, b, c` for `#def %a%` / `#def %b% = %a%` /
 	 * `#def %c%`. Every roll draws from the RNG, so the difference is visible in rendered text;
-	 * which order is contract is investblog/spintax-js#82, and until that is decided this engine
-	 * keeps the one it has always had.
+	 * whether that is contract was spintax-js#82, decided 2026-10-03: it is not. Order is visible
+	 * only through RNG draws (and at the shared expansion cap), cross-engine RNG sequences are a
+	 * non-goal, and changing either side would move seeded output for its own users — so this
+	 * engine keeps the one it has always had (spintax-js's conformance README, Known divergences).
 	 *
 	 * @param array<string, string> $definitions `#def` values, name => raw value.
 	 * @param array<string, string> $set_values  `#set` values, name => raw value, for alias hops.
@@ -1351,6 +1353,11 @@ class Parser {
 	/**
 	 * Auto-pad purely alphabetic separators with spaces.
 	 *
+	 * Except when every letter is Han, Hiragana or Katakana (plus the prolonged-sound
+	 * marks U+30FC/U+FF70, which are Script=Common): those scripts are written without
+	 * spaces between words, so a separator such as 和 joins bare (spintax-js#87). Hangul
+	 * and mixed-script separators keep the padding.
+	 *
 	 * @param string $sep Separator string.
 	 * @return string Padded separator if purely alphabetic, otherwise unchanged.
 	 */
@@ -1359,7 +1366,8 @@ class Parser {
 		if ( '' === $trimmed ) {
 			return $sep;
 		}
-		if ( preg_match( '/^\p{L}+$/u', $trimmed ) ) {
+		if ( preg_match( '/^\p{L}+$/u', $trimmed )
+			&& ! preg_match( '/^[\p{Han}\p{Hiragana}\p{Katakana}\x{30FC}\x{FF70}]+$/u', $trimmed ) ) {
 			return ' ' . $trimmed . ' ';
 		}
 		return $sep;

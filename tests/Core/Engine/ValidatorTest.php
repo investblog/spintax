@@ -273,6 +273,11 @@ TPL;
 %x%" )['warnings'] );
 	}
 
+	public function test_a_digits_only_definition_name_is_not_reported_as_unknown(): void {
+		// spintax-js#84: array_keys() returns `7` as an int and the strict in_array() missed it.
+		$this->assertEmpty( $this->validator()->validate( "#def %7% = a\n#set %1% = b\n%7% %1%" )['warnings'] );
+	}
+
 	public function test_a_def_can_self_reference_and_is_caught(): void {
 		$this->assert_rejected( '#def %a% = x %a% y' );
 	}

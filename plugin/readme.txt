@@ -22,7 +22,7 @@ Ideal for content managers and SEO specialists producing many similar-but-unique
 * **Permutations** `[<config>a|b|c]` — pick N elements, shuffle, join with custom separators
 * **Variables** `%var%` — global, local (`#set` re-picks at every use, `#def` picks once per render), and shortcode-level scopes
 * **Conditionals** `{?VAR?then|else}` — render a branch based on whether a variable is set (also `{?!VAR?then}` inverted)
-* **Plural agreement** `{plural <count>: form1|form2|form3}` — pick grammatically correct noun form by count. RU/UK/BE and SR/HR/BS 3-form (one|few|many), EN-style 2-form (one|many). Other languages fall back to the 2-form rule, so `pl`, `cs`, `sk`, `sl` and `bg` are bucketed by a rule that is not theirs rather than rejected. First spintax engine with first-class plurals.
+* **Plural agreement** `{plural <count>: form1|form2|form3}` — pick grammatically correct noun form by count. RU/UK/BE and SR/HR/BS 3-form (one|few|many), Arabic 6-form (zero|one|two|few|many|other), EN-style 2-form (one|many). Other languages fall back to the 2-form rule, so `pl`, `cs`, `sk`, `sl` and `bg` are bucketed by a rule that is not theirs rather than rejected. First spintax engine with first-class plurals.
 * **Nested templates** — embed templates within templates via `#include` or `[spintax]`
 * **ACF / post-meta bindings (NEW in 2.0)** — configure once per post type, render Spintax templates into ACF text/textarea/wysiwyg fields or post-meta keys on every matching post. Auto-seed empty fields, preserve manual edits, Bulk Apply via Action Scheduler.
 * **WooCommerce product context (NEW in 2.2)** — on a single-product page, `[spintax]` / `spintax_render()` automatically expose the current product as `%product_name%`, `%product_sku%`, `%product_categories%`, `%product_attribute_<slug>%`, and more. Volatile pricing is intentionally out of scope. WooCommerce is optional — the variables simply appear when a product context is present.
@@ -59,7 +59,7 @@ Go to Spintax > Add New in the WordPress admin. Enter a title and your spintax m
 * `#set %var% = value` — local variable, a macro: re-picked at every use
 * `#def %var% = value` — local variable, picked once per render and held at every use
 * `{?VAR?then|else}` — conditional: render a branch by truthiness of `%VAR%` (also `{?!VAR?then}` inverted)
-* `{plural %Count%: form1|form2|form3}` — plural agreement: picks the correct grammatical form by count (RU/UK/BE and SR/HR/BS 3-form, EN-style 2-form)
+* `{plural %Count%: form1|form2|form3}` — plural agreement: picks the correct grammatical form by count (RU/UK/BE and SR/HR/BS 3-form, Arabic 6-form, EN-style 2-form)
 * `/#comment#/` — block comment (stripped from output)
 * `#include "slug"` — embed another template
 
@@ -276,30 +276,22 @@ Templates and their rendered output are stored entirely within your WordPress da
 == Changelog ==
 
 = 3.2.0 =
-* **Engine catch-up: the built-in engine is back in step with `spintax/core` 0.10.0.** The same four changes, locked by the shared cross-engine corpus.
+* **Engine catch-up: the built-in engine is back in step with `spintax/core` 0.11.0.** The same changes, locked by the shared cross-engine corpus.
+* **New: Arabic plurals.** `ar` takes the six CLDR forms in order zero|one|two|few|many|other (few = 3–10, many = 11–99 of the last two digits, other = 100–102 and the like). It used to get the English two-form rule, which is ungrammatical for most counts. **A two-form `{plural}` block under an Arabic locale is now reported as the wrong number of forms** and renders as fullwidth braces until it has six.
+* **Fix: a Chinese or Japanese list word joins without spaces.** A letter-only separator such as `[<lastsep="和">A|B]` was padded with spaces on both sides — right for English and Korean, wrong for scripts written without spaces between words. A separator made only of Han, Hiragana or Katakana now joins bare: `A和B`, `AおよびB`. **Rendered text changes for these shapes.**
+* **Fix: a variable or definition named only with digits works.** `#def %7% = …` and `#set %1% = …` printed the reference literally, or repeated a fragment, because PHP turned the name into an array index and merging the variable maps renumbered it.
 * **Fix: a sentence glued to the next one gets its space back.** The engine protects bare domains and email addresses from the spacing pass, and it was taking any `word.Word` for a domain — so `kept compact.Game categories` and `конец.Начало` stayed glued. A domain's last label must now be all lower case or all upper case. `example.com`, `ASP.NET`, `info@Example.COM` and `例子.中国` are untouched; the accepted cost is that `Yandex.Money` renders as `Yandex. Money` and `info@example.Com` is no longer treated as an address. **Rendered text changes for these shapes.**
 * **Fix: no stray space before a closing quote or bracket.** `"Is it audited? ",`, `«Как дела? »,`, `(really? )` and `title="really? "` lose that space; a quote that opens the next phrase keeps its own. **Rendered text changes for these shapes.**
 * **Fix: a long dotted chain no longer costs seconds of CPU.** Text like `a.a.a.…a.Game` made the address and domain protection restart from every label: 2,000 one-letter labels took 48 ms where they had taken 0.7. Now 0.1–0.9 ms. Ordinary text costs 2–4% more.
 * **Much faster rendering of templates with many `#def` definitions.** Three inner loops were charging the whole variable map for every definition in it. Measured on PHP 8.4, same machine: 3,200 chained definitions 8.7 s → 0.010 s, 12,800 independent ones 14.5 s → 0.021 s, and validating one cycle of 16,000 names 6.1 s → 0.163 s. Nothing a template renders changes — byte-identical across 3,000 generated definition-graph documents, with six deliberate mutations proving the check can see breakage first.
-* Tests: +9 since 3.1.0 (720 PHPUnit); the shared cross-engine corpus stands at 352 cases, 343 of them asserted against this engine.
+* Tests: +12 since 3.1.0 (723 PHPUnit); the shared cross-engine corpus stands at 386 cases, 376 of them asserted against this engine.
 
-= 3.1.0 =
-* **Engine catch-up: the built-in engine is back in step with `spintax/core` 0.8.0.** Six fixes that already shipped across the family — Composer 0.6–0.8, npm (`@spintax/core` 0.4–0.6), PyPI, Object Pascal and .NET — every one locked by the shared cross-engine corpus.
-* **Fix: a 62-character template could exhaust memory in the validator.** `#set %a% = %b% %b%` over `#set %b% = %a% %a%` doubles the text on every expansion pass, and there is no cycle, so the circular-reference guard never fired. Plural-form expansion now stops at 64 KB and reports the count as unknowable instead of dying. Every engine in the family had this.
-* **Fix: the same template could exhaust memory at render.** A render now expands at most 1 MB of `%variable%` text; past that a reference is left as a literal `%name%` — exactly what an undefined name already does. The budget is per render and shared by `#include`d templates, so a nested include cannot reset it.
-* **Fix: plural forms are counted after definitions expand, the way rendering counts them.** `#def %tail% = few|many` with `{plural 2: one|%tail%}` under `ru` rendered correctly yet was reported as the wrong number of forms. The validator now substitutes definitions first — and only where the count is provably fixed; a value carrying brackets suppresses the verdict instead of guessing. Templates that were wrongly flagged are now valid; the one new error is a `#set` whose value smuggles extra `|`-separated forms into a block, which always rendered as fullwidth braces anyway.
-* **Fix: one circular-reference error per variable, not per path.** A converging chain of definitions feeding a cycle produced an exponential number of identical errors — 457 bytes of template, 524,288 diagnostics. Now one per name, with the printed route capped at eight names.
-* New in the validator API: a `{plural …}` block with a non-default form count validated **without a locale** now carries a warning instead of passing silently. The template editor always passes the template's own locale, so editors keep getting the definite verdict as before.
-* **Fix: a render that hit the expansion budget is no longer stored in the object cache.** A child template cut short inside a large parent could otherwise be served truncated, under its own cache key, to a page that renders it alone and could afford it in full. Found in the release review; a debug log line now records the truncation.
-* Tested up to WordPress 7.1. Tests: +22 since 3.0.2 (711 PHPUnit); the shared cross-engine corpus stands at 248 cases.
-* Listing refresh: the .NET engine (`Spintax.Core` on NuGet) joins the family list, Spintax Studio's engine version is current, and a new FAQ covers the n8n node and the MCP server.
-
-Earlier releases (3.0.2 back to 1.0.0) are listed in full in `CHANGELOG.md` in the plugin's GitHub repository: https://github.com/investblog/spintax/blob/main/CHANGELOG.md
+Earlier releases: the complete history is in [CHANGELOG.md](https://github.com/investblog/spintax/blob/main/CHANGELOG.md).
 
 == Upgrade Notice ==
 
 = 3.2.0 =
-Engine catch-up with spintax/core 0.10.0. Visible changes: a mixed-case domain like `Yandex.Money` now renders as `Yandex. Money`, and no space goes before a closing quote or bracket (`"Is it audited?",`). Templates with many #def definitions render far faster.
+Engine catch-up with spintax/core 0.11.0. Visible changes: a mixed-case domain like `Yandex.Money` now renders as `Yandex. Money`, no space goes before a closing quote or bracket (`"Is it audited?",`), Chinese and Japanese list words join without spaces, and Arabic takes six plural forms — a two-form Arabic plural block now needs all six. Templates with many #def definitions render far faster.
 
 = 3.1.0 =
 Engine catch-up with spintax/core 0.8.0: validation and rendering stay memory-safe on pathological templates, plural forms are counted after #def expansion (fewer false arity errors), one circular-reference error per variable. Tested up to WordPress 7.1. No template changes needed.

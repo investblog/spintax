@@ -72,7 +72,7 @@ class RenderContext {
 	 * @return array<string, string>
 	 */
 	public function get_merged_variables(): array {
-		return array_merge( $this->global_vars, $this->local_vars, $this->runtime_vars );
+		return array_replace( $this->global_vars, $this->local_vars, $this->runtime_vars );
 	}
 
 	/**
@@ -97,7 +97,7 @@ class RenderContext {
 	public function with_local( array $local_vars ): self {
 		return new self(
 			$this->global_vars,
-			array_merge( $this->local_vars, self::normalize_keys( $local_vars ) ),
+			array_replace( $this->local_vars, self::normalize_keys( $local_vars ) ),
 			$this->runtime_vars,
 			$this->call_stack
 		);
@@ -113,7 +113,7 @@ class RenderContext {
 		return new self(
 			$this->global_vars,
 			$this->local_vars,
-			array_merge( $this->runtime_vars, self::normalize_keys( $vars ) ),
+			array_replace( $this->runtime_vars, self::normalize_keys( $vars ) ),
 			$this->call_stack
 		);
 	}

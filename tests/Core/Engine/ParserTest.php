@@ -160,6 +160,12 @@ class ParserTest extends \WP_UnitTestCase {
 		$this->assertSame( '%b%', $parser->expand_variables( '%a%', $vars ) );
 	}
 
+	public function test_process_keeps_a_digits_only_definition_name(): void {
+		// spintax-js#84: an integer-like key is an int to PHP, and array_merge() renumbered it.
+		$parser = $this->make_first();
+		$this->assertSame( 'Rolled S', trim( $parser->process( "#def %7% = rolled\n#set %1% = S\n%7% %1%" ) ) );
+	}
+
 	public function test_process_randomises_variable_value_per_occurrence(): void {
 		$parser   = $this->make_sequence( array( 0, 1 ) );
 		$template = "#set %greeting% = {hello|hi}\n%greeting% %greeting%";

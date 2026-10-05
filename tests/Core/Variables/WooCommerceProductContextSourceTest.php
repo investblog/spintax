@@ -2,6 +2,7 @@
 
 namespace Spintax\Tests\Core\Variables;
 
+use Spintax\Core\Variables\RuntimeContextBuilder;
 use Spintax\Core\Variables\WooCommerceProductContextSource;
 
 class WooCommerceProductContextSourceTest extends \WP_UnitTestCase {
@@ -358,5 +359,21 @@ class WooCommerceProductContextSourceTest extends \WP_UnitTestCase {
 		$source->build( 5 );
 
 		$this->assertSame( 1, $calls );
+	}
+
+	public function test_merge_keeps_a_digits_only_explicit_name(): void {
+		// PHP stores the key '7' as int 7, and array_merge() renumbered it to 0 — so on a product
+		// page `[spintax slug="t" 7="seven"]` left `%7%` unresolved (found in the 3.2.0 review).
+		$source = new WooCommerceProductContextSource(
+			static fn(): bool => true,
+			fn( int $id ) => $this->fake_product( array( 'id' => $id ) )
+		);
+
+		$merged = RuntimeContextBuilder::merge( $source, array( 'product_id' => '5', '7' => 'seven' ) );
+
+		$this->assertSame( 'seven', $merged['7'] ?? null );
+		$this->assertArrayNotHasKey( 0, $merged );
+		$this->assertSame( '5', $merged['product_id'] );
+		$this->assertSame( 'Blue Shirt', $merged['product_name'] );
 	}
 }

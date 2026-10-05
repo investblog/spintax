@@ -39,6 +39,8 @@ final class RuntimeContextBuilder {
 			return $explicit;
 		}
 
-		return array_merge( $auto, $explicit );
+		// array_replace, not array_merge: a digits-only name ('7') is an int key, and
+		// array_merge would renumber it.
+		return array_replace( $auto, $explicit );
 	}
 }

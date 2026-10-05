@@ -3,7 +3,7 @@ Contributors: 301st
 Tags: spintax, seo, woocommerce, acf, content generation
 Requires at least: 6.2
 Tested up to: 7.1
-Stable tag: 3.1.0
+Stable tag: 3.2.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -279,19 +279,19 @@ Templates and their rendered output are stored entirely within your WordPress da
 * **Engine catch-up: the built-in engine is back in step with `spintax/core` 0.11.0.** The same changes, locked by the shared cross-engine corpus.
 * **New: Arabic plurals.** `ar` takes the six CLDR forms in order zero|one|two|few|many|other (few = 3–10, many = 11–99 of the last two digits, other = 100–102 and the like). It used to get the English two-form rule, which is ungrammatical for most counts. **A two-form `{plural}` block under an Arabic locale is now reported as the wrong number of forms** and renders as fullwidth braces until it has six.
 * **Fix: a Chinese or Japanese list word joins without spaces.** A letter-only separator such as `[<lastsep="和">A|B]` was padded with spaces on both sides — right for English and Korean, wrong for scripts written without spaces between words. A separator made only of Han, Hiragana or Katakana now joins bare: `A和B`, `AおよびB`. **Rendered text changes for these shapes.**
-* **Fix: a variable or definition named only with digits works.** `#def %7% = …` and `#set %1% = …` printed the reference literally, or repeated a fragment, because PHP turned the name into an array index and merging the variable maps renumbered it.
+* **Fix: a variable or definition named only with digits works.** `#def %7% = …` and `#set %1% = …` printed the reference literally, or repeated a fragment, because PHP turned the name into an array index and merging the variable maps renumbered it. The same held for a digits-only shortcode attribute or `spintax_render()` argument on a WooCommerce product page.
 * **Fix: a sentence glued to the next one gets its space back.** The engine protects bare domains and email addresses from the spacing pass, and it was taking any `word.Word` for a domain — so `kept compact.Game categories` and `конец.Начало` stayed glued. A domain's last label must now be all lower case or all upper case. `example.com`, `ASP.NET`, `info@Example.COM` and `例子.中国` are untouched; the accepted cost is that `Yandex.Money` renders as `Yandex. Money` and `info@example.Com` is no longer treated as an address. **Rendered text changes for these shapes.**
 * **Fix: no stray space before a closing quote or bracket.** `"Is it audited? ",`, `«Как дела? »,`, `(really? )` and `title="really? "` lose that space; a quote that opens the next phrase keeps its own. **Rendered text changes for these shapes.**
 * **Fix: a long dotted chain no longer costs seconds of CPU.** Text like `a.a.a.…a.Game` made the address and domain protection restart from every label: 2,000 one-letter labels took 48 ms where they had taken 0.7. Now 0.1–0.9 ms. Ordinary text costs 2–4% more.
 * **Much faster rendering of templates with many `#def` definitions.** Three inner loops were charging the whole variable map for every definition in it. Measured on PHP 8.4, same machine: 3,200 chained definitions 8.7 s → 0.010 s, 12,800 independent ones 14.5 s → 0.021 s, and validating one cycle of 16,000 names 6.1 s → 0.163 s. Nothing a template renders changes — byte-identical across 3,000 generated definition-graph documents, with six deliberate mutations proving the check can see breakage first.
-* Tests: +12 since 3.1.0 (723 PHPUnit); the shared cross-engine corpus stands at 386 cases, 376 of them asserted against this engine.
+* Tests: +13 since 3.1.0 (724 PHPUnit); the shared cross-engine corpus stands at 386 cases, 376 of them asserted against this engine.
 
 Earlier releases: the complete history is in [CHANGELOG.md](https://github.com/investblog/spintax/blob/main/CHANGELOG.md).
 
 == Upgrade Notice ==
 
 = 3.2.0 =
-Engine catch-up with spintax/core 0.11.0. Visible changes: a mixed-case domain like `Yandex.Money` now renders as `Yandex. Money`, no space goes before a closing quote or bracket (`"Is it audited?",`), Chinese and Japanese list words join without spaces, and Arabic takes six plural forms — a two-form Arabic plural block now needs all six. Templates with many #def definitions render far faster.
+Engine catch-up with spintax/core 0.11.0. Arabic takes six plural forms: a two-form Arabic block now needs all six. Text changes: `Yandex.Money` renders as `Yandex. Money`, no space before a closing quote or bracket, CJK list words join bare. Many #def definitions render far faster.
 
 = 3.1.0 =
 Engine catch-up with spintax/core 0.8.0: validation and rendering stay memory-safe on pathological templates, plural forms are counted after #def expansion (fewer false arity errors), one circular-reference error per variable. Tested up to WordPress 7.1. No template changes needed.

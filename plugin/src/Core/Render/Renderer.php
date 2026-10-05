@@ -353,7 +353,7 @@ class Renderer {
 		$text = $this->parser->resolve_enumerations( $text );
 
 		// Stage 8: Resolve permutations.
-		$text = $this->parser->resolve_permutations( $text );
+		$text = $this->parser->resolve_permutations( $text, $locale );
 
 		// Restore [spintax] placeholders.
 		$text = self::restore_shielded( $text, $nested_placeholders, $unambiguous );
@@ -487,7 +487,7 @@ class Renderer {
 		$value = $this->conditionals->apply( $value, $vars );
 		$value = $this->plurals->apply( $value, $locale, array( 'lenient' => true ) );
 		$value = $this->parser->resolve_enumerations( $value );
-		$value = $this->parser->resolve_permutations( $value );
+		$value = $this->parser->resolve_permutations( $value, $locale );
 
 		$value = self::restore_shielded( $value, $shielded, $unambiguous );
 

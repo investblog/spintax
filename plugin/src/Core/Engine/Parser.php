@@ -38,6 +38,14 @@ class Parser {
 	private ?bool $expansion_overridden = null;
 
 	/**
+	 * Base language of the `resolve_permutations()` call in progress — the separator
+	 * rule for proclitic conjunctions (spintax-js#90) depends on it. Empty: none known.
+	 *
+	 * @var string
+	 */
+	private string $separator_lang = '';
+
+	/**
 	 * The one grammar for `#set` and `#def`, shared by the parser and the validator.
 	 *
 	 * Whitespace classes are restricted to spaces and tabs on purpose. `\s` would
@@ -662,11 +670,31 @@ class Parser {
 	 * Resolve all permutations [<config>a|b|c] from innermost outward.
 	 *
 	 * @param string $text Text containing permutation syntax.
+	 * @param string $lang Render locale (raw, e.g. "ar" / "ar_SA"). Empty: no language-specific separator rule.
 	 * @return string Text with permutations resolved.
 	 *
 	 * @throws \RuntimeException If resolution exceeds maximum iterations.
 	 */
-	public function resolve_permutations( string $text ): string {
+	public function resolve_permutations( string $text, string $lang = '' ): string {
+		$previous_lang        = $this->separator_lang;
+		$parts                = preg_split( '/[-_]/', strtolower( $lang ), 2 );
+		$this->separator_lang = $parts[0] ?? '';
+		try {
+			return $this->resolve_permutations_in( $text );
+		} finally {
+			$this->separator_lang = $previous_lang;
+		}
+	}
+
+	/**
+	 * The loop behind `resolve_permutations()`, under the language it set.
+	 *
+	 * @param string $text Text containing permutation syntax.
+	 * @return string Text with permutations resolved.
+	 *
+	 * @throws \RuntimeException If resolution exceeds maximum iterations.
+	 */
+	private function resolve_permutations_in( string $text ): string {
 		$iteration = 0;
 
 		do {
@@ -1351,23 +1379,58 @@ class Parser {
 	}
 
 	/**
+	 * Separators that join bare: every letter in a script written without spaces between
+	 * words — Han, Hiragana, Katakana and the prolonged-sound marks U+30FC/U+FF70, which
+	 * are Script=Common (spintax-js#87), then Thai, Lao, Khmer and Myanmar (#90).
+	 *
+	 * The lookahead keeps this Script, not Script_Extensions. PCRE2 10.40 and later read
+	 * `\p{Han}` as Script_Extensions, which adds the letters excluded here (〆 〼, the kana
+	 * repeat marks U+3031–3035, the halfwidth sound marks U+FF9E/FF9F, and U+02BC under
+	 * Thai); the reference engine and the ports read Script, and so does an older PCRE2.
+	 */
+	private const UNSPACED_SEPARATOR = '/^(?:(?![\x{02BC}\x{3006}\x{303C}\x{3031}-\x{3035}\x{FF9E}\x{FF9F}])[\p{Han}\p{Hiragana}\p{Katakana}\x{30FC}\x{FF70}\p{Thai}\p{Lao}\p{Khmer}\p{Myanmar}])+$/u';
+
+	/**
+	 * Conjunctions written attached to the next word, by base language (spintax-js#90):
+	 * Arabic و ("and") and ف ("and then"), Hebrew ו ("and"). Keyed by language, not script —
+	 * Persian and Urdu write the same و as a word of its own. `letter` tests the first
+	 * character of the next element; U+0640 is excluded to stay Script (see above).
+	 */
+	private const PROCLITICS = array(
+		'ar' => array(
+			'words'  => array( "\u{0648}", "\u{0641}" ),
+			'letter' => '/^(?!\x{0640})(?=\p{L})\p{Arabic}/u',
+		),
+		'he' => array(
+			'words'  => array( "\u{05D5}" ),
+			'letter' => '/^(?=\p{L})\p{Hebrew}/u',
+		),
+	);
+
+	/**
 	 * Auto-pad purely alphabetic separators with spaces.
 	 *
-	 * Except when every letter is Han, Hiragana or Katakana (plus the prolonged-sound
-	 * marks U+30FC/U+FF70, which are Script=Common): those scripts are written without
-	 * spaces between words, so a separator such as 和 joins bare (spintax-js#87). Hangul
-	 * and mixed-script separators keep the padding.
+	 * Except a separator in a script written without spaces between words, which joins
+	 * bare (`和`, `และ` — see UNSPACED_SEPARATOR); Hangul and mixed-script separators keep
+	 * the padding. And except a proclitic conjunction in its language (spintax-js#90):
+	 * under `ar`, و keeps the space before it and none after when the next element starts
+	 * with an Arabic letter — `الكازينو والبث` — and both spaces before anything else, a
+	 * Latin brand say: `و Evolution`. The author's own spaces around it change nothing.
 	 *
-	 * @param string $sep Separator string.
-	 * @return string Padded separator if purely alphabetic, otherwise unchanged.
+	 * @param string $sep  Separator string.
+	 * @param string $next Text of the element the separator goes in front of.
+	 * @return string The separator as it joins.
 	 */
-	private function pad_separator_if_needed( string $sep ): string {
+	private function pad_separator_if_needed( string $sep, string $next ): string {
 		$trimmed = trim( $sep );
 		if ( '' === $trimmed ) {
 			return $sep;
 		}
-		if ( preg_match( '/^\p{L}+$/u', $trimmed )
-			&& ! preg_match( '/^[\p{Han}\p{Hiragana}\p{Katakana}\x{30FC}\x{FF70}]+$/u', $trimmed ) ) {
+		$proclitic = self::PROCLITICS[ $this->separator_lang ] ?? null;
+		if ( null !== $proclitic && in_array( $trimmed, $proclitic['words'], true ) ) {
+			return preg_match( $proclitic['letter'], $next ) ? ' ' . $trimmed : ' ' . $trimmed . ' ';
+		}
+		if ( preg_match( '/^\p{L}+$/u', $trimmed ) && ! preg_match( self::UNSPACED_SEPARATOR, $trimmed ) ) {
 			return ' ' . $trimmed . ' ';
 		}
 		return $sep;
@@ -1419,7 +1482,7 @@ class Parser {
 				} else {
 					$sep = $global_sep;
 				}
-				$parts[] = $this->pad_separator_if_needed( $sep );
+				$parts[] = $this->pad_separator_if_needed( $sep, $elements[ $i ]['text'] );
 				$parts[] = $elements[ $i ]['text'];
 			}
 		}

@@ -108,19 +108,20 @@ BCS (`sr`, `hr`, `bs`) shares the East-Slavic rule exactly on integers, so it re
 - Polish 4-form (`one|few|many|other`).
 - Czech / Slovak (3-bucket but different boundaries from East Slavic).
 - Bulgarian (different from East Slavic despite Cyrillic).
-- Arabic 6-form (`zero|one|two|few|many|other`).
+- ~~Arabic 6-form (`zero|one|two|few|many|other`).~~ SHIPPED in 3.2.0 (spintax-js#88, the trigger came from the engine family, not a plugin user) — see the rule table above.
 - Welsh 6-form, Hebrew 4-form, Latvian 3-form, French (0/1 = singular).
 - Per-construct locale override (`{plural:en %N%: …}`).
 - Admin UI chip-list helper for inserting plural constructs.
 
 ### V2 expansion
 
-V2 locales (Polish 4-form, Arabic 6-form, Bulgarian, Czech / Slovak / Slovenian, Welsh, Hebrew, Latvian, French 0/1=singular) each require their own per-language trigger — don't pre-build. The arity/rule table extension is mechanical, but the test coverage burden compounds, and we should only add a family when we have a real template that needs it.
+V2 locales (Polish 4-form, Bulgarian, Czech / Slovak / Slovenian, Welsh, Hebrew, Latvian, French 0/1=singular) each require their own per-language trigger — don't pre-build. The arity/rule table extension is mechanical, but the test coverage burden compounds, and we should only add a family when we have a real template that needs it.
 
 ### Open questions for future community input
 
 - Should locale be settable globally (site-wide default) in addition to per-template? Helpful for single-language sites; redundant for multilingual.
 - Should the validator warn or hard-error on unsupported locale tags?
+- Three-letter Arabic locales (WordPress ships `ary`, Moroccan Arabic) normalise to `ary`, not `ar`, so they get the EN 2-form rule — consistent with how `pl`/`cs` fall through, but such a site may expect six forms. Raised by the 3.2.0 release review (2026-10-06), not verified on a live `ary` site; a family-wide decision (it would belong in the corpus), not a plugin-only patch.
 - Should V2 expansion (Polish/Arabic) wait for explicit demand per language, or batch on first non-RU/EN trigger?
 - Number formatting (NBSP separators, locale-aware decimal) — separate primitive or part of plural? Lean separate.
 
